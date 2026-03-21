@@ -18,8 +18,8 @@ htmlcov/
 *.flac
 !tests/fixtures/test_audio/*.wav
 
-# PoC 결과
-testing/poc_rx_results.json
+# 실험/PoC 스크립트
+testing/
 
 # Config
 .audioman/
