@@ -9,6 +9,7 @@ from audioman.cli.output import print_error, print_json, print_table, print_succ
 from audioman.core.audio_file import read_audio, get_audio_stats
 from audioman.core.analysis import compute_frame_metrics, compute_summary, detect_silence
 from audioman.core.batch import collect_audio_files
+from audioman.core.waveform import render_waveform, render_envelope, render_spectral_envelope
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -18,6 +19,10 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--frame-size", type=int, default=2048, help="프레임 크기 (기본: 2048)")
     parser.add_argument("--hop", type=int, default=512, help="홉 크기 (기본: 512)")
     parser.add_argument("--silence-threshold", type=float, default=-40.0, help="Silence 감지 임계값 dB (기본: -40)")
+    parser.add_argument("--waveform", "-w", action="store_true", help="ASCII 웨이브폼 표시")
+    parser.add_argument("--waveform-width", type=int, default=80, help="웨이브폼 가로 폭 (기본: 80)")
+    parser.add_argument("--waveform-height", type=int, default=16, help="웨이브폼 세로 높이 (기본: 16)")
+    parser.add_argument("--waveform-mode", choices=["rms", "peak"], default="peak", help="웨이브폼 모드 (기본: peak)")
     parser.add_argument("--recursive", "-r", action="store_true", help="하위 디렉토리 포함")
     parser.set_defaults(func=run)
 
@@ -77,14 +82,50 @@ def _run_single(args: argparse.Namespace, path: Path) -> None:
     except FileNotFoundError as e:
         print_error(str(e))
 
+    # 웨이브폼 렌더링 (JSON 모드에서도 ascii_waveform 필드로 포함)
+    waveform_text = None
+    envelope_text = None
+    spectral_text = None
+
+    if args.waveform:
+        audio, sr = read_audio(path)
+        waveform_text = render_waveform(
+            audio, sr,
+            width=args.waveform_width,
+            height=args.waveform_height,
+            mode=args.waveform_mode,
+        )
+        envelope_text = render_envelope(audio, sr, width=args.waveform_width)
+
+        metrics = compute_frame_metrics(audio, sr, frame_size=args.frame_size, hop_size=args.hop)
+        spectral_text = render_spectral_envelope(
+            metrics.spectral_centroid, metrics.spectral_entropy,
+            sr, result["duration"], width=args.waveform_width,
+        )
+
     if args.json:
-        print_json({"command": "analyze", **result})
+        out = {"command": "analyze", **result}
+        if waveform_text:
+            out["ascii_waveform"] = waveform_text
+            out["ascii_envelope"] = envelope_text
+            out["ascii_spectral"] = spectral_text
+        print_json(out)
         return
 
     # human-readable 출력
     output_console.print(f"\n[bold]{result['file']}[/bold]")
     output_console.print(f"  Duration: {result['duration']}s | SR: {result['sample_rate']}Hz | CH: {result['channels']}")
     output_console.print(f"  RMS: {result['rms']:.4f} | Peak: {result['peak']:.4f}")
+
+    # 웨이브폼
+    if waveform_text:
+        output_console.print(f"\n[bold]Waveform[/bold]")
+        output_console.print(waveform_text, highlight=False)
+        output_console.print(f"\n[bold]RMS Envelope[/bold]")
+        output_console.print(envelope_text, highlight=False)
+        output_console.print(f"\n[bold]Spectral[/bold]")
+        output_console.print(spectral_text, highlight=False)
+
     output_console.print()
 
     # summary 테이블
