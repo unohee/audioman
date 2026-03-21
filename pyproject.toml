@@ -6,16 +6,12 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
 dependencies = [
-    "numpy>=2.4.3",
-    "pedalboard>=0.9.22",
-    "soundfile>=0.13.1",
-    "rich>=14.0.0",
-    "pydantic>=2.0.0",
-    "pydantic-settings>=2.0.0",
-    "noisereduce>=3.0.3",
-    "speechbrain>=1.0.3",
-    "requests>=2.32.5",
-    "pyrnnoise>=0.4.3",
+    "numpy>=1.26",
+    "pedalboard>=0.9",
+    "soundfile>=0.13",
+    "rich>=13.0",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
 ]
 
 [project.scripts]
