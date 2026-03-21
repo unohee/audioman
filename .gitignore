@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.venv/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Audio files (테스트 fixture 제외)
+*.wav
+*.mp3
+*.flac
+!tests/fixtures/test_audio/*.wav
+
+# PoC 결과
+testing/poc_rx_results.json
+
+# Config
+.audioman/
+
+# Misc
+trash/
+.python-version

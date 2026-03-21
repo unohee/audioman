@@ -1,0 +1,41 @@
+[project]
+name = "audioman"
+version = "0.1.0"
+description = "Cross-platform CLI wrapper for VST3/AU audio plugins"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = [
+    "numpy>=2.4.3",
+    "pedalboard>=0.9.22",
+    "soundfile>=0.13.1",
+    "rich>=14.0.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "noisereduce>=3.0.3",
+    "speechbrain>=1.0.3",
+    "requests>=2.32.5",
+    "pyrnnoise>=0.4.3",
+]
+
+[project.scripts]
+audioman = "audioman.cli.app:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/audioman"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: 실제 VST3 플러그인 필요",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=6.0.0",
+]
