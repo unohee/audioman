@@ -551,6 +551,14 @@ def batch_render_programs(
                 logger.debug(f"[{idx}] {program_name}: 무음 — 스킵")
                 continue
 
+            # 스펙트럼 분석 (정규화 전)
+            audio_features = None
+            try:
+                from audioman.core.analysis import compute_audio_features
+                audio_features = compute_audio_features(audio, sample_rate)
+            except Exception:
+                pass
+
             # 정규화
             if normalize_audio:
                 peak = np.max(np.abs(audio))
@@ -576,6 +584,7 @@ def batch_render_programs(
                 peak=float(np.max(np.abs(audio))),
                 rms=rms,
                 parameters=params,
+                features=audio_features,
             )
             entries.append(entry)
             labels[program_name] = entry.index
@@ -595,6 +604,22 @@ def batch_render_programs(
             progress_callback(idx + 1, num_programs, dummy_entry)
 
     # --- 패키징 (batch_render와 동일) ---
+
+    # features.jsonl
+    features_path = output_path / "features.jsonl"
+    with open(features_path, "w") as f:
+        for entry in entries:
+            if not entry.features:
+                continue
+            record = {
+                "index": entry.index,
+                "preset_name": entry.preset_name,
+                "note": entry.notes[0] if entry.notes else None,
+                "velocity": entry.velocity,
+                **entry.features,
+            }
+            f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+
     params_path = output_path / "params.jsonl"
     with open(params_path, "w") as f:
         for entry in entries:
