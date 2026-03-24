@@ -236,13 +236,18 @@ def render_patch(
         clock=clock,
     )
 
-    output = filtered * amp_env * patch.master_volume * vel_gain
+    mono_out = filtered * amp_env * patch.master_volume * vel_gain
 
     # --- 딜레이 ---
     if patch.delay_wet > 0.01:
         delay_time_s = patch.delay_time * 1.0  # 0~1초
-        delayed = sf.CombDelay(output, delay_time_s, patch.delay_feedback * 0.8)
-        output = output * (1.0 - patch.delay_wet) + delayed * patch.delay_wet
+        delayed = sf.CombDelay(mono_out, delay_time_s, patch.delay_feedback * 0.8)
+        mono_out = mono_out * (1.0 - patch.delay_wet) + delayed * patch.delay_wet
+
+    # --- 스테레오 패닝 ---
+    # pan: 0.0=left, 0.5=center, 1.0=right → StereoPanner: -1~+1
+    pan_value = (patch.osc1_pan - 0.5) * 2.0
+    output = sf.StereoPanner(mono_out, pan_value)
 
     # --- 렌더링 ---
     total_time = duration + tail
