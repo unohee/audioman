@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 # 입력 feature 키
 FEATURE_KEYS = [
+    # 기본 (21)
     'peak', 'rms_mean', 'rms_max', 'crest_factor',
     'spectral_centroid_mean', 'spectral_centroid_std',
     'spectral_bandwidth_mean', 'spectral_rolloff_mean',
@@ -32,6 +33,17 @@ FEATURE_KEYS = [
     'duration_effective',
     'attack_curvature', 'decay_curvature', 'release_curvature',
     'sustain_level', 'envelope_rms_error',
+    # 시간축 스펙트럴 변화 (8) — filter envelope 직접 측정
+    'centroid_attack_slope', 'centroid_decay_slope', 'centroid_range',
+    'bandwidth_attack_slope', 'bandwidth_range',
+    'brightness_trajectory', 'spectral_flux_mean', 'spectral_flux_std',
+    # Peak frequency trajectory (7) — filter sweep
+    'peak_freq_start', 'peak_freq_peak', 'peak_freq_sustain',
+    'peak_freq_sweep_range', 'peak_freq_attack_ratio', 'peak_freq_decay_ratio',
+    'spectral_peak_stability',
+    # 하모닉 시리즈 (5) — 파형/음색 특성
+    'harmonic_centroid_ratio', 'harmonic_spread', 'odd_even_ratio',
+    'harmonic_decay_rate', 'inharmonicity',
 ]
 
 # 출력 파라미터 키 + 그룹별 가중치
