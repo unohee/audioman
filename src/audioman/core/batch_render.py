@@ -206,6 +206,13 @@ def batch_render(config: BatchConfig, progress_callback=None) -> BatchResult:
     success, failed = 0, 0
     job_idx = 0
 
+    # 싱글턴 DawDreamer 엔진 (플러그인 초기화 1회만)
+    from audioman.core.instrument import _ensure_dawdreamer, _apply_fadeout
+    from audioman.core.audio_file import write_audio, read_audio
+    daw = _ensure_dawdreamer()
+
+    render_duration = config.duration + config.tail
+
     for preset_idx, preset_path in enumerate(presets):
         try:
             # 프리셋 파싱 (프리셋당 1회)
@@ -213,7 +220,6 @@ def batch_render(config: BatchConfig, progress_callback=None) -> BatchResult:
             resolve_param_names(preset_data)
         except Exception as e:
             logger.warning(f"[{preset_idx + 1}/{len(presets)}] {preset_path.name}: 파싱 실패 - {e}")
-            # 이 프리셋의 모든 조합을 실패 처리
             for note in config.notes:
                 for vel in velocities:
                     job_idx += 1
@@ -231,10 +237,7 @@ def batch_render(config: BatchConfig, progress_callback=None) -> BatchResult:
         for note in config.notes:
             for vel in velocities:
                 try:
-                    midi_notes = [MidiNote(note=note, velocity=vel, start=0.0, duration=config.duration)]
                     safe_name = _safe_filename(preset_data.preset_name or preset_path.stem)
-
-                    # 파일명에 note + velocity 포함
                     suffix = f"_n{note}_v{vel}" if (len(config.notes) > 1 or len(velocities) > 1) else ""
 
                     if config.format in ("wav", "both"):
@@ -242,22 +245,35 @@ def batch_render(config: BatchConfig, progress_callback=None) -> BatchResult:
                     else:
                         wav_path = output_dir / f"_temp_{job_idx:04d}.wav"
 
-                    result = render_notes(
-                        plugin_path=config.plugin_path,
-                        notes=midi_notes,
-                        output_path=wav_path,
-                        sample_rate=config.sample_rate,
-                        buffer_size=config.buffer_size,
-                        duration=None,
-                        preset_path=str(preset_path),
-                        tail=config.tail,
-                        fadeout=config.fadeout,
-                    )
+                    # 싱글턴 엔진으로 렌더링 (매번 새 엔진+플러그인 생성 안 함)
+                    engine = daw.RenderEngine(config.sample_rate, config.buffer_size)
+                    synth = engine.make_plugin_processor("instrument", config.plugin_path)
 
-                    from audioman.core.audio_file import read_audio
+                    # 프리셋 로딩
+                    ext = preset_path.suffix.lower()
+                    if ext in (".fxp", ".fxb", ".h2p", ".vital", ".phaseplant"):
+                        synth.load_preset(str(preset_path))
+                    elif ext == ".vstpreset":
+                        synth.load_vst3_preset(str(preset_path))
+
+                    # MIDI 노트
+                    synth.add_midi_note(note, vel, 0.0, config.duration)
+                    engine.load_graph([(synth, [])])
+                    engine.render(render_duration)
+                    audio = engine.get_audio()
+
+                    if audio.dtype != np.float32:
+                        audio = audio.astype(np.float32)
+                    audio = _apply_fadeout(audio, config.sample_rate, config.fadeout)
+
+                    # WAV 저장
+                    wav_path.parent.mkdir(parents=True, exist_ok=True)
+                    write_audio(wav_path, audio, config.sample_rate)
+
+                    # 다시 읽기 (soundfile 정규화 보장)
                     audio, sr = read_audio(wav_path)
 
-                    # 스펙트럼 분석 (정규화 전 원본으로)
+                    # 스펙트럼 분석 (정규화 전)
                     audio_features = None
                     if config.analyze:
                         from audioman.core.analysis import compute_audio_features
@@ -280,18 +296,21 @@ def batch_render(config: BatchConfig, progress_callback=None) -> BatchResult:
                     if config.format == "npy" and wav_path.exists():
                         wav_path.unlink()
 
+                    channels = audio.shape[0] if audio.ndim == 2 else 1
+                    frames = audio.shape[-1]
+
                     entry = RenderEntry(
                         index=job_idx,
                         preset_name=preset_data.preset_name or preset_path.stem,
                         preset_path=str(preset_path),
                         velocity=vel,
                         notes=[note],
-                        duration=result.duration,
+                        duration=render_duration,
                         sample_rate=config.sample_rate,
-                        channels=result.channels,
-                        frames=result.frames,
-                        peak=result.peak,
-                        rms=result.rms,
+                        channels=channels,
+                        frames=frames,
+                        peak=float(np.max(np.abs(audio))),
+                        rms=float(np.sqrt(np.mean(audio**2))),
                         parameters=preset_data.to_dict(include_chunk=False).get("parameters", {}),
                         wav_path=str(wav_path) if config.format in ("wav", "both") else None,
                         features=audio_features,
@@ -316,7 +335,6 @@ def batch_render(config: BatchConfig, progress_callback=None) -> BatchResult:
 
                 if progress_callback:
                     progress_callback(job_idx, total_jobs, entry)
-            failed += 1
 
     # --- 패키징 ---
 
