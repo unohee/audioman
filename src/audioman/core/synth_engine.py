@@ -85,11 +85,104 @@ def _get_wavetable_pack() -> list[np.ndarray]:
 
 
 def get_wavetable_by_position(position: float) -> np.ndarray:
-    """0~1 position → 16개 웨이브테이블 중 선택 (보간 없음)"""
+    """0~1 position → 16개 기본 웨이브테이블 중 선택"""
     pack = _get_wavetable_pack()
     idx = int(position * (len(pack) - 1))
     idx = max(0, min(len(pack) - 1, idx))
     return pack[idx]
+
+
+# =============================================================================
+# 외부 웨이브테이블 WAV 로더 (Serum/ESW 2048-per-frame 포맷)
+# =============================================================================
+
+_EXTERNAL_WT_CACHE: dict[str, list[np.ndarray]] = {}
+_EXTERNAL_WT_INDEX: list[str] = []  # 로딩된 웨이브테이블 파일 경로 리스트
+
+
+def load_wavetable_wav(path: str) -> list[np.ndarray]:
+    """Serum 포맷 웨이브테이블 WAV 로드 → 프레임 리스트
+
+    Returns: list of (2048,) float32 arrays, 각각 1주기
+    """
+    if path in _EXTERNAL_WT_CACHE:
+        return _EXTERNAL_WT_CACHE[path]
+
+    import soundfile as sf
+    data, sr = sf.read(path, dtype='float32')
+    if data.ndim > 1:
+        data = data[:, 0]  # 모노
+
+    frame_size = _WT_SIZE  # 2048
+    n_frames = len(data) // frame_size
+    if n_frames == 0:
+        # 2048보다 짧으면 zero-pad
+        padded = np.zeros(frame_size, dtype=np.float32)
+        padded[:len(data)] = data
+        frames = [padded]
+    else:
+        frames = []
+        for i in range(n_frames):
+            frame = data[i * frame_size : (i + 1) * frame_size].copy()
+            peak = np.max(np.abs(frame))
+            if peak > 0:
+                frame /= peak
+            frames.append(frame)
+
+    _EXTERNAL_WT_CACHE[path] = frames
+    return frames
+
+
+def load_wavetable_pack(directory: str) -> int:
+    """디렉토리의 모든 웨이브테이블 WAV를 로드
+
+    Returns: 로딩된 파일 수
+    """
+    from pathlib import Path
+    global _EXTERNAL_WT_INDEX
+
+    wt_dir = Path(directory)
+    wavs = sorted(wt_dir.rglob('*.wav'))
+
+    count = 0
+    for w in wavs:
+        try:
+            frames = load_wavetable_wav(str(w))
+            if frames:
+                _EXTERNAL_WT_INDEX.append(str(w))
+                count += 1
+        except Exception as e:
+            logger.debug(f'WT 로드 실패: {w.name}: {e}')
+
+    logger.info(f'웨이브테이블 팩 로드: {count}개 ({directory})')
+    return count
+
+
+def get_external_wavetable(table_index: float, position: float) -> np.ndarray:
+    """외부 웨이브테이블에서 프레임 선택
+
+    Args:
+        table_index: 0~1 → 로딩된 웨이브테이블 중 선택
+        position: 0~1 → 선택된 테이블 내 프레임 위치
+
+    Returns: (2048,) float32
+    """
+    if not _EXTERNAL_WT_INDEX:
+        return get_wavetable_by_position(position)  # 폴백: 기본 팩
+
+    # 테이블 선택
+    idx = int(table_index * (len(_EXTERNAL_WT_INDEX) - 1))
+    idx = max(0, min(len(_EXTERNAL_WT_INDEX) - 1, idx))
+    path = _EXTERNAL_WT_INDEX[idx]
+
+    frames = _EXTERNAL_WT_CACHE.get(path, [])
+    if not frames:
+        return get_wavetable_by_position(position)
+
+    # 프레임 선택
+    f_idx = int(position * (len(frames) - 1))
+    f_idx = max(0, min(len(frames) - 1, f_idx))
+    return frames[f_idx]
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +198,8 @@ class SynthPatch:
 
     # --- OSC 1 ---
     osc1_mode: float = 0.0        # 0=VA, 0.5=wavetable, 1.0=FM carrier
-    osc1_waveform: float = 0.0    # VA: 0=saw 0.25=sqr 0.5=tri 0.75=sin / WT: position
+    osc1_waveform: float = 0.0    # VA: 0=saw 0.25=sqr 0.5=tri 0.75=sin / WT: frame position
+    osc1_table: float = 0.0       # WT 모드: 0~1 → 외부 웨이브테이블 선택 (379개 중)
     osc1_volume: float = 0.7
     osc1_pan: float = 0.5         # 0=L, 0.5=C, 1=R
     osc1_octave: float = 0.5      # 0=-3oct, 0.5=0, 1=+3oct
@@ -115,6 +209,7 @@ class SynthPatch:
     # --- OSC 2 ---
     osc2_mode: float = 0.0
     osc2_waveform: float = 0.25   # square
+    osc2_table: float = 0.0       # WT 모드: 외부 웨이브테이블 선택
     osc2_volume: float = 0.0
     osc2_pan: float = 0.5
     osc2_octave: float = 0.5
@@ -353,10 +448,17 @@ def render_patch(
         else:
             return sf.SineOscillator(freq)
 
-    def make_wt_osc(freq, waveform_pos: float, wt_data: Optional[np.ndarray] = None) -> sf.Node:
-        """웨이브테이블 오실레이터 — position으로 16개 테이블 중 선택"""
+    def make_wt_osc(freq, table_idx: float, waveform_pos: float,
+                    wt_data: Optional[np.ndarray] = None) -> sf.Node:
+        """웨이브테이블 오실레이터
+
+        외부 팩 로딩됨 → get_external_wavetable(table, position)
+        아니면 → 기본 16개 팩에서 선택
+        """
         if wt_data is not None:
             wave = wt_data
+        elif _EXTERNAL_WT_INDEX:
+            wave = get_external_wavetable(table_idx, waveform_pos)
         else:
             wave = get_wavetable_by_position(waveform_pos)
         buf = sf.Buffer(wave.tolist())
@@ -386,7 +488,7 @@ def render_patch(
     if patch.osc1_mode < 0.33:
         osc1 = make_va_osc(patch.osc1_waveform, fm_carrier_freq)
     elif patch.osc1_mode < 0.66:
-        osc1 = make_wt_osc(fm_carrier_freq, patch.osc1_waveform, wavetable_data)
+        osc1 = make_wt_osc(fm_carrier_freq, patch.osc1_table, patch.osc1_waveform, wavetable_data)
     else:
         osc1 = make_va_osc(patch.osc1_waveform, fm_carrier_freq)  # FM은 위에서 처리됨
 
@@ -394,7 +496,7 @@ def render_patch(
     if patch.osc2_mode < 0.33:
         osc2 = make_va_osc(patch.osc2_waveform, osc2_freq)
     elif patch.osc2_mode < 0.66:
-        osc2 = make_wt_osc(osc2_freq, patch.osc2_waveform, wavetable_data)
+        osc2 = make_wt_osc(osc2_freq, patch.osc2_table, patch.osc2_waveform, wavetable_data)
     else:
         osc2 = make_va_osc(patch.osc2_waveform, osc2_freq)
 
