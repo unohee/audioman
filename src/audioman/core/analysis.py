@@ -312,7 +312,225 @@ def compute_audio_features(
     env_curve = compute_envelope_curvature(audio, sample_rate, hop_size)
     result.update(env_curve)
 
+    # === 시간축 스펙트럴 변화 분석 ===
+    temporal = _compute_temporal_spectral_features(
+        centroids, bandwidths, rolloffs, flatnesses, rms_frames, hop_size, sample_rate
+    )
+    result.update(temporal)
+
+    # === 하모닉 시리즈 분석 ===
+    harmonic = _analyze_harmonic_series(mono, sample_rate, fundamental_freq, frame_size)
+    result.update(harmonic)
+
+    # === Peak frequency trajectory (filter sweep 감지) ===
+    peak_traj = _compute_peak_freq_trajectory(mono, sample_rate, frame_size, hop_size, rms_frames)
+    result.update(peak_traj)
+
     return result
+
+
+def _compute_temporal_spectral_features(
+    centroids: list, bandwidths: list, rolloffs: list,
+    flatnesses: list, rms_frames: list,
+    hop_size: int, sample_rate: int,
+) -> dict:
+    """시간축 스펙트럴 변화량 — filter envelope, pitch envelope 추정
+
+    핵심 아이디어:
+    - centroid가 시간에 따라 올라가면 → filter envelope opening
+    - centroid가 내려가면 → filter envelope closing
+    - bandwidth 변화 → 음역대 넓어짐/좁아짐
+    """
+    if len(centroids) < 4:
+        return {
+            "centroid_attack_slope": 0.0, "centroid_decay_slope": 0.0,
+            "centroid_range": 0.0, "bandwidth_attack_slope": 0.0,
+            "bandwidth_range": 0.0, "brightness_trajectory": 0.0,
+            "spectral_flux_mean": 0.0, "spectral_flux_std": 0.0,
+        }
+
+    c = np.array(centroids, dtype=np.float32)
+    bw = np.array(bandwidths, dtype=np.float32)
+    ro = np.array(rolloffs, dtype=np.float32)
+    fl = np.array(flatnesses, dtype=np.float32)
+    rms = np.array(rms_frames, dtype=np.float32)
+    n = len(c)
+
+    # RMS 피크 위치 (attack 끝 = sustain 시작)
+    rms_max = np.max(rms)
+    if rms_max < 1e-10:
+        peak_idx = n // 4
+    else:
+        peak_idx = int(np.argmax(rms))
+
+    # 시간 → 초 변환
+    frame_to_sec = hop_size / sample_rate
+
+    # --- Centroid 시간 변화 (filter envelope 지표) ---
+    # Attack phase: 시작 → 피크 구간의 centroid 변화율
+    atk_end = max(2, peak_idx)
+    if atk_end > 1:
+        # 선형 기울기 (Hz/s)
+        t_atk = np.arange(atk_end) * frame_to_sec
+        if len(t_atk) > 1:
+            slope_atk = float(np.polyfit(t_atk, c[:atk_end], 1)[0])
+        else:
+            slope_atk = 0.0
+    else:
+        slope_atk = 0.0
+
+    # Decay phase: 피크 → 끝 구간
+    decay_start = peak_idx
+    decay_len = n - decay_start
+    if decay_len > 2:
+        t_dec = np.arange(decay_len) * frame_to_sec
+        slope_dec = float(np.polyfit(t_dec, c[decay_start:], 1)[0])
+    else:
+        slope_dec = 0.0
+
+    # Centroid 전체 범위
+    c_active = c[rms > rms_max * 0.05]  # 유효 구간만
+    centroid_range = float(np.max(c_active) - np.min(c_active)) if len(c_active) > 0 else 0.0
+
+    # --- Bandwidth 시간 변화 (음역대 넓어짐/좁아짐) ---
+    bw_active = bw[rms > rms_max * 0.05] if len(bw) > 0 else bw
+    if len(bw_active) > 2 and atk_end > 1:
+        t_bw = np.arange(min(atk_end, len(bw_active))) * frame_to_sec
+        bw_slope = float(np.polyfit(t_bw, bw_active[:len(t_bw)], 1)[0])
+    else:
+        bw_slope = 0.0
+    bw_range = float(np.max(bw_active) - np.min(bw_active)) if len(bw_active) > 0 else 0.0
+
+    # --- Brightness trajectory (전체 궤적 방향) ---
+    # 양수 = 점점 밝아짐, 음수 = 점점 어두워짐
+    if len(c_active) > 2:
+        t_all = np.arange(len(c_active)) * frame_to_sec
+        brightness_traj = float(np.polyfit(t_all, c_active, 1)[0])
+    else:
+        brightness_traj = 0.0
+
+    # --- Spectral flux (프레임 간 스펙트럴 변화량) ---
+    if len(c) > 1:
+        flux = np.abs(np.diff(c))
+        spectral_flux_mean = float(np.mean(flux))
+        spectral_flux_std = float(np.std(flux))
+    else:
+        spectral_flux_mean = spectral_flux_std = 0.0
+
+    return {
+        "centroid_attack_slope": round(slope_atk, 2),      # Hz/s, + = filter opening
+        "centroid_decay_slope": round(slope_dec, 2),        # Hz/s, - = filter closing
+        "centroid_range": round(centroid_range, 2),          # Hz, 전체 변화 폭
+        "bandwidth_attack_slope": round(bw_slope, 2),       # Hz/s, 음역대 변화
+        "bandwidth_range": round(bw_range, 2),               # Hz
+        "brightness_trajectory": round(brightness_traj, 2),  # Hz/s, 전체 밝기 방향
+        "spectral_flux_mean": round(spectral_flux_mean, 2),  # 프레임 간 변화량 평균
+        "spectral_flux_std": round(spectral_flux_std, 2),    # 변화량 표준편차
+    }
+
+
+def _analyze_harmonic_series(
+    mono: np.ndarray,
+    sample_rate: int,
+    f0: float,
+    frame_size: int = 4096,
+) -> dict:
+    """F0 대비 하모닉 시리즈 분석
+
+    - 하모닉 에너지 분포 (어디에 에너지가 집중?)
+    - 하모닉 간격 규칙성 (정수배 vs 비정수배)
+    - 홀수/짝수 하모닉 비율 (파형 대칭성)
+    """
+    if f0 < 20 or len(mono) < frame_size:
+        return {
+            "harmonic_centroid_ratio": 0.0,
+            "harmonic_spread": 0.0,
+            "odd_even_ratio": 0.5,
+            "harmonic_decay_rate": 0.0,
+            "inharmonicity": 0.0,
+        }
+
+    # 안정 구간 (중간 1/3)
+    n = len(mono)
+    segment = mono[n // 3: 2 * n // 3]
+    if len(segment) < frame_size:
+        segment = mono[:frame_size]
+
+    window = np.hanning(frame_size).astype(np.float32)
+    frame = segment[:frame_size] * window
+    spectrum = np.abs(np.fft.rfft(frame))
+    freqs = np.fft.rfftfreq(frame_size, 1.0 / sample_rate)
+
+    # 하모닉 피크 찾기 (f0의 정수배 ±5% 범위)
+    max_harmonic = min(16, int(sample_rate / 2 / f0))
+    harmonic_amps = []
+    harmonic_freqs_actual = []
+
+    for h in range(1, max_harmonic + 1):
+        target = f0 * h
+        tolerance = f0 * 0.05  # ±5%
+        mask = (freqs >= target - tolerance) & (freqs <= target + tolerance)
+        if np.any(mask):
+            peak_idx = np.argmax(spectrum[mask])
+            amp = float(spectrum[mask][peak_idx])
+            actual_freq = float(freqs[mask][peak_idx])
+            harmonic_amps.append(amp)
+            harmonic_freqs_actual.append(actual_freq)
+        else:
+            harmonic_amps.append(0.0)
+            harmonic_freqs_actual.append(target)
+
+    if not harmonic_amps or max(harmonic_amps) < 1e-10:
+        return {
+            "harmonic_centroid_ratio": 0.0,
+            "harmonic_spread": 0.0,
+            "odd_even_ratio": 0.5,
+            "harmonic_decay_rate": 0.0,
+            "inharmonicity": 0.0,
+        }
+
+    amps = np.array(harmonic_amps, dtype=np.float32)
+    amps_norm = amps / np.max(amps)
+
+    # --- 하모닉 무게중심 (몇 번째 하모닉에 에너지 집중?) ---
+    h_indices = np.arange(1, len(amps) + 1, dtype=np.float32)
+    h_centroid = float(np.sum(h_indices * amps) / np.sum(amps))
+    # f0 대비 비율로 정규화
+    harmonic_centroid_ratio = h_centroid / max_harmonic
+
+    # --- 하모닉 분산 (에너지가 넓게/좁게 퍼져있나) ---
+    harmonic_spread = float(np.sqrt(np.sum(((h_indices - h_centroid) ** 2) * amps) / np.sum(amps)))
+
+    # --- 홀수/짝수 비율 (0=짝수만, 0.5=균등, 1=홀수만) ---
+    odd_energy = float(np.sum(amps[0::2]))   # 1st, 3rd, 5th...
+    even_energy = float(np.sum(amps[1::2]))  # 2nd, 4th, 6th...
+    total = odd_energy + even_energy
+    odd_even_ratio = odd_energy / total if total > 1e-10 else 0.5
+
+    # --- 하모닉 감쇠율 (고차 하모닉이 얼마나 빨리 줄어드나) ---
+    if len(amps_norm) > 2:
+        log_amps = np.log(amps_norm + 1e-10)
+        decay_rate = -float(np.polyfit(h_indices[:len(log_amps)], log_amps, 1)[0])
+    else:
+        decay_rate = 0.0
+
+    # --- 비정수배 정도 (inharmonicity) ---
+    # 실제 피크 주파수와 정수배 f0의 편차
+    deviations = []
+    for h, actual in enumerate(harmonic_freqs_actual, 1):
+        ideal = f0 * h
+        if ideal > 0:
+            dev = abs(actual - ideal) / ideal
+            deviations.append(dev)
+    inharmonicity = float(np.mean(deviations)) if deviations else 0.0
+
+    return {
+        "harmonic_centroid_ratio": round(harmonic_centroid_ratio, 4),  # 에너지 집중 위치 (0~1)
+        "harmonic_spread": round(harmonic_spread, 4),                  # 에너지 분산
+        "odd_even_ratio": round(odd_even_ratio, 4),                    # 홀수/짝수 (0.5=균등, 1=홀수만=square)
+        "harmonic_decay_rate": round(decay_rate, 4),                   # 감쇠율 (높을수록 어두운 톤)
+        "inharmonicity": round(inharmonicity, 6),                      # 비정수배 정도 (0=순수, 높을수록 벨/메탈릭)
+    }
 
 
 def compute_envelope_curvature(
@@ -544,3 +762,101 @@ def _estimate_harmonic_ratio(mono: np.ndarray, sr: int, frame_size: int = 4096) 
     harmonic_power = np.sum(power[top_indices])
 
     return float(harmonic_power / total_power)
+
+
+def _compute_peak_freq_trajectory(
+    mono: np.ndarray,
+    sample_rate: int,
+    frame_size: int = 2048,
+    hop_size: int = 512,
+    rms_frames: list = None,
+) -> dict:
+    """Peak frequency spectrogram → filter envelope trajectory
+
+    각 프레임에서 가장 에너지가 높은 주파수를 추적.
+    이 궤적의 변화가 filter cutoff envelope을 직접 반영.
+
+    Returns:
+        peak_freq_start: 시작 구간 피크 주파수 (Hz)
+        peak_freq_peak: RMS 피크 구간 피크 주파수
+        peak_freq_sustain: 서스테인 구간 피크 주파수
+        peak_freq_sweep_range: 전체 피크 주파수 변화 폭 (Hz)
+        peak_freq_attack_ratio: start→peak 변화 비율 (>1=filter opening)
+        peak_freq_decay_ratio: peak→sustain 변화 비율 (<1=filter closing)
+        spectral_peak_stability: 피크 주파수 안정도 (0=많이 변함, 1=안정)
+    """
+    n_samples = len(mono)
+    freqs = np.fft.rfftfreq(frame_size, d=1.0 / sample_rate)
+    window = np.hanning(frame_size).astype(np.float32)
+
+    peak_freqs = []
+    for start in range(0, n_samples - frame_size + 1, hop_size):
+        frame = mono[start: start + frame_size]
+        spectrum = np.abs(np.fft.rfft(frame * window))
+        # DC 제외 (20Hz 이상)
+        min_bin = max(1, int(20 * frame_size / sample_rate))
+        peak_bin = min_bin + np.argmax(spectrum[min_bin:])
+        peak_freqs.append(float(freqs[peak_bin]))
+
+    if len(peak_freqs) < 4:
+        return {
+            "peak_freq_start": 0.0, "peak_freq_peak": 0.0,
+            "peak_freq_sustain": 0.0, "peak_freq_sweep_range": 0.0,
+            "peak_freq_attack_ratio": 1.0, "peak_freq_decay_ratio": 1.0,
+            "spectral_peak_stability": 1.0,
+        }
+
+    pf = np.array(peak_freqs, dtype=np.float32)
+    n = len(pf)
+
+    # RMS 기반 구간 분리
+    if rms_frames and len(rms_frames) >= n:
+        rms = np.array(rms_frames[:n], dtype=np.float32)
+    else:
+        rms = np.ones(n, dtype=np.float32)
+
+    rms_max = np.max(rms)
+    if rms_max < 1e-10:
+        peak_idx = n // 4
+    else:
+        peak_idx = int(np.argmax(rms))
+
+    # 유효 구간만 (소리가 나는 프레임)
+    active = rms > rms_max * 0.05
+
+    # 시작 구간 (처음 10%)
+    start_end = max(1, n // 10)
+    start_pf = float(np.median(pf[:start_end])) if start_end > 0 else pf[0]
+
+    # 피크 구간 (RMS 피크 ±5프레임)
+    pk_start = max(0, peak_idx - 5)
+    pk_end = min(n, peak_idx + 5)
+    peak_pf = float(np.median(pf[pk_start:pk_end]))
+
+    # 서스테인 구간 (피크 이후 중간)
+    sus_start = min(peak_idx + n // 10, n - 1)
+    sus_end = max(sus_start + 1, n - n // 10)
+    sustain_pf = float(np.median(pf[sus_start:sus_end])) if sus_end > sus_start else peak_pf
+
+    # 변화 비율
+    attack_ratio = peak_pf / max(start_pf, 1.0)
+    decay_ratio = sustain_pf / max(peak_pf, 1.0)
+
+    # 전체 스윕 범위
+    active_pf = pf[active] if np.any(active) else pf
+    sweep_range = float(np.max(active_pf) - np.min(active_pf))
+
+    # 안정도 (변동 계수의 역수)
+    pf_std = float(np.std(active_pf))
+    pf_mean = float(np.mean(active_pf))
+    stability = 1.0 / (1.0 + pf_std / max(pf_mean, 1.0))
+
+    return {
+        "peak_freq_start": round(start_pf, 1),
+        "peak_freq_peak": round(peak_pf, 1),
+        "peak_freq_sustain": round(sustain_pf, 1),
+        "peak_freq_sweep_range": round(sweep_range, 1),
+        "peak_freq_attack_ratio": round(attack_ratio, 4),    # >1 = filter opening
+        "peak_freq_decay_ratio": round(decay_ratio, 4),      # <1 = filter closing
+        "spectral_peak_stability": round(stability, 4),
+    }
