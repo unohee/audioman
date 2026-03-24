@@ -36,9 +36,10 @@ FEATURE_KEYS = [
 
 # 출력 파라미터 키 + 그룹별 가중치
 PARAM_GROUPS = {
-    # 파형/모드 — 소리의 기본 캐릭터 (가중치 3.0)
+    # 파형/모드/웨이브테이블 — 소리의 기본 캐릭터 (가중치 3.0)
     'waveform': {
-        'keys': ['osc1_mode', 'osc1_waveform', 'osc2_mode', 'osc2_waveform'],
+        'keys': ['osc1_mode', 'osc1_waveform', 'osc1_table',
+                 'osc2_mode', 'osc2_waveform', 'osc2_table'],
         'weight': 3.0,
     },
     # 오실레이터 볼륨/피치 — 믹스 밸런스 (가중치 2.0)
@@ -130,13 +131,30 @@ def load_dataset(
             features = np.concatenate([features, clap], axis=1)
             logger.info(f'CLAP 임베딩 추가: {features.shape}')
 
+    # params + spectral ground truth 보정
     params = []
-    with open(ds / 'params.jsonl') as f:
-        for line in f:
-            d = json.loads(line)
-            params.append([float(d.get(k, 0.0)) for k in PARAM_KEYS])
-    params = np.array(params, dtype=np.float32)
+    feat_lines = open(ds / 'features.jsonl').readlines() if (ds / 'features.jsonl').exists() else []
+    feat_dicts = [json.loads(l) for l in feat_lines]
 
+    with open(ds / 'params.jsonl') as f:
+        for i, line in enumerate(f):
+            d = json.loads(line)
+            row = [float(d.get(k, 0.0)) for k in PARAM_KEYS]
+
+            # spectral NN ground truth로 WT 파라미터 보정
+            if i < len(feat_dicts):
+                fd = feat_dicts[i]
+                if 'gt_table_idx' in fd:
+                    # osc1_table → gt_table_idx, osc1_waveform → gt_frame_pos
+                    for j, k in enumerate(PARAM_KEYS):
+                        if k == 'osc1_table':
+                            row[j] = float(fd['gt_table_idx'])
+                        elif k == 'osc1_waveform' and d.get('osc1_mode', 0) > 0.3:
+                            row[j] = float(fd['gt_frame_pos'])
+
+            params.append(row)
+
+    params = np.array(params, dtype=np.float32)
     return features, params
 
 
