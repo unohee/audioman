@@ -21,6 +21,76 @@ from typing import Optional
 
 import numpy as np
 
+# =============================================================================
+# 웨이브테이블 팩 (하모닉 합성 기반, 16개)
+# =============================================================================
+
+_WT_SIZE = 2048
+_WT_CACHE: list[np.ndarray] = []
+
+
+def _build_wavetable(harmonics: list[tuple[float, float]]) -> np.ndarray:
+    t = np.linspace(0, 2 * np.pi, _WT_SIZE, dtype=np.float32)
+    wave = np.zeros(_WT_SIZE, dtype=np.float32)
+    for h, amp in harmonics:
+        wave += amp * np.sin(h * t)
+    peak = np.max(np.abs(wave))
+    return wave / peak if peak > 0 else wave
+
+
+def _get_wavetable_pack() -> list[np.ndarray]:
+    """16개 웨이브테이블 팩 (position 0~1 → 인덱스 0~15)"""
+    if _WT_CACHE:
+        return _WT_CACHE
+
+    tables = [
+        # 0: Sine (순수)
+        [(1, 1.0)],
+        # 1: Sine + 2nd (옥타브 위)
+        [(1, 1.0), (2, 0.5)],
+        # 2: Triangle (additive)
+        [(i, ((-1)**((i-1)//2)) / (i*i)) for i in range(1, 16, 2)],
+        # 3: Soft saw (적은 하모닉)
+        [(i, 1.0/i) for i in range(1, 8)],
+        # 4: Saw (풍부한 하모닉)
+        [(i, 1.0/i) for i in range(1, 32)],
+        # 5: Square (홀수 하모닉)
+        [(i, 1.0/i) for i in range(1, 32, 2)],
+        # 6: Pulse narrow (좁은 펄스)
+        [(i, 1.0/max(1, i*0.5)) for i in range(1, 24)],
+        # 7: Hollow (짝수 하모닉 제거)
+        [(1, 1.0), (3, 0.7), (5, 0.5), (7, 0.3), (9, 0.2)],
+        # 8: Bright digital
+        [(1, 1.0), (3, 0.8), (5, 0.7), (7, 0.6), (9, 0.5), (11, 0.4), (13, 0.35), (15, 0.3)],
+        # 9: Formant A (모음 'a' 흉내)
+        [(1, 1.0), (2, 0.7), (3, 0.3), (4, 0.1), (8, 0.4), (9, 0.3), (10, 0.2)],
+        # 10: Formant O
+        [(1, 1.0), (2, 0.5), (5, 0.4), (6, 0.3), (7, 0.2)],
+        # 11: Metallic (비정수배 하모닉)
+        [(1, 1.0), (2.756, 0.5), (5.404, 0.3), (8.933, 0.15)],
+        # 12: Bell
+        [(1, 1.0), (2.0, 0.6), (3.0, 0.4), (4.16, 0.25), (5.43, 0.2), (6.8, 0.15)],
+        # 13: Harsh digital (모든 하모닉 동일 진폭)
+        [(i, 0.3) for i in range(1, 20)],
+        # 14: Sub-heavy (기본음 강조)
+        [(1, 1.0), (2, 0.15), (3, 0.1), (4, 0.05)],
+        # 15: Noise-like (많은 비정수배)
+        [(1, 1.0), (1.5, 0.4), (2.3, 0.3), (3.7, 0.25), (5.1, 0.2), (7.3, 0.15), (11.7, 0.1)],
+    ]
+
+    for harmonics in tables:
+        _WT_CACHE.append(_build_wavetable(harmonics))
+
+    return _WT_CACHE
+
+
+def get_wavetable_by_position(position: float) -> np.ndarray:
+    """0~1 position → 16개 웨이브테이블 중 선택 (보간 없음)"""
+    pack = _get_wavetable_pack()
+    idx = int(position * (len(pack) - 1))
+    idx = max(0, min(len(pack) - 1, idx))
+    return pack[idx]
+
 logger = logging.getLogger(__name__)
 
 
@@ -283,16 +353,13 @@ def render_patch(
         else:
             return sf.SineOscillator(freq)
 
-    def make_wt_osc(freq, wt_data: Optional[np.ndarray] = None) -> sf.Node:
+    def make_wt_osc(freq, waveform_pos: float, wt_data: Optional[np.ndarray] = None) -> sf.Node:
+        """웨이브테이블 오실레이터 — position으로 16개 테이블 중 선택"""
         if wt_data is not None:
-            buf = sf.Buffer(wt_data.tolist())
+            wave = wt_data
         else:
-            # 기본 웨이브테이블: 사인 + 하모닉스
-            size = 2048
-            t = np.linspace(0, 2 * np.pi, size, dtype=np.float32)
-            wave = (np.sin(t) + 0.5 * np.sin(2 * t) + 0.3 * np.sin(3 * t)).astype(np.float32)
-            wave /= np.max(np.abs(wave))
-            buf = sf.Buffer(wave.tolist())
+            wave = get_wavetable_by_position(waveform_pos)
+        buf = sf.Buffer(wave.tolist())
         return sf.Wavetable(buf, freq)
 
     # OSC1 피치
@@ -319,7 +386,7 @@ def render_patch(
     if patch.osc1_mode < 0.33:
         osc1 = make_va_osc(patch.osc1_waveform, fm_carrier_freq)
     elif patch.osc1_mode < 0.66:
-        osc1 = make_wt_osc(fm_carrier_freq, wavetable_data)
+        osc1 = make_wt_osc(fm_carrier_freq, patch.osc1_waveform, wavetable_data)
     else:
         osc1 = make_va_osc(patch.osc1_waveform, fm_carrier_freq)  # FM은 위에서 처리됨
 
@@ -327,7 +394,7 @@ def render_patch(
     if patch.osc2_mode < 0.33:
         osc2 = make_va_osc(patch.osc2_waveform, osc2_freq)
     elif patch.osc2_mode < 0.66:
-        osc2 = make_wt_osc(osc2_freq, wavetable_data)
+        osc2 = make_wt_osc(osc2_freq, patch.osc2_waveform, wavetable_data)
     else:
         osc2 = make_va_osc(patch.osc2_waveform, osc2_freq)
 
