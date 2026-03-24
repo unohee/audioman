@@ -417,6 +417,9 @@ def render_patch(
 
     audio = np.array(buf.data, dtype=np.float32)
 
+    # 그래프 정리 (글로벌 싱글턴 해제 — 반복 호출 시 필수)
+    graph.destroy()
+
     # 페이드아웃
     fade_n = min(int(0.5 * sample_rate), audio.shape[1])
     if fade_n > 0:
