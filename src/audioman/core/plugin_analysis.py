@@ -620,28 +620,34 @@ def measure_clap_profile(
     param_values_list = list(param_sweeps.values())
     combinations = list(itertools.product(*param_values_list))
 
-    # 각 조합별 렌더링 → WAV
+    # 플러그인 한 번만 로딩, 파라미터만 교체
+    from pedalboard import load_plugin as pb_load
+    plugin = pb_load(plugin_path)
+    if base_params:
+        for k, v in base_params.items():
+            try:
+                setattr(plugin, k, v)
+            except Exception:
+                pass
+
     tmpdir = tempfile.mkdtemp()
     wav_paths = []
     labels = []
     param_records = []
 
     for combo in combinations:
-        wrapper_i = _load_plugin(plugin_path, base_params)
-
-        # 파라미터 적용
+        # 파라미터 적용 (같은 인스턴스 재사용)
         param_dict = dict(zip(param_names, combo))
         for k, v in param_dict.items():
             try:
-                setattr(wrapper_i._plugin, k, v)
+                setattr(plugin, k, v)
             except Exception:
                 try:
-                    # pedalboard 스타일
-                    setattr(wrapper_i._plugin, k.replace(' ', '_'), v)
+                    setattr(plugin, k.replace(' ', '_'), v)
                 except Exception:
                     pass
 
-        output = wrapper_i.process(test, sample_rate)
+        output = plugin.process(test, sample_rate)
 
         # WAV 저장
         label = ", ".join(f"{k}={v}" for k, v in param_dict.items())
