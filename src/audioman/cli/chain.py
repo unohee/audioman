@@ -134,21 +134,30 @@ def _chain_one(job_args):
 
 
 def _run_chain_sequential(args, jobs, steps, total):
+    from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
+
     ok, fail = 0, 0
-    for i, (fpath, out_path, _) in enumerate(jobs):
-        try:
-            result = run_pipeline(input_path=fpath, output_path=out_path, steps=steps)
-            ok += 1
-            if args.json:
-                print(json.dumps({"command": "chain", **result.to_dict()}, ensure_ascii=False, default=str))
-            else:
-                output_console.print(f"  [{i+1}/{total}] {Path(fpath).name} → {Path(out_path).name} ({result.duration_seconds}s)")
-        except Exception as e:
-            fail += 1
-            if args.json:
-                print(json.dumps({"command": "chain", "input": fpath, "error": str(e)}, ensure_ascii=False))
-            else:
-                print_warning(f"  [{i+1}/{total}] {Path(fpath).name}: {e}")
+    with Progress(
+        SpinnerColumn(), TextColumn("[bold blue]{task.description}"),
+        BarColumn(), TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TextColumn("{task.completed}/{task.total}"),
+        TimeElapsedColumn(), TextColumn("ETA"), TimeRemainingColumn(),
+        console=output_console, disable=args.json,
+    ) as progress:
+        task_id = progress.add_task("체인 처리", total=total)
+        for i, (fpath, out_path, _) in enumerate(jobs):
+            try:
+                result = run_pipeline(input_path=fpath, output_path=out_path, steps=steps)
+                ok += 1
+                if args.json:
+                    print(json.dumps({"command": "chain", **result.to_dict()}, ensure_ascii=False, default=str))
+            except Exception as e:
+                fail += 1
+                if args.json:
+                    print(json.dumps({"command": "chain", "input": fpath, "error": str(e)}, ensure_ascii=False))
+                elif not args.json:
+                    print_warning(f"  {Path(fpath).name}: {e}")
+            progress.update(task_id, advance=1, description=f"{Path(fpath).name}")
     if not args.json:
         print_success(f"배치 완료: {ok} 성공, {fail} 실패 / {total} 전체")
 

@@ -137,24 +137,40 @@ def _process_one(job_args):
 
 
 def _run_batch_sequential(args, jobs, total):
+    from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
+
     ok, fail = 0, 0
-    for i, job in enumerate(jobs):
-        fpath = job[0]
-        out_path = job[1]
-        r = _process_one(job)
-        if r["ok"]:
-            ok += 1
-            if args.json:
-                print(json.dumps({"command": "process", **r["result"]}, ensure_ascii=False, default=str))
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[bold blue]{task.description}"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TextColumn("{task.completed}/{task.total}"),
+        TimeElapsedColumn(),
+        TextColumn("ETA"),
+        TimeRemainingColumn(),
+        console=output_console,
+        disable=args.json,
+    ) as progress:
+        task_id = progress.add_task("처리", total=total)
+
+        for i, job in enumerate(jobs):
+            fpath = job[0]
+            out_path = job[1]
+            r = _process_one(job)
+            if r["ok"]:
+                ok += 1
+                if args.json:
+                    print(json.dumps({"command": "process", **r["result"]}, ensure_ascii=False, default=str))
             else:
-                dur = r["result"]["duration_seconds"]
-                output_console.print(f"  [{i+1}/{total}] {fpath.name} → {out_path.name} ({dur}s)")
-        else:
-            fail += 1
-            if args.json:
-                print(json.dumps({"command": "process", "input": r["input"], "error": r["error"]}, ensure_ascii=False))
-            else:
-                print_warning(f"  [{i+1}/{total}] {fpath.name}: {r['error']}")
+                fail += 1
+                if args.json:
+                    print(json.dumps({"command": "process", "input": r["input"], "error": r["error"]}, ensure_ascii=False))
+                elif not args.json:
+                    print_warning(f"  {fpath.name}: {r['error']}")
+
+            progress.update(task_id, advance=1, description=f"{fpath.name}")
 
     if not args.json:
         print_success(f"배치 완료: {ok} 성공, {fail} 실패 / {total} 전체")
