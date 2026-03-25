@@ -139,7 +139,7 @@ class PluginRegistry:
         for search_dir in vst3_paths:
             if not search_dir.exists():
                 continue
-            for vst3 in sorted(search_dir.glob("*.vst3")):
+            for vst3 in sorted(search_dir.glob("**/*.vst3")):
                 meta = _parse_vst3_info(vst3)
                 if meta:
                     self._register(meta)
