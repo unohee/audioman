@@ -16,7 +16,6 @@ dependencies = [
 
 [project.optional-dependencies]
 vamp = ["vamp>=1.1.0"]
-instrument = ["dawdreamer>=0.8", "mido>=1.3"]
 
 [project.scripts]
 audioman = "audioman.cli.app:main"

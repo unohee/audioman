@@ -28,3 +28,4 @@ testing/
 trash/
 .python-version
 outputs/
+presets/
