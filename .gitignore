@@ -29,3 +29,4 @@ trash/
 .python-version
 outputs/
 presets/
+*.pdf
