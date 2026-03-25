@@ -35,6 +35,12 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--compare", metavar="PLUGIN2", help="2번째 플러그인과 비교")
     parser.add_argument("--compare-param", action="append", default=[], help="2번째 플러그인 파라미터")
 
+    # CLAP 임베딩
+    parser.add_argument("--clap", action="store_true", help="CLAP 임베딩 프로파일링 (파라미터별 새추레이션 지문)")
+    parser.add_argument("--clap-sweep", metavar="PARAM=v1,v2,...", action="append", default=[],
+                        help="CLAP 스윕 파라미터 (예: --clap-sweep drive=0,25,50,75,100)")
+    parser.add_argument("--clap-output", metavar="NPY", help="CLAP 임베딩 npy 저장 경로")
+
     # 출력
     parser.add_argument("--output", "-o", metavar="FILE", help="결과 JSON 파일 저장")
 
@@ -172,6 +178,70 @@ def run(args: argparse.Namespace) -> None:
 
         except Exception as e:
             results[mode] = {"error": str(e)}
+            if not args.json:
+                output_console.print(f"  [red]에러: {e}[/red]")
+
+    # CLAP 임베딩 프로파일링
+    if args.clap or args.clap_sweep:
+        if not args.json:
+            output_console.print(f"\n[bold cyan]CLAP[/bold cyan] 임베딩 프로파일링...", highlight=False)
+
+        # 스윕 파라미터 파싱
+        sweeps = {}
+        for sweep_str in args.clap_sweep:
+            if '=' not in sweep_str:
+                continue
+            key, vals = sweep_str.split('=', 1)
+            values = []
+            for v in vals.split(','):
+                v = v.strip()
+                try:
+                    values.append(float(v))
+                except ValueError:
+                    values.append(v)  # enum 문자열
+            sweeps[key.strip()] = values
+
+        # 스윕이 없으면 기본 drive 스윕
+        if not sweeps:
+            sweeps = {"drive": [0, 25, 50, 75, 100]}
+
+        try:
+            r = pa.measure_clap_profile(
+                plugin_path, sweeps, params,
+                sample_rate=args.sample_rate,
+                test_frequency=args.frequency,
+                test_level_db=args.level,
+            )
+            results["clap"] = {
+                "n_settings": r["n_settings"],
+                "embedding_dim": r["embedding_dim"],
+                "labels": r["labels"],
+            }
+            if not args.json:
+                output_console.print(f"  {r['n_settings']}개 설정 × {r['embedding_dim']}dim 임베딩")
+                for label in r["labels"][:5]:
+                    output_console.print(f"    {label}")
+                if len(r["labels"]) > 5:
+                    output_console.print(f"    ... +{len(r['labels'])-5} more")
+
+            # npy 저장
+            if args.clap_output:
+                np.save(args.clap_output, r["embeddings_npy"])
+                if not args.json:
+                    print_success(f"CLAP 임베딩 저장: {args.clap_output} ({r['embeddings_npy'].shape})")
+
+                # 라벨 JSON도 같이 저장
+                import json as _json
+                label_path = args.clap_output.replace('.npy', '_labels.json')
+                with open(label_path, 'w') as f:
+                    _json.dump({"labels": r["labels"], "params": r["params"]}, f, indent=2, default=str)
+
+        except ImportError as e:
+            results["clap"] = {"error": "laion-clap 미설치: pip install laion-clap"}
+            if not args.json:
+                output_console.print(f"  [yellow]laion-clap 미설치[/yellow]")
+        except Exception as e:
+            results["clap"] = {"error": str(e)}
             if not args.json:
                 output_console.print(f"  [red]에러: {e}[/red]")
 

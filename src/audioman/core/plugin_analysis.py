@@ -570,3 +570,114 @@ def compare_linear(
         "diff_magnitude_db": diff_db,
         "diff_phase_deg": diff_phase,
     }
+
+
+# =============================================================================
+# 7. CLAP 임베딩 프로파일링
+# =============================================================================
+
+
+def measure_clap_profile(
+    plugin_path: str,
+    param_sweeps: dict[str, list],
+    base_params: Optional[dict] = None,
+    sample_rate: int = 44100,
+    duration_sec: float = 2.0,
+    test_frequency: float = 1000.0,
+    test_level_db: float = -6.0,
+) -> dict:
+    """파라미터 스윕별 CLAP 임베딩 생성 — 새추레이션 "지문"
+
+    Args:
+        plugin_path: VST3 경로
+        param_sweeps: {"drive": [0, 25, 50, 75, 100], "style": ["Soft", "Hard"]}
+        base_params: 기본 파라미터 {"mix": 100.0, ...}
+
+    Returns: {
+        "embeddings": [(param_values, embedding_512d), ...],
+        "labels": ["drive=0", "drive=25", ...],
+        "embeddings_npy": np.ndarray (N, 512),
+    }
+    """
+    try:
+        import laion_clap
+    except ImportError:
+        raise ImportError("CLAP 필요: pip install laion-clap")
+
+    import soundfile as sf
+    import tempfile
+    import os
+
+    wrapper = _load_plugin(plugin_path, base_params)
+
+    # 테스트 신호
+    n_samples = int(duration_sec * sample_rate)
+    test = generate_sine(test_frequency, sample_rate, duration_sec, test_level_db)
+
+    # 모든 파라미터 조합 생성
+    import itertools
+    param_names = list(param_sweeps.keys())
+    param_values_list = list(param_sweeps.values())
+    combinations = list(itertools.product(*param_values_list))
+
+    # 각 조합별 렌더링 → WAV
+    tmpdir = tempfile.mkdtemp()
+    wav_paths = []
+    labels = []
+    param_records = []
+
+    for combo in combinations:
+        wrapper_i = _load_plugin(plugin_path, base_params)
+
+        # 파라미터 적용
+        param_dict = dict(zip(param_names, combo))
+        for k, v in param_dict.items():
+            try:
+                setattr(wrapper_i._plugin, k, v)
+            except Exception:
+                try:
+                    # pedalboard 스타일
+                    setattr(wrapper_i._plugin, k.replace(' ', '_'), v)
+                except Exception:
+                    pass
+
+        output = wrapper_i.process(test, sample_rate)
+
+        # WAV 저장
+        label = ", ".join(f"{k}={v}" for k, v in param_dict.items())
+        labels.append(label)
+        param_records.append(param_dict)
+
+        wav_path = os.path.join(tmpdir, f"{len(wav_paths):04d}.wav")
+        if output.ndim == 2:
+            sf.write(wav_path, output.T, sample_rate, subtype='FLOAT')
+        else:
+            sf.write(wav_path, output, sample_rate, subtype='FLOAT')
+        wav_paths.append(wav_path)
+
+    # CLAP 인코딩
+    logger.info(f"CLAP 인코딩: {len(wav_paths)}개 설정")
+    model = laion_clap.CLAP_Module(enable_fusion=False)
+    model.load_ckpt()
+
+    batch_size = 32
+    all_emb = []
+    for i in range(0, len(wav_paths), batch_size):
+        batch = wav_paths[i:i + batch_size]
+        emb = model.get_audio_embedding_from_filelist(batch, use_tensor=False)
+        all_emb.append(emb)
+
+    embeddings = np.concatenate(all_emb, axis=0)
+
+    # 정리
+    for p in wav_paths:
+        os.unlink(p)
+    os.rmdir(tmpdir)
+
+    return {
+        "labels": labels,
+        "params": param_records,
+        "embeddings_npy": embeddings,
+        "n_settings": len(combinations),
+        "embedding_dim": embeddings.shape[1],
+    }
