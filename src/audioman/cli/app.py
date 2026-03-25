@@ -7,18 +7,19 @@ import sys
 
 from audioman import __version__
 from audioman.cli import scan, list_cmd, info, process, chain, preset, dump, analyze, fx, visualize, doctor
+from audioman.i18n import _
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="audioman",
-        description="Cross-platform CLI wrapper for VST3/AU audio plugins",
+        description=_("Cross-platform CLI wrapper for VST3/AU audio plugins"),
     )
     parser.add_argument("--version", action="version", version=f"audioman {__version__}")
-    parser.add_argument("--json", action="store_true", help="JSON 출력 모드")
-    parser.add_argument("--verbose", "-v", action="store_true", help="상세 로깅")
+    parser.add_argument("--json", action="store_true", help=_("JSON output mode"))
+    parser.add_argument("--verbose", "-v", action="store_true", help=_("Verbose logging"))
 
-    subparsers = parser.add_subparsers(dest="command", help="사용 가능한 명령")
+    subparsers = parser.add_subparsers(dest="command", help=_("Available commands"))
 
     scan.add_parser(subparsers)
     list_cmd.add_parser(subparsers)

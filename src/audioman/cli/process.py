@@ -8,21 +8,22 @@ import sys
 from audioman.cli.output import print_error, print_json, print_success, print_warning, output_console
 from audioman.core.engine import parse_params, process_file
 from audioman.core.batch import collect_audio_files, resolve_output_path
+from audioman.i18n import _
 from pathlib import Path
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
-    parser = subparsers.add_parser("process", help="단일 플러그인으로 오디오 처리")
+    parser = subparsers.add_parser("process", help=_("Process audio with a single plugin"))
     # 입력: 파일 또는 디렉토리
-    parser.add_argument("input", help="입력 오디오 파일 또는 디렉토리")
-    parser.add_argument("--plugin", "-p", required=True, help="플러그인 이름")
-    parser.add_argument("--param", action="append", default=[], help="파라미터 (key=value)")
-    parser.add_argument("--output", "-o", required=True, help="출력 파일 또는 디렉토리")
-    parser.add_argument("--passes", type=int, default=1, help="처리 횟수 (2=adaptive 학습용 멀티패스)")
-    parser.add_argument("--recursive", "-r", action="store_true", help="하위 디렉토리 포함 (배치)")
-    parser.add_argument("--suffix", default="", help="출력 파일명 접미사 (배치)")
-    parser.add_argument("--dry-run", action="store_true", help="실행하지 않고 계획만 표시")
-    parser.add_argument("--workers", "-w", type=int, default=1, help="병렬 처리 워커 수 (기본: 1)")
+    parser.add_argument("input", help=_("Input audio file or directory"))
+    parser.add_argument("--plugin", "-p", required=True, help=_("Plugin name"))
+    parser.add_argument("--param", action="append", default=[], help=_("Parameter (key=value)"))
+    parser.add_argument("--output", "-o", required=True, help=_("Output file or directory"))
+    parser.add_argument("--passes", type=int, default=1, help=_("Number of passes (2=adaptive learning multi-pass)"))
+    parser.add_argument("--recursive", "-r", action="store_true", help=_("Include subdirectories (batch)"))
+    parser.add_argument("--suffix", default="", help=_("Output filename suffix (batch)"))
+    parser.add_argument("--dry-run", action="store_true", help=_("Show plan without executing"))
+    parser.add_argument("--workers", "-w", type=int, default=1, help=_("Number of parallel workers (default: 1)"))
     parser.set_defaults(func=run)
 
 

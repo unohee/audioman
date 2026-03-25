@@ -12,69 +12,70 @@ from audioman.cli.output import print_error, print_json, print_success, print_wa
 from audioman.core.audio_file import read_audio, write_audio, get_audio_stats
 from audioman.core.batch import collect_audio_files, resolve_output_path
 from audioman.core import dsp
+from audioman.i18n import _
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
-    parser = subparsers.add_parser("fx", help="내장 DSP 이펙트 (fade, trim, normalize, gate, gain)")
-    parser.add_argument("input", help="입력 오디오 파일 또는 디렉토리")
+    parser = subparsers.add_parser("fx", help=_("Built-in DSP effects (fade, trim, normalize, gate, gain)"))
+    parser.add_argument("input", help=_("Input audio file or directory"))
 
-    fx_sub = parser.add_subparsers(dest="effect", help="이펙트 종류")
+    fx_sub = parser.add_subparsers(dest="effect", help=_("Effect type"))
 
     # fade-in
-    fi = fx_sub.add_parser("fade-in", help="선형 fade in")
-    fi.add_argument("--samples", type=int, default=None, help="fade 길이 (샘플)")
-    fi.add_argument("--duration", type=float, default=None, help="fade 길이 (초)")
-    fi.add_argument("--output", "-o", required=True, help="출력 경로")
+    fi = fx_sub.add_parser("fade-in", help=_("Linear fade in"))
+    fi.add_argument("--samples", type=int, default=None, help=_("Fade length (samples)"))
+    fi.add_argument("--duration", type=float, default=None, help=_("Fade length (seconds)"))
+    fi.add_argument("--output", "-o", required=True, help=_("Output path"))
     fi.add_argument("--recursive", "-r", action="store_true")
     fi.add_argument("--suffix", default="")
 
     # fade-out
-    fo = fx_sub.add_parser("fade-out", help="선형 fade out")
-    fo.add_argument("--samples", type=int, default=None, help="fade 길이 (샘플)")
-    fo.add_argument("--duration", type=float, default=None, help="fade 길이 (초)")
-    fo.add_argument("--output", "-o", required=True, help="출력 경로")
+    fo = fx_sub.add_parser("fade-out", help=_("Linear fade out"))
+    fo.add_argument("--samples", type=int, default=None, help=_("Fade length (samples)"))
+    fo.add_argument("--duration", type=float, default=None, help=_("Fade length (seconds)"))
+    fo.add_argument("--output", "-o", required=True, help=_("Output path"))
     fo.add_argument("--recursive", "-r", action="store_true")
     fo.add_argument("--suffix", default="")
 
     # trim
-    tr = fx_sub.add_parser("trim", help="샘플/시간 단위 트리밍")
-    tr.add_argument("--start", type=int, default=0, help="시작 샘플")
-    tr.add_argument("--end", type=int, default=None, help="끝 샘플")
-    tr.add_argument("--start-sec", type=float, default=None, help="시작 (초)")
-    tr.add_argument("--end-sec", type=float, default=None, help="끝 (초)")
-    tr.add_argument("--output", "-o", required=True, help="출력 경로")
+    tr = fx_sub.add_parser("trim", help=_("Trim by samples/time"))
+    tr.add_argument("--start", type=int, default=0, help=_("Start sample"))
+    tr.add_argument("--end", type=int, default=None, help=_("End sample"))
+    tr.add_argument("--start-sec", type=float, default=None, help=_("Start (seconds)"))
+    tr.add_argument("--end-sec", type=float, default=None, help=_("End (seconds)"))
+    tr.add_argument("--output", "-o", required=True, help=_("Output path"))
     tr.add_argument("--recursive", "-r", action="store_true")
     tr.add_argument("--suffix", default="")
 
     # trim-silence
-    ts = fx_sub.add_parser("trim-silence", help="앞뒤 silence 제거")
-    ts.add_argument("--threshold", type=float, default=-40.0, help="임계값 dB (기본: -40)")
-    ts.add_argument("--pad", type=int, default=0, help="silence 경계 패딩 샘플")
-    ts.add_argument("--output", "-o", required=True, help="출력 경로")
+    ts = fx_sub.add_parser("trim-silence", help=_("Trim leading/trailing silence"))
+    ts.add_argument("--threshold", type=float, default=-40.0, help=_("Threshold dB (default: -40)"))
+    ts.add_argument("--pad", type=int, default=0, help=_("Silence boundary padding samples"))
+    ts.add_argument("--output", "-o", required=True, help=_("Output path"))
     ts.add_argument("--recursive", "-r", action="store_true")
     ts.add_argument("--suffix", default="")
 
     # normalize
-    nm = fx_sub.add_parser("normalize", help="정규화 (peak 또는 RMS)")
-    nm.add_argument("--peak", type=float, default=None, help="피크 목표 dB (예: -1)")
-    nm.add_argument("--target-rms", type=float, default=None, help="RMS 목표 dB (예: -20)")
-    nm.add_argument("--output", "-o", required=True, help="출력 경로")
+    nm = fx_sub.add_parser("normalize", help=_("Normalize (peak or RMS)"))
+    nm.add_argument("--peak", type=float, default=None, help=_("Peak target dB (e.g. -1)"))
+    nm.add_argument("--target-rms", type=float, default=None, help=_("RMS target dB (e.g. -20)"))
+    nm.add_argument("--output", "-o", required=True, help=_("Output path"))
     nm.add_argument("--recursive", "-r", action="store_true")
     nm.add_argument("--suffix", default="")
 
     # gate
-    gt = fx_sub.add_parser("gate", help="노이즈 게이트 (RMS 기반)")
-    gt.add_argument("--threshold", type=float, default=-50.0, help="임계값 dB (기본: -50)")
-    gt.add_argument("--attack", type=float, default=0.01, help="attack 시간 (초)")
-    gt.add_argument("--release", type=float, default=0.05, help="release 시간 (초)")
-    gt.add_argument("--output", "-o", required=True, help="출력 경로")
+    gt = fx_sub.add_parser("gate", help=_("Noise gate (RMS-based)"))
+    gt.add_argument("--threshold", type=float, default=-50.0, help=_("Threshold dB (default: -50)"))
+    gt.add_argument("--attack", type=float, default=0.01, help=_("Attack time (seconds)"))
+    gt.add_argument("--release", type=float, default=0.05, help=_("Release time (seconds)"))
+    gt.add_argument("--output", "-o", required=True, help=_("Output path"))
     gt.add_argument("--recursive", "-r", action="store_true")
     gt.add_argument("--suffix", default="")
 
     # gain
-    gn = fx_sub.add_parser("gain", help="dB 게인")
-    gn.add_argument("--db", type=float, required=True, help="게인 (dB)")
-    gn.add_argument("--output", "-o", required=True, help="출력 경로")
+    gn = fx_sub.add_parser("gain", help=_("dB gain"))
+    gn.add_argument("--db", type=float, required=True, help=_("Gain (dB)"))
+    gn.add_argument("--output", "-o", required=True, help=_("Output path"))
     gn.add_argument("--recursive", "-r", action="store_true")
     gn.add_argument("--suffix", default="")
 

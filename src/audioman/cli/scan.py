@@ -6,12 +6,13 @@ import argparse
 from audioman.cli.output import print_json, print_success, print_table
 from audioman.config.paths import ensure_app_dirs
 from audioman.core.registry import get_registry
+from audioman.i18n import _
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
-    parser = subparsers.add_parser("scan", help="시스템에서 VST3/AU 플러그인 검색")
-    parser.add_argument("--paths", nargs="*", help="추가 검색 경로")
-    parser.add_argument("--refresh", action="store_true", help="캐시 무시하고 재스캔")
+    parser = subparsers.add_parser("scan", help=_("Scan system for VST3/AU plugins"))
+    parser.add_argument("--paths", nargs="*", help=_("Additional search paths"))
+    parser.add_argument("--refresh", action="store_true", help=_("Ignore cache and rescan"))
     parser.set_defaults(func=run)
 
 

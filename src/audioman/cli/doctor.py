@@ -5,15 +5,16 @@ import argparse
 import json
 
 from audioman.cli.output import print_error, print_json, print_success, print_info, output_console
+from audioman.i18n import _
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
         "doctor",
-        help="플러그인 분석 — frequency response, THD, dynamics, waveshaper, performance",
+        help=_("Plugin analysis — frequency response, THD, dynamics, waveshaper, performance"),
     )
-    parser.add_argument("--plugin", "-p", required=True, help="플러그인 이름 또는 경로")
-    parser.add_argument("--param", action="append", default=[], help="파라미터 (key=value)")
+    parser.add_argument("--plugin", "-p", required=True, help=_("Plugin name or path"))
+    parser.add_argument("--param", action="append", default=[], help=_("Parameter (key=value)"))
 
     # 분석 모드
     parser.add_argument(
@@ -21,28 +22,37 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         choices=["linear", "thd", "imd", "sweep", "dynamics", "attack-release",
                  "waveshaper", "performance", "all"],
         default="all",
-        help="분석 모드 (기본: all)",
+        help=_("Analysis mode (default: all)"),
     )
 
     # 옵션
-    parser.add_argument("--frequency", "-f", type=float, default=1000.0, help="테스트 주파수 Hz")
-    parser.add_argument("--level", type=float, default=-6.0, help="입력 레벨 dB")
+    parser.add_argument("--frequency", "-f", type=float, default=1000.0, help=_("Test frequency Hz"))
+    parser.add_argument("--level", type=float, default=-6.0, help=_("Input level dB"))
     parser.add_argument("--sample-rate", "-sr", type=int, default=44100)
     parser.add_argument("--fft-size", type=int, default=16384)
-    parser.add_argument("--mid-side", action="store_true", help="M/S 모드")
+    parser.add_argument("--mid-side", action="store_true", help=_("M/S mode"))
 
     # 비교 모드
-    parser.add_argument("--compare", metavar="PLUGIN2", help="2번째 플러그인과 비교")
-    parser.add_argument("--compare-param", action="append", default=[], help="2번째 플러그인 파라미터")
+    parser.add_argument("--compare", metavar="PLUGIN2", help=_("Compare with second plugin"))
+    parser.add_argument("--compare-param", action="append", default=[], help=_("Second plugin parameters"))
 
     # CLAP 임베딩
-    parser.add_argument("--clap", action="store_true", help="CLAP 임베딩 프로파일링 (파라미터별 새추레이션 지문)")
+    parser.add_argument("--clap", action="store_true", help=_("CLAP embedding profiling (per-parameter saturation fingerprint)"))
     parser.add_argument("--clap-sweep", metavar="PARAM=v1,v2,...", action="append", default=[],
-                        help="CLAP 스윕 파라미터 (예: --clap-sweep drive=0,25,50,75,100)")
-    parser.add_argument("--clap-output", metavar="NPY", help="CLAP 임베딩 npy 저장 경로")
+                        help=_("CLAP sweep parameters (e.g. --clap-sweep drive=0,25,50,75,100)"))
+    parser.add_argument("--clap-output", metavar="NPY", help=_("CLAP embedding npy save path"))
+
+    # waveshaper v2 옵션
+    parser.add_argument("--legacy-waveshaper", action="store_true",
+                        help=_("Use legacy waveshaper (single level, single cycle)"))
+    parser.add_argument("--ws-levels", metavar="dB", type=float, nargs="+",
+                        default=None,
+                        help=_("Waveshaper v2 measurement levels in dBFS (default: -24 -18 -12 -6 -3 -1 0)"))
+    parser.add_argument("--ws-points", type=int, default=256,
+                        help=_("Waveshaper v2 resampling points (default: 256)"))
 
     # 출력
-    parser.add_argument("--output", "-o", metavar="FILE", help="결과 JSON 파일 저장")
+    parser.add_argument("--output", "-o", metavar="FILE", help=_("Save result JSON file"))
 
     parser.set_defaults(func=run)
 
@@ -144,25 +154,66 @@ def run(args: argparse.Namespace) -> None:
                     output_console.print(f"  Envelope: {len(r.output_levels_db)} points")
 
             elif mode == "waveshaper":
-                r = pa.measure_waveshaper(plugin_path, params, args.frequency, args.level, args.sample_rate)
-                # 선형성 체크
-                ws_in = r.waveshaper_input
-                ws_out = r.waveshaper_output
-                if len(ws_in) > 2:
-                    linearity = float(np.corrcoef(ws_in, ws_out)[0, 1])
-                else:
-                    linearity = 1.0
-                results["waveshaper"] = {
-                    "points": len(ws_in),
-                    "linearity": round(linearity, 6),
-                    "is_linear": linearity > 0.999,
-                }
-                if not args.json:
-                    output_console.print(f"  Waveshaper: {len(ws_in)} points, linearity={linearity:.4f}")
-                    if linearity > 0.999:
-                        output_console.print(f"  [green]선형 플러그인[/green]")
+                if args.legacy_waveshaper:
+                    # 레거시: 단일 레벨, 단일 주기
+                    r = pa.measure_waveshaper(plugin_path, params, args.frequency, args.level, args.sample_rate)
+                    ws_in = r.waveshaper_input
+                    ws_out = r.waveshaper_output
+                    if len(ws_in) > 2:
+                        linearity = float(np.corrcoef(ws_in, ws_out)[0, 1])
                     else:
-                        output_console.print(f"  [yellow]비선형 ({(1-linearity)*100:.2f}% 왜곡)[/yellow]")
+                        linearity = 1.0
+                    results["waveshaper"] = {
+                        "points": len(ws_in),
+                        "linearity": round(linearity, 6),
+                        "is_linear": linearity > 0.999,
+                        "version": "v1",
+                    }
+                    if not args.json:
+                        output_console.print(f"  Waveshaper (legacy): {len(ws_in)} points, linearity={linearity:.4f}")
+                        if linearity > 0.999:
+                            output_console.print(f"  [green]선형 플러그인[/green]")
+                        else:
+                            output_console.print(f"  [yellow]비선형 ({(1-linearity)*100:.2f}% 왜곡)[/yellow]")
+                else:
+                    # v2: 다중 진폭 레벨 + 복수 주기 평균 + 리샘플링
+                    r = pa.measure_waveshaper_v2(
+                        plugin_path, params,
+                        frequency=args.frequency,
+                        sample_rate=args.sample_rate,
+                        levels_db=args.ws_levels,
+                        n_points=args.ws_points,
+                    )
+                    # 선형성 체크
+                    if r.n_points > 2:
+                        linearity = float(np.corrcoef(r.input_values, r.output_values)[0, 1])
+                    else:
+                        linearity = 1.0
+                    results["waveshaper"] = {
+                        "input_values": r.input_values.tolist(),
+                        "output_values": r.output_values.tolist(),
+                        "points": r.n_points,
+                        "levels_db": r.levels_db,
+                        "input_coverage": r.input_coverage,
+                        "is_symmetric": r.is_symmetric,
+                        "linearity": round(linearity, 6),
+                        "is_linear": linearity > 0.999,
+                        "version": "v2",
+                    }
+                    if not args.json:
+                        output_console.print(
+                            f"  Waveshaper v2: {r.n_points} points, "
+                            f"{len(r.levels_db)} levels, "
+                            f"coverage={r.input_coverage:.1%}"
+                        )
+                        output_console.print(
+                            f"  대칭: {'예 (홀수 하모닉)' if r.is_symmetric else '아니오'}, "
+                            f"linearity={linearity:.4f}"
+                        )
+                        if linearity > 0.999:
+                            output_console.print(f"  [green]선형 플러그인[/green]")
+                        else:
+                            output_console.print(f"  [yellow]비선형 ({(1-linearity)*100:.2f}% 왜곡)[/yellow]")
 
             elif mode == "performance":
                 r = pa.measure_performance(plugin_path, params, args.sample_rate)
