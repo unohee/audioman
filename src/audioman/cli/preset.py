@@ -7,35 +7,36 @@ from audioman.cli.output import print_error, print_json, print_success, print_ta
 from audioman.config.paths import ensure_app_dirs
 from audioman.core.engine import parse_params
 from audioman.core.preset_manager import PresetManager
+from audioman.i18n import _
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
-    parser = subparsers.add_parser("preset", help="프리셋 관리")
+    parser = subparsers.add_parser("preset", help=_("Preset management"))
     preset_sub = parser.add_subparsers(dest="preset_command")
 
     # save
-    save_p = preset_sub.add_parser("save", help="프리셋 저장")
-    save_p.add_argument("name", help="프리셋 이름")
-    save_p.add_argument("--plugin", "-p", required=True, help="플러그인 이름")
-    save_p.add_argument("--param", action="append", default=[], help="파라미터 (key=value)")
-    save_p.add_argument("--description", "-d", default="", help="설명")
+    save_p = preset_sub.add_parser("save", help=_("Save preset"))
+    save_p.add_argument("name", help=_("Preset name"))
+    save_p.add_argument("--plugin", "-p", required=True, help=_("Plugin name"))
+    save_p.add_argument("--param", action="append", default=[], help=_("Parameter (key=value)"))
+    save_p.add_argument("--description", "-d", default="", help=_("Description"))
     save_p.set_defaults(func=run_save)
 
     # load
-    load_p = preset_sub.add_parser("load", help="프리셋 정보 표시")
-    load_p.add_argument("name", help="프리셋 이름")
-    load_p.add_argument("--plugin", "-p", help="플러그인 이름 (선택)")
+    load_p = preset_sub.add_parser("load", help=_("Show preset info"))
+    load_p.add_argument("name", help=_("Preset name"))
+    load_p.add_argument("--plugin", "-p", help=_("Plugin name (optional)"))
     load_p.set_defaults(func=run_load)
 
     # list
-    list_p = preset_sub.add_parser("list", help="프리셋 목록")
-    list_p.add_argument("--plugin", "-p", help="플러그인 필터")
+    list_p = preset_sub.add_parser("list", help=_("List presets"))
+    list_p.add_argument("--plugin", "-p", help=_("Plugin filter"))
     list_p.set_defaults(func=run_list)
 
     # delete
-    del_p = preset_sub.add_parser("delete", help="프리셋 삭제")
-    del_p.add_argument("name", help="프리셋 이름")
-    del_p.add_argument("--plugin", "-p", help="플러그인 이름 (선택)")
+    del_p = preset_sub.add_parser("delete", help=_("Delete preset"))
+    del_p.add_argument("name", help=_("Preset name"))
+    del_p.add_argument("--plugin", "-p", help=_("Plugin name (optional)"))
     del_p.set_defaults(func=run_delete)
 
     parser.set_defaults(func=lambda args: parser.print_help())

@@ -9,7 +9,7 @@ from typing import Any, Optional
 
 import numpy as np
 
-from audioman.core.audio_file import AudioStats, get_audio_stats, read_audio, write_audio
+from audioman.core.audio_file import AudioStats, get_audio_stats, get_file_info, read_audio, stream_process, write_audio
 from audioman.core.registry import get_registry
 from audioman.plugins.vst3 import VST3PluginWrapper
 
@@ -52,12 +52,16 @@ def parse_params(param_strings: list[str]) -> dict[str, Any]:
     return params
 
 
+STREAM_THRESHOLD_MB = 500  # 이 크기 이상이면 자동 스트리밍
+
+
 def process_file(
     input_path: str | Path,
     output_path: str | Path,
     plugin_name: str,
     params: Optional[dict[str, Any]] = None,
     passes: int = 1,
+    stream: bool | None = None,
 ) -> ProcessResult:
     """단일 플러그인으로 오디오 파일 처리
 
@@ -72,6 +76,17 @@ def process_file(
     meta = registry.get(plugin_name)
     if not meta:
         raise ValueError(f"플러그인을 찾을 수 없습니다: '{plugin_name}'")
+
+    # 대용량 파일 → 자동 스트리밍
+    if stream is None:
+        try:
+            info = get_file_info(input_path)
+            stream = info["file_size_mb"] > STREAM_THRESHOLD_MB
+        except Exception:
+            stream = False
+
+    if stream:
+        return _process_file_streaming(input_path, output_path, meta, params, start)
 
     # 오디오 읽기
     audio, sr = read_audio(input_path)
@@ -103,5 +118,34 @@ def process_file(
         params_applied=params or {},
         input_stats=asdict(input_stats),
         output_stats=asdict(output_stats),
+        duration_seconds=round(elapsed, 3),
+    )
+
+
+def _process_file_streaming(input_path, output_path, meta, params, start) -> ProcessResult:
+    """대용량 파일 스트리밍 처리 — 메모리에 전체 로드하지 않음"""
+    wrapper = VST3PluginWrapper(meta.path)
+    wrapper.load()
+    if params:
+        wrapper.set_parameters(params)
+
+    def process_chunk(chunk, sr):
+        return wrapper.process(chunk, sr)
+
+    info = get_file_info(input_path)
+    result = stream_process(input_path, output_path, process_chunk)
+
+    elapsed = time.monotonic() - start
+    logger.info(f"스트리밍 처리 완료: {result['chunks']} chunks, {elapsed:.1f}s")
+
+    return ProcessResult(
+        input_path=str(input_path),
+        output_path=str(output_path),
+        plugin_name=meta.short_name,
+        params_applied=params or {},
+        input_stats={"duration": info["duration"], "sample_rate": info["sample_rate"],
+                      "channels": info["channels"], "frames": info["frames"]},
+        output_stats={"frames_processed": result["frames_processed"],
+                       "chunks": result["chunks"], "streamed": True},
         duration_seconds=round(elapsed, 3),
     )

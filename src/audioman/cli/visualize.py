@@ -15,6 +15,7 @@ from audioman.core.svl import (
     write_notes,
     write_dense3d,
 )
+from audioman.i18n import _
 
 
 # 내장 분석 타입과 설명
@@ -31,28 +32,28 @@ BUILTIN_TYPES = {
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
         "visualize",
-        help="Vamp 플러그인 또는 내장 분석 → Sonic Visualiser SVL 파일 생성",
+        help=_("Vamp plugin or built-in analysis -> Sonic Visualiser SVL file"),
     )
-    parser.add_argument("input", help="입력 오디오 파일")
+    parser.add_argument("input", help=_("Input audio file"))
 
     source = parser.add_mutually_exclusive_group(required=False)
     source.add_argument(
         "--plugin", "-p",
-        help="Vamp 플러그인 ID (예: qm-vamp-plugins:qm-chromagram)",
+        help=_("Vamp plugin ID (e.g. qm-vamp-plugins:qm-chromagram)"),
     )
     source.add_argument(
         "--builtin", "-b",
         choices=list(BUILTIN_TYPES.keys()),
-        help=f"내장 분석 타입: {', '.join(BUILTIN_TYPES.keys())}",
+        help=f"{_('Built-in analysis type')}: {', '.join(BUILTIN_TYPES.keys())}",
     )
 
-    parser.add_argument("-o", "--output", help="출력 SVL 파일 경로 (기본: 자동 생성)")
-    parser.add_argument("--output-name", help="Vamp 플러그인 출력 이름 (복수 출력 시)")
-    parser.add_argument("--frame-size", type=int, default=2048, help="FFT 프레임 크기 (기본: 2048)")
-    parser.add_argument("--hop", type=int, default=512, help="홉 크기 (기본: 512)")
-    parser.add_argument("--list-plugins", action="store_true", help="설치된 Vamp 플러그인 목록")
-    parser.add_argument("--plugin-info", help="플러그인 출력 정보 조회")
-    parser.add_argument("--open", action="store_true", help="생성 후 Sonic Visualiser로 열기")
+    parser.add_argument("-o", "--output", help=_("Output SVL file path (default: auto)"))
+    parser.add_argument("--output-name", help=_("Vamp plugin output name (for multiple outputs)"))
+    parser.add_argument("--frame-size", type=int, default=2048, help=_("FFT frame size (default: 2048)"))
+    parser.add_argument("--hop", type=int, default=512, help=_("Hop size (default: 512)"))
+    parser.add_argument("--list-plugins", action="store_true", help=_("List installed Vamp plugins"))
+    parser.add_argument("--plugin-info", help=_("Query plugin output info"))
+    parser.add_argument("--open", action="store_true", help=_("Open in Sonic Visualiser after creation"))
 
     parser.set_defaults(func=run)
 

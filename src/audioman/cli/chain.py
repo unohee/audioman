@@ -7,20 +7,22 @@ import json
 from audioman.cli.output import print_error, print_json, print_success, print_warning, output_console
 from audioman.core.pipeline import parse_chain_string, run_pipeline
 from audioman.core.batch import collect_audio_files, resolve_output_path
+from audioman.i18n import _
 from pathlib import Path
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
-    parser = subparsers.add_parser("chain", help="다중 플러그인 순차 처리")
-    parser.add_argument("input", help="입력 오디오 파일 또는 디렉토리")
+    parser = subparsers.add_parser("chain", help=_("Process audio through multiple plugins sequentially"))
+    parser.add_argument("input", help=_("Input audio file or directory"))
     parser.add_argument(
         "--steps", "-s", required=True,
-        help="처리 체인 (예: 'dehum:notch_frequency=60,declick,denoise:noise_reduction_db=15')",
+        help=_("Processing chain (e.g. 'dehum:notch_frequency=60,declick,denoise:noise_reduction_db=15')"),
     )
-    parser.add_argument("--output", "-o", required=True, help="출력 파일 또는 디렉토리")
-    parser.add_argument("--recursive", "-r", action="store_true", help="하위 디렉토리 포함 (배치)")
-    parser.add_argument("--suffix", default="", help="출력 파일명 접미사 (배치)")
-    parser.add_argument("--dry-run", action="store_true", help="실행하지 않고 계획만 표시")
+    parser.add_argument("--output", "-o", required=True, help=_("Output file or directory"))
+    parser.add_argument("--recursive", "-r", action="store_true", help=_("Include subdirectories (batch)"))
+    parser.add_argument("--suffix", default="", help=_("Output filename suffix (batch)"))
+    parser.add_argument("--dry-run", action="store_true", help=_("Show plan without executing"))
+    parser.add_argument("--workers", "-w", type=int, default=1, help=_("Number of parallel workers (default: 1)"))
     parser.set_defaults(func=run)
 
 
@@ -107,32 +109,82 @@ def _run_batch(args: argparse.Namespace, steps, input_dir: Path) -> None:
             output_console.print(f"[dry-run] 배치: {len(files)}개 파일 → [{step_names}] → {output_dir}")
         return
 
-    ok, fail = 0, 0
-    for i, fpath in enumerate(files):
+    jobs = []
+    # steps를 직렬화 (multiprocessing 전달용)
+    steps_dicts = [s.to_dict() for s in steps]
+    for fpath in files:
         out_path = resolve_output_path(fpath, input_dir, output_dir, suffix=args.suffix)
+        jobs.append((str(fpath), str(out_path), steps_dicts))
 
-        try:
-            result = run_pipeline(
-                input_path=fpath,
-                output_path=out_path,
-                steps=steps,
-            )
-            ok += 1
+    if args.workers > 1:
+        _run_chain_parallel(args, jobs, len(files))
+    else:
+        _run_chain_sequential(args, jobs, steps, len(files))
 
-            if args.json:
-                print(json.dumps({"command": "chain", **result.to_dict()}, ensure_ascii=False, default=str))
-            else:
-                output_console.print(
-                    f"  [{i+1}/{len(files)}] {fpath.name} → {out_path.name} "
-                    f"({result.duration_seconds}s)"
-                )
 
-        except Exception as e:
-            fail += 1
-            if args.json:
-                print(json.dumps({"command": "chain", "input": str(fpath), "error": str(e)}, ensure_ascii=False))
-            else:
-                print_warning(f"  [{i+1}/{len(files)}] {fpath.name}: {e}")
+def _chain_one(job_args):
+    """체인 멀티프로세싱 워커"""
+    from audioman.core.pipeline import parse_chain_string, run_pipeline, ChainStep
+    fpath, out_path, steps_dicts = job_args
+    steps = [ChainStep(**d) for d in steps_dicts]
+    try:
+        result = run_pipeline(input_path=fpath, output_path=out_path, steps=steps)
+        return {"ok": True, "result": result.to_dict(), "input": fpath}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "input": fpath}
 
+
+def _run_chain_sequential(args, jobs, steps, total):
+    from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
+
+    ok, fail = 0, 0
+    with Progress(
+        SpinnerColumn(), TextColumn("[bold blue]{task.description}"),
+        BarColumn(), TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TextColumn("{task.completed}/{task.total}"),
+        TimeElapsedColumn(), TextColumn("ETA"), TimeRemainingColumn(),
+        console=output_console, disable=args.json,
+    ) as progress:
+        task_id = progress.add_task("체인 처리", total=total)
+        for i, (fpath, out_path, _) in enumerate(jobs):
+            try:
+                result = run_pipeline(input_path=fpath, output_path=out_path, steps=steps)
+                ok += 1
+                if args.json:
+                    print(json.dumps({"command": "chain", **result.to_dict()}, ensure_ascii=False, default=str))
+            except Exception as e:
+                fail += 1
+                if args.json:
+                    print(json.dumps({"command": "chain", "input": fpath, "error": str(e)}, ensure_ascii=False))
+                elif not args.json:
+                    print_warning(f"  {Path(fpath).name}: {e}")
+            progress.update(task_id, advance=1, description=f"{Path(fpath).name}")
     if not args.json:
-        print_success(f"배치 완료: {ok} 성공, {fail} 실패 / {len(files)} 전체")
+        print_success(f"배치 완료: {ok} 성공, {fail} 실패 / {total} 전체")
+
+
+def _run_chain_parallel(args, jobs, total):
+    from multiprocessing import Pool
+    from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn
+
+    ok, fail = 0, 0
+    with Progress(
+        SpinnerColumn(), TextColumn("[bold blue]{task.description}"),
+        BarColumn(), TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TextColumn("{task.completed}/{task.total}"), TimeElapsedColumn(),
+        console=output_console,
+    ) as progress:
+        task_id = progress.add_task(f"체인 ({args.workers} workers)", total=total)
+        with Pool(processes=args.workers) as pool:
+            for r in pool.imap_unordered(_chain_one, jobs):
+                if r["ok"]:
+                    ok += 1
+                    if args.json:
+                        print(json.dumps({"command": "chain", **r["result"]}, ensure_ascii=False, default=str))
+                else:
+                    fail += 1
+                    if args.json:
+                        print(json.dumps({"command": "chain", "input": r["input"], "error": r["error"]}, ensure_ascii=False))
+                progress.update(task_id, advance=1, description=f"[{ok+fail}/{total}] {Path(r['input']).name}")
+    if not args.json:
+        print_success(f"배치 완료: {ok} 성공, {fail} 실패 / {total} 전체 ({args.workers} workers)")

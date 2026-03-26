@@ -27,3 +27,6 @@ testing/
 # Misc
 trash/
 .python-version
+outputs/
+presets/
+*.pdf

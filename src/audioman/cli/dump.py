@@ -8,24 +8,25 @@ import sys
 from audioman.cli.output import print_error, print_json, print_warning, output_console
 from audioman.core.registry import get_registry
 from audioman.core.engine import parse_params
+from audioman.i18n import _
 from audioman.plugins.vst3 import VST3PluginWrapper
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
         "dump",
-        help="플러그인 파라미터 상태를 JSON/JSONL로 덤프",
+        help=_("Dump plugin parameter state to JSON/JSONL"),
     )
     # 단일 모드: 플러그인 이름 지정
-    parser.add_argument("plugin", nargs="?", default=None, help="플러그인 이름 (생략 시 --all 필요)")
-    parser.add_argument("--param", action="append", default=[], help="덤프 전 파라미터 설정 (key=value)")
-    parser.add_argument("--preset", help="프리셋 이름 (적용 후 덤프)")
-    parser.add_argument("--save-preset", metavar="NAME", help="덤프 결과를 프리셋으로 저장")
+    parser.add_argument("plugin", nargs="?", default=None, help=_("Plugin name (omit for --all)"))
+    parser.add_argument("--param", action="append", default=[], help=_("Set parameter before dump (key=value)"))
+    parser.add_argument("--preset", help=_("Preset name (apply before dump)"))
+    parser.add_argument("--save-preset", metavar="NAME", help=_("Save dump as preset"))
     # 배치 모드
-    parser.add_argument("--all", action="store_true", help="모든 플러그인 JSONL 덤프")
-    parser.add_argument("--filter", metavar="KEYWORD", help="플러그인 이름 필터 (--all과 함께)")
-    parser.add_argument("--format-filter", choices=["vst3", "au"], help="포맷 필터 (--all과 함께)")
-    parser.add_argument("--output-file", "-o", metavar="PATH", help="JSONL 출력 파일 (기본: stdout)")
+    parser.add_argument("--all", action="store_true", help=_("Dump all plugins as JSONL"))
+    parser.add_argument("--filter", metavar="KEYWORD", help=_("Plugin name filter (with --all)"))
+    parser.add_argument("--format-filter", choices=["vst3", "au"], help=_("Format filter (with --all)"))
+    parser.add_argument("--output-file", "-o", metavar="PATH", help=_("JSONL output file (default: stdout)"))
     parser.set_defaults(func=run)
 
 

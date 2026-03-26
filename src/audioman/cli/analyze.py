@@ -10,20 +10,21 @@ from audioman.core.audio_file import read_audio, get_audio_stats
 from audioman.core.analysis import compute_frame_metrics, compute_summary, detect_silence
 from audioman.core.batch import collect_audio_files
 from audioman.core.waveform import render_waveform, render_envelope, render_spectral_envelope
+from audioman.i18n import _
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
-    parser = subparsers.add_parser("analyze", help="오디오 분석 (RMS, spectral entropy, silence 감지 등)")
-    parser.add_argument("input", help="입력 오디오 파일 또는 디렉토리")
-    parser.add_argument("--frames", action="store_true", help="프레임 단위 상세 출력")
-    parser.add_argument("--frame-size", type=int, default=2048, help="프레임 크기 (기본: 2048)")
-    parser.add_argument("--hop", type=int, default=512, help="홉 크기 (기본: 512)")
-    parser.add_argument("--silence-threshold", type=float, default=-40.0, help="Silence 감지 임계값 dB (기본: -40)")
-    parser.add_argument("--waveform", "-w", action="store_true", help="ASCII 웨이브폼 표시")
-    parser.add_argument("--waveform-width", type=int, default=80, help="웨이브폼 가로 폭 (기본: 80)")
-    parser.add_argument("--waveform-height", type=int, default=16, help="웨이브폼 세로 높이 (기본: 16)")
-    parser.add_argument("--waveform-mode", choices=["rms", "peak"], default="peak", help="웨이브폼 모드 (기본: peak)")
-    parser.add_argument("--recursive", "-r", action="store_true", help="하위 디렉토리 포함")
+    parser = subparsers.add_parser("analyze", help=_("Audio analysis (RMS, spectral entropy, silence detection, etc.)"))
+    parser.add_argument("input", help=_("Input audio file or directory"))
+    parser.add_argument("--frames", action="store_true", help=_("Per-frame detailed output"))
+    parser.add_argument("--frame-size", type=int, default=2048, help=_("Frame size (default: 2048)"))
+    parser.add_argument("--hop", type=int, default=512, help=_("Hop size (default: 512)"))
+    parser.add_argument("--silence-threshold", type=float, default=-40.0, help=_("Silence detection threshold dB (default: -40)"))
+    parser.add_argument("--waveform", "-w", action="store_true", help=_("Show ASCII waveform"))
+    parser.add_argument("--waveform-width", type=int, default=80, help=_("Waveform width (default: 80)"))
+    parser.add_argument("--waveform-height", type=int, default=16, help=_("Waveform height (default: 16)"))
+    parser.add_argument("--waveform-mode", choices=["rms", "peak"], default="peak", help=_("Waveform mode (default: peak)"))
+    parser.add_argument("--recursive", "-r", action="store_true", help=_("Include subdirectories (batch)"))
     parser.set_defaults(func=run)
 
 
