@@ -6,7 +6,7 @@ import logging
 import sys
 
 from audioman import __version__
-from audioman.cli import scan, list_cmd, info, process, chain, preset, dump, analyze, fx, visualize, doctor
+from audioman.cli import scan, list_cmd, info, process, chain, preset, dump, analyze, fx, visualize, doctor, eq_profile, bounce, commit_cmd, mixdown
 from audioman.i18n import _
 
 
@@ -32,6 +32,10 @@ def build_parser() -> argparse.ArgumentParser:
     fx.add_parser(subparsers)
     visualize.add_parser(subparsers)
     doctor.add_parser(subparsers)
+    eq_profile.add_parser(subparsers)
+    bounce.add_parser(subparsers)
+    commit_cmd.add_parser(subparsers)
+    mixdown.add_parser(subparsers)
 
     return parser
 
