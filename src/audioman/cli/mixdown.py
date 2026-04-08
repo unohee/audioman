@@ -33,6 +33,14 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         help=_("Disable master chain delay compensation"),
     )
     parser.add_argument("--dry-run", action="store_true", help=_("Show plan without executing"))
+    parser.add_argument(
+        "--automix", action="store_true",
+        help=_("Auto-balance track gains using spectral analysis (default: pink noise target)"),
+    )
+    parser.add_argument(
+        "--reference", default="",
+        help=_("Reference audio file for automix target spectrum (requires --automix)"),
+    )
     parser.set_defaults(func=run)
 
 
@@ -88,6 +96,28 @@ def run(args: argparse.Namespace) -> None:
         subtype = "PCM_24"
         master_chain = parse_chain_string(args.master) if args.master.strip() else None
 
+    # Automix: 밴드별 RMS 분석으로 트랙 gain 자동 계산
+    automix_result = None
+    if args.automix:
+        from audioman.core.automix import automix as run_automix
+
+        target = "reference" if args.reference.strip() else "pink"
+        ref_path = args.reference.strip() if args.reference.strip() else None
+
+        try:
+            automix_result = run_automix(
+                track_paths=[t.path for t in tracks],
+                target=target,
+                reference_path=ref_path,
+            )
+        except Exception as e:
+            print_error(f"Automix 분석 실패: {e}")
+            return
+
+        # 계산된 gain을 트랙에 적용
+        for i, gain_db in enumerate(automix_result.gains_db):
+            tracks[i].gain_db += gain_db
+
     # Dry-run
     if args.dry_run:
         plan = {
@@ -98,6 +128,9 @@ def run(args: argparse.Namespace) -> None:
             "tracks": [t.to_dict() for t in tracks],
             "master_chain": [s.to_dict() for s in master_chain] if master_chain else None,
         }
+        if automix_result:
+            plan["automix"] = automix_result.to_dict()
+
         if args.json:
             print_json(plan)
         else:
@@ -110,6 +143,21 @@ def run(args: argparse.Namespace) -> None:
             if master_chain:
                 master_str = " → ".join(s.plugin_name for s in master_chain)
                 output_console.print(f"\n  Master: [{master_str}]")
+            if automix_result:
+                output_console.print(f"\n  [bold]Automix[/bold] (target: {automix_result.target_profile.get('type', 'pink_noise')})")
+                if automix_result.groups:
+                    from pathlib import Path as _P
+                    for group, indices in automix_result.groups.items():
+                        output_console.print(f"    [bold]{group}[/bold]")
+                        for idx in indices:
+                            fname = _P(automix_result.band_analysis[idx]["path"]).name
+                            gain = automix_result.gains_db[idx]
+                            output_console.print(f"      {fname:30s} {gain:+.1f}dB")
+                else:
+                    for i, (gain, analysis) in enumerate(zip(automix_result.gains_db, automix_result.band_analysis)):
+                        bands_str = "  ".join(f"{k}={v:.0f}" for k, v in analysis["bands"].items())
+                        output_console.print(f"    Track {i+1}: {gain:+.1f}dB  ({bands_str})")
+                output_console.print(f"    Residual: {automix_result.residual_error_db:.1f}dB")
         return
 
     # 실행
@@ -139,6 +187,17 @@ def run(args: argparse.Namespace) -> None:
         output_console.print(f"  Master: {len(result.master_chain)} steps")
         if result.master_latency_samples > 0:
             output_console.print(f"  Master latency compensation: {result.master_latency_samples} samples")
+
+    if automix_result:
+        output_console.print(f"\n  [bold]Automix Applied[/bold]")
+        if automix_result.groups:
+            from pathlib import Path as _P
+            for group, indices in automix_result.groups.items():
+                gains_str = ", ".join(f"{_P(automix_result.band_analysis[i]['path']).stem}={automix_result.gains_db[i]:+.1f}" for i in indices)
+                output_console.print(f"    {group}: {gains_str}")
+        else:
+            for i, gain in enumerate(automix_result.gains_db):
+                output_console.print(f"    Track {i+1}: {gain:+.1f}dB")
 
     output_console.print(f"  Time:   {result.duration_seconds}s")
     if result.clipping_detected:
