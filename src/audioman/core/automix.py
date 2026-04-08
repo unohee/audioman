@@ -57,7 +57,7 @@ INSTRUMENT_GROUPS = {
     "drums": {
         "keywords": [
             "kick", "snare", "tom", "hihat", "hi-hat", "hat",
-            "overhead", "oh", "cymbal", "ride", "crash",
+            "overhead", "oh", "cymbal", "ride", "crash", "clap",
             "room", "drum", "tambourine", "shaker", "perc",
         ],
         # 그룹 내 상대 레벨 (dB) — Kick 기준 0dB
@@ -70,6 +70,7 @@ INSTRUMENT_GROUPS = {
             "cymbal": -10.0,
             "ride": -10.0,
             "crash": -10.0,
+            "clap": -6.0,
             "room": -12.0,
             "tambourine": -12.0,
             "shaker": -14.0,
@@ -180,6 +181,49 @@ def k_weight_magnitude(freqs: np.ndarray) -> np.ndarray:
 
 
 K20_REF_LUFS = -20.0
+
+
+# ────────────────────────────────────────────────────────
+# 장르별 스펙트럼 프로파일 (197개 멀티트랙 분석 기반)
+# K-weighted, normalized to -1dBFS peak
+# ────────────────────────────────────────────────────────
+
+GENRE_PROFILES = {
+    "electronica": {
+        "description": "Electronica / Dance / Experimental (N=53)",
+        "bands": {"sub": -25.5, "low": -28.4, "mid": -29.3, "high": -33.1},
+    },
+    "pop": {
+        "description": "Pop / Singer-Songwriter (N=61)",
+        "bands": {"sub": -25.6, "low": -25.9, "mid": -27.3, "high": -35.3},
+    },
+    "rock": {
+        "description": "Alt Rock / Blues / Indie / Funk / Reggae (N=83)",
+        "bands": {"sub": -25.3, "low": -25.9, "mid": -27.6, "high": -36.2},
+    },
+    "default": {
+        "description": "All genres average (N=197)",
+        "bands": {"sub": -25.4, "low": -26.6, "mid": -28.0, "high": -35.1},
+    },
+}
+
+
+def genre_profile(
+    genre: str = "default",
+    bands: Optional[list[BandDefinition]] = None,
+) -> list[float]:
+    """장르별 사전 계산된 스펙트럼 프로파일 반환
+
+    197개 멀티트랙 automix 결과에서 추출한 K-weighted 밴드별 평균 RMS.
+    지원 장르: electronica, pop, rock, default (전체 평균)
+    """
+    if bands is None:
+        bands = DEFAULT_BANDS
+
+    profile_data = GENRE_PROFILES.get(genre, GENRE_PROFILES["default"])
+    band_values = profile_data["bands"]
+
+    return [band_values.get(b.name, -30.0) for b in bands]
 
 
 # ────────────────────────────────────────────────────────
@@ -434,6 +478,11 @@ def automix(
     if target == "reference" and reference_path:
         target_rms = reference_profile(reference_path, bands, k_weighted=k_weighted)
         target_info = {"type": "reference", "path": str(reference_path), "k_weighted": k_weighted}
+    elif target in GENRE_PROFILES:
+        target_rms = genre_profile(target, bands)
+        target_info = {"type": "genre", "genre": target,
+                       "description": GENRE_PROFILES[target]["description"],
+                       "k_weighted": k_weighted}
     else:
         target_rms = pink_noise_profile(bands, ref_level_db)
         target_info = {"type": "pink_noise", "ref_level_db": ref_level_db, "k_weighted": k_weighted}

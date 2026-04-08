@@ -35,11 +35,15 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--dry-run", action="store_true", help=_("Show plan without executing"))
     parser.add_argument(
         "--automix", action="store_true",
-        help=_("Auto-balance track gains using spectral analysis (default: pink noise target)"),
+        help=_("Auto-balance track gains using spectral analysis (default target: pink noise)"),
+    )
+    parser.add_argument(
+        "--target", default="",
+        help=_("Automix target: 'pink' (default), 'pop', 'rock', 'electronica', 'default', or 'reference'"),
     )
     parser.add_argument(
         "--reference", default="",
-        help=_("Reference audio file for automix target spectrum (requires --automix)"),
+        help=_("Reference audio file for automix target spectrum (requires --automix --target reference)"),
     )
     parser.set_defaults(func=run)
 
@@ -101,7 +105,12 @@ def run(args: argparse.Namespace) -> None:
     if args.automix:
         from audioman.core.automix import automix as run_automix
 
-        target = "reference" if args.reference.strip() else "pink"
+        if args.target.strip():
+            target = args.target.strip()
+        elif args.reference.strip():
+            target = "reference"
+        else:
+            target = "pink"
         ref_path = args.reference.strip() if args.reference.strip() else None
 
         try:
