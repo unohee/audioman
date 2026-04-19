@@ -39,7 +39,12 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     parser.add_argument(
         "--target", default="",
-        help=_("Automix target: 'pink' (default), 'pop', 'rock', 'electronica', 'default', or 'reference'"),
+        help=_("Automix target: 'pink' (default), 'pop', 'rock', 'electronica', 'default', "
+               "'reference', or genre cluster profiles: "
+               "yt_rock, yt_bright_pop, yt_hiphop, yt_mid_scoop, yt_low_heavy_vocal, "
+               "yt_high_dr, yt_ballad, yt_dark_lofi, "
+               "archive_techno_standard, archive_sub_kick_driven, archive_minimal_sub, "
+               "archive_groovy_low, archive_dub_techno, archive_midrange_ambient"),
     )
     parser.add_argument(
         "--reference", default="",

@@ -205,6 +205,67 @@ GENRE_PROFILES = {
         "description": "All genres average (N=197)",
         "bands": {"sub": -25.4, "low": -26.6, "mid": -28.0, "high": -35.1},
     },
+    # YouTube library (47,016곡) k-means k=8 클러스터링 기반.
+    # peak=0dB 정규화된 클러스터 중심값에 -25dB offset을 적용해 기존 프로파일과
+    # 스케일 정합(원본 값과 밴드 간 상대 구조는 보존).
+    "yt_rock": {
+        "description": "YouTube c5 — broadband rock/pop standard (N=13447, 최다 클러스터)",
+        "bands": {"sub": -25.0, "low": -32.6, "mid": -36.9, "high": -47.8},
+    },
+    "yt_bright_pop": {
+        "description": "YouTube c2 — bright K-pop/country (N=7637)",
+        "bands": {"sub": -26.1, "low": -27.1, "mid": -32.0, "high": -46.9},
+    },
+    "yt_hiphop": {
+        "description": "YouTube c0 — bass-heavy hip-hop/trap (N=7664)",
+        "bands": {"sub": -25.0, "low": -37.6, "mid": -45.3, "high": -54.4},
+    },
+    "yt_mid_scoop": {
+        "description": "YouTube c1 — mid-scooped pop/indie (N=6107)",
+        "bands": {"sub": -25.2, "low": -29.6, "mid": -41.1, "high": -54.1},
+    },
+    "yt_low_heavy_vocal": {
+        "description": "YouTube c6 — sub-cut low-heavy vocal-forward (N=4580)",
+        "bands": {"sub": -30.7, "low": -25.3, "mid": -36.1, "high": -50.6},
+    },
+    "yt_high_dr": {
+        "description": "YouTube c7 — very high dynamic range (N=4523, DR=40.8dB)",
+        "bands": {"sub": -25.1, "low": -31.6, "mid": -36.8, "high": -48.4},
+    },
+    "yt_ballad": {
+        "description": "YouTube c3 — extreme sub-cut minimal ballad (N=1909)",
+        "bands": {"sub": -44.0, "low": -26.0, "mid": -31.7, "high": -51.6},
+    },
+    "yt_dark_lofi": {
+        "description": "YouTube c4 — dark lo-fi / indie ambient (N=1151, high -70dB)",
+        "bands": {"sub": -27.3, "low": -30.7, "mid": -45.1, "high": -70.8},
+    },
+    # Archive/Collections (1,713곡, 클럽/테크노 도메인) k-means k=6 기반.
+    # YouTube와 완전히 다른 장르 분포 — 클럽 DJ 셋, 레이블 컴필레이션, 비닐 리핑.
+    "archive_techno_standard": {
+        "description": "Archive c4 — 클럽 standard techno/house (N=647, 최다)",
+        "bands": {"sub": -25.0, "low": -36.7, "mid": -42.6, "high": -51.8},
+    },
+    "archive_sub_kick_driven": {
+        "description": "Archive c5 — sub-kick driven techno (N=363)",
+        "bands": {"sub": -25.0, "low": -43.9, "mid": -47.5, "high": -57.3},
+    },
+    "archive_minimal_sub": {
+        "description": "Archive c1 — 극미니멀 sub-kick (N=340)",
+        "bands": {"sub": -25.0, "low": -42.3, "mid": -53.7, "high": -57.0},
+    },
+    "archive_groovy_low": {
+        "description": "Archive c2 — low-heavy groovy house (N=160)",
+        "bands": {"sub": -26.0, "low": -27.9, "mid": -37.2, "high": -49.3},
+    },
+    "archive_dub_techno": {
+        "description": "Archive c3 — 초어두운 dub-techno (N=152, high -53dB)",
+        "bands": {"sub": -25.3, "low": -41.0, "mid": -56.8, "high": -78.8},
+    },
+    "archive_midrange_ambient": {
+        "description": "Archive c0 — midrange-only ambient/drone (N=51, sub-cut)",
+        "bands": {"sub": -42.5, "low": -26.1, "mid": -31.2, "high": -49.4},
+    },
 }
 
 
