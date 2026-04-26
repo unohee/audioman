@@ -16,7 +16,7 @@ from audioman.i18n import _
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
-    parser = subparsers.add_parser("fx", help=_("Built-in DSP effects (fade, trim, normalize, gate, gain)"))
+    parser = subparsers.add_parser("fx", help=_("Built-in DSP effects (fade, trim, cut, splice, normalize, gate, gain)"))
     parser.add_argument("input", help=_("Input audio file or directory"))
 
     fx_sub = parser.add_subparsers(dest="effect", help=_("Effect type"))
@@ -46,6 +46,29 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     tr.add_argument("--output", "-o", required=True, help=_("Output path"))
     tr.add_argument("--recursive", "-r", action="store_true")
     tr.add_argument("--suffix", default="")
+
+    # cut-region (중간 구간 삭제)
+    cr = fx_sub.add_parser("cut-region", help=_("Delete a middle region and join the remainder"))
+    cr.add_argument("--start", type=int, default=None, help=_("Region start sample"))
+    cr.add_argument("--end", type=int, default=None, help=_("Region end sample"))
+    cr.add_argument("--start-sec", type=float, default=None, help=_("Region start (seconds)"))
+    cr.add_argument("--end-sec", type=float, default=None, help=_("Region end (seconds)"))
+    cr.add_argument("--crossfade", type=int, default=0, help=_("Crossfade samples at the join (default: 0)"))
+    cr.add_argument("--crossfade-ms", type=float, default=None, help=_("Crossfade length in milliseconds"))
+    cr.add_argument("--output", "-o", required=True, help=_("Output path"))
+    cr.add_argument("--recursive", "-r", action="store_true")
+    cr.add_argument("--suffix", default="")
+
+    # splice (다른 클립을 삽입/덮어쓰기/믹스)
+    sp = fx_sub.add_parser("splice", help=_("Insert/overwrite/mix another clip into the input"))
+    sp.add_argument("--clip", required=True, help=_("Clip audio file to splice in"))
+    sp.add_argument("--position", type=int, default=None, help=_("Splice position sample"))
+    sp.add_argument("--position-sec", type=float, default=None, help=_("Splice position (seconds)"))
+    sp.add_argument("--mode", choices=["insert", "overwrite", "mix"], default="insert",
+                    help=_("Splice mode (default: insert)"))
+    sp.add_argument("--crossfade", type=int, default=0, help=_("Crossfade samples (insert mode only)"))
+    sp.add_argument("--crossfade-ms", type=float, default=None, help=_("Crossfade length in milliseconds"))
+    sp.add_argument("--output", "-o", required=True, help=_("Output path"))
 
     # trim-silence
     ts = fx_sub.add_parser("trim-silence", help=_("Trim leading/trailing silence"))
@@ -103,6 +126,43 @@ def _apply_effect(audio: np.ndarray, sr: int, args: argparse.Namespace) -> np.nd
             end = int(args.end_sec * sr)
         return dsp.trim(audio, start=start, end=end)
 
+    elif effect == "cut-region":
+        start = args.start or 0
+        end = args.end if args.end is not None else (audio.shape[-1] if audio.ndim > 1 else len(audio))
+        if args.start_sec is not None:
+            start = int(args.start_sec * sr)
+        if args.end_sec is not None:
+            end = int(args.end_sec * sr)
+        cf = args.crossfade
+        if args.crossfade_ms is not None:
+            cf = int(args.crossfade_ms / 1000.0 * sr)
+        return dsp.cut_region(audio, start=start, end=end, crossfade_samples=cf)
+
+    elif effect == "splice":
+        clip_audio, clip_sr = read_audio(args.clip)
+        if clip_sr != sr:
+            raise ValueError(
+                f"Sample rate 불일치: input={sr}Hz, clip={clip_sr}Hz. 클립을 먼저 리샘플링하세요."
+            )
+        # 채널 수 자동 정렬: 모노 → 스테레오 broadcast, 스테레오 → 모노 다운믹스
+        in_ch = 1 if audio.ndim == 1 else audio.shape[0]
+        clip_ch = 1 if clip_audio.ndim == 1 else clip_audio.shape[0]
+        if in_ch != clip_ch:
+            if in_ch == 2 and clip_ch == 1:
+                src = clip_audio if clip_audio.ndim == 1 else clip_audio[0]
+                clip_audio = np.stack([src, src], axis=0)
+            elif in_ch == 1 and clip_ch == 2:
+                clip_audio = clip_audio.mean(axis=0)
+            else:
+                raise ValueError(f"채널 변환 불가: input={in_ch}ch, clip={clip_ch}ch")
+        position = args.position or 0
+        if args.position_sec is not None:
+            position = int(args.position_sec * sr)
+        cf = args.crossfade
+        if args.crossfade_ms is not None:
+            cf = int(args.crossfade_ms / 1000.0 * sr)
+        return dsp.splice(audio, clip_audio, position=position, mode=args.mode, crossfade_samples=cf)
+
     elif effect == "trim-silence":
         return dsp.trim_silence(audio, sr, threshold_db=args.threshold, pad_samples=args.pad)
 
@@ -124,11 +184,13 @@ def _apply_effect(audio: np.ndarray, sr: int, args: argparse.Namespace) -> np.nd
 
 def run(args: argparse.Namespace) -> None:
     if not args.effect:
-        print_error("이펙트를 지정해주세요. (fade-in, fade-out, trim, trim-silence, normalize, gate, gain)")
+        print_error("이펙트를 지정해주세요. (fade-in, fade-out, trim, trim-silence, cut-region, splice, normalize, gate, gain)")
 
     input_path = Path(args.input)
 
     if input_path.is_dir():
+        if args.effect == "splice":
+            print_error("splice는 단일 파일에만 적용 가능합니다 (디렉터리 batch 미지원).")
         _run_batch(args, input_path)
     else:
         _run_single(args, input_path)

@@ -54,6 +54,13 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--list-plugins", action="store_true", help=_("List installed Vamp plugins"))
     parser.add_argument("--plugin-info", help=_("Query plugin output info"))
     parser.add_argument("--open", action="store_true", help=_("Open in Sonic Visualiser after creation"))
+    parser.add_argument("--png", help=_("Also write a PNG spectrogram image (multimodal-friendly) to this path"))
+    parser.add_argument("--png-only", action="store_true", help=_("Write only PNG, skip SVL output"))
+    parser.add_argument("--png-width", type=int, default=1600, help=_("PNG width in pixels (default: 1600)"))
+    parser.add_argument("--png-height", type=int, default=600, help=_("PNG height in pixels (default: 600)"))
+    parser.add_argument("--png-db-min", type=float, default=-90.0, help=_("PNG color floor in dB (default: -90)"))
+    parser.add_argument("--png-db-max", type=float, default=0.0, help=_("PNG color ceiling in dB (default: 0)"))
+    parser.add_argument("--png-fmax", type=float, default=None, help=_("PNG max display frequency Hz (default: Nyquist)"))
 
     parser.set_defaults(func=run)
 
@@ -218,6 +225,24 @@ def _run_builtin(args: argparse.Namespace, input_path: Path) -> None:
 
     if builtin == "spectrogram":
         matrix = _compute_spectrogram(audio, sr, frame_size, hop)
+
+        if args.png or args.png_only:
+            png_path = Path(args.png) if args.png else _resolve_output_path(args, input_path, "spectrogram").with_suffix(".png")
+            _write_spectrogram_png(
+                matrix, sr, hop, frame_size,
+                png_path,
+                width=args.png_width, height=args.png_height,
+                db_min=args.png_db_min, db_max=args.png_db_max,
+                fmax=args.png_fmax,
+                title=input_path.name,
+            )
+            print_success(f"PNG 생성: {png_path}")
+
+        if args.png_only:
+            if args.open:
+                _open_in_sv(png_path)
+            return
+
         out_path = _resolve_output_path(args, input_path, "spectrogram")
 
         # bin 이름 생성 (주파수 범위)
@@ -295,6 +320,60 @@ def _compute_spectrogram(
         frames_list.append(power_db)
 
     return np.array(frames_list)
+
+
+def _write_spectrogram_png(
+    matrix: np.ndarray,
+    sample_rate: int,
+    hop_size: int,
+    frame_size: int,
+    out_path: Path,
+    width: int = 1600,
+    height: int = 600,
+    db_min: float = -90.0,
+    db_max: float = 0.0,
+    fmax: float | None = None,
+    title: str = "",
+) -> None:
+    """matplotlib 기반 PNG 스펙트로그램. matrix shape: (n_frames, n_bins) in dB."""
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print_error("matplotlib이 필요합니다: uv add matplotlib")
+
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    n_frames, n_bins = matrix.shape
+    duration_sec = n_frames * hop_size / sample_rate
+    nyquist = sample_rate / 2.0
+    if fmax is None or fmax > nyquist:
+        fmax = nyquist
+    bin_cutoff = int(round(fmax / nyquist * n_bins))
+    display = matrix[:, :bin_cutoff].T  # (n_bins, n_frames)
+
+    dpi = 100
+    figsize = (width / dpi, height / dpi)
+    fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
+    im = ax.imshow(
+        display,
+        origin="lower",
+        aspect="auto",
+        extent=[0, duration_sec, 0, fmax],
+        vmin=db_min, vmax=db_max,
+        cmap="magma",
+        interpolation="nearest",
+    )
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Frequency (Hz)")
+    ax.set_title(f"Spectrogram: {title}  (FFT={frame_size}, hop={hop_size}, fs={sample_rate})")
+    cbar = fig.colorbar(im, ax=ax, label="Power (dB)")
+    cbar.ax.tick_params(labelsize=8)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=dpi)
+    plt.close(fig)
 
 
 def _guess_units(plugin_id: str) -> str:
