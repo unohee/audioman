@@ -32,13 +32,27 @@ class ProcessResult:
 
 
 def parse_params(param_strings: list[str]) -> dict[str, Any]:
-    """CLI 파라미터 문자열 파싱: ["threshold=-20", "reduction=12"] → dict"""
+    """CLI 파라미터 문자열 파싱: ["threshold=-20", "reduction=12"] → dict
+
+    Value가 따옴표로 감싸져 있으면(`key="4.00"` 또는 `key='4.00'`) 강제로
+    문자열로 유지한다. UAD 플러그인처럼 enum 라벨이 `"4.00"`, `"0.97"` 같은
+    2-자리 소수 문자열인 경우에 필요하다 — float 변환하면 `"4.0"`이 되어
+    enum 리스트와 매칭 실패.
+    """
     params = {}
     for s in param_strings:
         if "=" not in s:
             raise ValueError(f"잘못된 파라미터 형식 (key=value 필요): '{s}'")
         key, value = s.split("=", 1)
         key = key.strip()
+
+        # 명시적 문자열: 따옴표 감싸면 원본 보존.
+        if len(value) >= 2 and (
+            (value.startswith('"') and value.endswith('"'))
+            or (value.startswith("'") and value.endswith("'"))
+        ):
+            params[key] = value[1:-1]
+            continue
 
         # 타입 추론
         if value.lower() in ("true", "false"):

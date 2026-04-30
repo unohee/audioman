@@ -14,10 +14,18 @@ dependencies = [
     "pydantic-settings>=2.0",
     "soxr>=0.3",
     "pyyaml>=6.0",
+    "matplotlib>=3.10.9",
+    "pyloudnorm>=0.2.0",
+    "scipy>=1.13",
+    "pyqt6>=6.11.0",
+    "sounddevice>=0.5.5",
+    "silero-vad>=5.1",
+    "torch>=2.2",
 ]
 
 [project.optional-dependencies]
 vamp = ["vamp>=1.1.0"]
+essentia = ["essentia>=2.1b6.dev1177"]
 
 [project.scripts]
 audioman = "audioman.cli.app:main"

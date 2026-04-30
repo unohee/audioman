@@ -30,3 +30,6 @@ trash/
 outputs/
 presets/
 *.pdf
+.DS_Store
+.ruff_cache/
+coverage*.json

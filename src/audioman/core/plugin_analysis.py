@@ -20,6 +20,7 @@ from audioman.core.test_signal import (
     generate_impulse, generate_sine, generate_two_tone,
     generate_white_noise, generate_sweep,
     generate_dynamics_ramp, generate_dynamics_attack_release,
+    generate_log_sweep_deconv, generate_multitone,
     to_mid_side, from_mid_side,
 )
 from audioman.plugins.vst3 import VST3PluginWrapper
@@ -459,6 +460,18 @@ def measure_dynamics_ar(
 # =============================================================================
 
 
+@dataclass
+class WaveshaperV2Result:
+    """다중 진폭 웨이브셰이퍼 측정 결과 (v2)"""
+    input_values: np.ndarray       # (n_points,) 균등 분포 [-1, +1]
+    output_values: np.ndarray      # (n_points,) 매핑된 출력
+    n_points: int
+    levels_db: list[float]
+    input_coverage: float          # 0~1 (입력이 [-1,+1] 중 얼마를 커버하는지)
+    is_symmetric: bool             # f(-x) ≈ -f(x) 대칭성
+    raw_pairs: Optional[list[tuple[np.ndarray, np.ndarray]]] = None
+
+
 def measure_waveshaper(
     plugin_path: str,
     params: Optional[dict] = None,
@@ -491,6 +504,150 @@ def measure_waveshaper(
         output_signal=out_cycle,
         waveshaper_input=ws_input,
         waveshaper_output=ws_output,
+    )
+
+
+def measure_waveshaper_v2(
+    plugin_path: str,
+    params: Optional[dict] = None,
+    frequency: float = 100.0,
+    sample_rate: int = 44100,
+    levels_db: Optional[list[float]] = None,
+    n_cycles: int = 3,
+    n_points: int = 256,
+    preroll_sec: float = 0.2,
+) -> WaveshaperV2Result:
+    """다중 진폭 레벨 웨이브셰이퍼 곡선 추출 (v2)
+
+    기존 measure_waveshaper()의 한계 극복:
+    - 단일 레벨 → 다중 레벨 (기본 7단계)로 입력 범위 전체 커버
+    - 1주기 → 복수 주기 평균으로 노이즈/과도 응답 영향 감소
+    - 가변 포인트 수 → 256포인트 균등 리샘플링
+
+    Args:
+        plugin_path: VST3 경로
+        params: 플러그인 파라미터
+        frequency: 테스트 사인파 주파수 (Hz)
+        sample_rate: 샘플레이트
+        levels_db: 측정할 dBFS 레벨 목록 (기본: [-24, -18, -12, -6, -3, -1, 0])
+        n_cycles: 평균할 주기 수 (기본 3)
+        n_points: 최종 리샘플링 포인트 수 (기본 256)
+        preroll_sec: silence 프리롤 길이 (초) — 레이턴시 보상
+
+    Returns:
+        WaveshaperV2Result
+    """
+    if levels_db is None:
+        levels_db = [-24.0, -18.0, -12.0, -6.0, -3.0, -1.0, 0.0]
+
+    wrapper = _load_plugin(plugin_path, params)
+    period_samples = int(sample_rate / frequency)
+
+    # 각 레벨별로 입력→출력 쌍 수집
+    all_inputs = []
+    all_outputs = []
+    raw_pairs = []
+
+    for level_db in levels_db:
+        # 플러그인 상태 리셋 (레벨 간 독립 측정)
+        wrapper.reset()
+
+        # 필요한 구간: 프리롤 + 안정화(1주기 스킵) + 측정(n_cycles 주기)
+        # 안정 구간 확보를 위해 충분한 길이의 신호 생성
+        settle_cycles = 1  # 과도 응답 회피용 스킵 주기
+        total_cycles_needed = settle_cycles + n_cycles
+        test_duration = preroll_sec + (total_cycles_needed + 2) * (1.0 / frequency)
+
+        # 사인파 생성 (프리롤 silence 포함)
+        preroll_samples = int(preroll_sec * sample_rate)
+        sine_duration = test_duration - preroll_sec
+        sine_signal = generate_sine(frequency, sample_rate, sine_duration, level_db)
+
+        # silence 프리롤 + 사인파 결합
+        silence = np.zeros((sine_signal.shape[0], preroll_samples), dtype=np.float32)
+        test_signal = np.concatenate([silence, sine_signal], axis=1)
+
+        # 플러그인 처리
+        output = wrapper.process(test_signal, sample_rate)
+
+        # 모노 추출
+        in_mono = test_signal[0]
+        out_mono = output[0] if output.ndim == 2 else output
+
+        # 안정 구간 시작점: 프리롤 + settle_cycles 주기 이후
+        stable_start = preroll_samples + settle_cycles * period_samples
+
+        # n_cycles 주기 추출 후 주기별 평균
+        level_in_cycles = []
+        level_out_cycles = []
+
+        for c in range(n_cycles):
+            start = stable_start + c * period_samples
+            end = start + period_samples
+            if end > len(in_mono) or end > len(out_mono):
+                break
+            level_in_cycles.append(in_mono[start:end])
+            level_out_cycles.append(out_mono[start:end])
+
+        if not level_in_cycles:
+            logger.warning(f"레벨 {level_db}dB: 충분한 주기를 추출할 수 없음, 건너뜀")
+            continue
+
+        # 주기별 평균 (과도 응답, 노이즈 감소)
+        avg_in = np.mean(level_in_cycles, axis=0)
+        avg_out = np.mean(level_out_cycles, axis=0)
+
+        raw_pairs.append((avg_in.copy(), avg_out.copy()))
+
+        # 입력값 기준 정렬
+        sort_idx = np.argsort(avg_in)
+        all_inputs.append(avg_in[sort_idx])
+        all_outputs.append(avg_out[sort_idx])
+
+    if not all_inputs:
+        raise RuntimeError("모든 레벨에서 측정 실패 — 충분한 데이터를 추출할 수 없음")
+
+    # 모든 레벨의 데이터를 합쳐서 입력값 기준 정렬
+    combined_in = np.concatenate(all_inputs)
+    combined_out = np.concatenate(all_outputs)
+    global_sort = np.argsort(combined_in)
+    combined_in = combined_in[global_sort]
+    combined_out = combined_out[global_sort]
+
+    # 균등 분포 n_points로 리샘플링
+    x_uniform = np.linspace(-1.0, 1.0, n_points)
+
+    # 실제 데이터 범위 내에서만 보간 (범위 밖은 외삽 방지)
+    in_min, in_max = combined_in[0], combined_in[-1]
+    output_values = np.interp(x_uniform, combined_in, combined_out)
+
+    # 커버리지: 입력이 [-1, +1] 중 얼마를 커버하는지
+    input_coverage = float((in_max - in_min) / 2.0)  # 전체 범위 2.0 대비
+
+    # 대칭성 검증: f(-x) ≈ -f(x) 이면 홀수 하모닉 대칭
+    # 중심(0)을 기준으로 양쪽 비교
+    n_half = n_points // 2
+    f_neg_x = output_values[:n_half][::-1]   # f(-x) reversed
+    neg_f_x = -output_values[n_points - n_half:]  # -f(x)
+
+    # 대칭 오차 계산 (정규화)
+    max_output = np.max(np.abs(output_values)) + 1e-10
+    symmetry_error = np.mean(np.abs(f_neg_x - neg_f_x)) / max_output
+    is_symmetric = bool(symmetry_error < 0.05)  # 5% 이하면 대칭으로 판단
+
+    logger.info(
+        f"Waveshaper v2: {len(levels_db)}레벨, 커버리지={input_coverage:.1%}, "
+        f"대칭={is_symmetric} (오차={symmetry_error:.4f})"
+    )
+
+    return WaveshaperV2Result(
+        input_values=x_uniform.astype(np.float32),
+        output_values=output_values.astype(np.float32),
+        n_points=n_points,
+        levels_db=levels_db,
+        input_coverage=round(input_coverage, 4),
+        is_symmetric=is_symmetric,
+        raw_pairs=raw_pairs,
     )
 
 
@@ -687,3 +844,306 @@ def measure_clap_profile(
         "n_settings": len(combinations),
         "embedding_dim": embeddings.shape[1],
     }
+
+
+# =============================================================================
+# 8. EQ 프로파일링
+# =============================================================================
+
+
+@dataclass
+class EQResponseResult:
+    """EQ 주파수/위상 응답 측정 결과"""
+    frequencies: list[float]       # Hz
+    magnitude_db: list[float]      # dB (bypass 대비 상대값)
+    phase_deg: list[float]         # degrees
+    group_delay_ms: list[float]    # ms
+    params: dict                   # 측정 시 파라미터
+    sample_rate: int
+    fft_size: int
+    is_minimum_phase: bool
+    thd_at_1k: float               # 비선형성 지표 (%)
+
+
+def _deconvolve(output: np.ndarray, inverse_filter: np.ndarray) -> np.ndarray:
+    """스윕 출력에 역필터 적용하여 임펄스 응답 추출 (FFT 컨볼루션)"""
+    n = len(output) + len(inverse_filter) - 1
+    # 2의 거듭제곱으로 패딩 (FFT 효율)
+    n_fft = 1
+    while n_fft < n:
+        n_fft *= 2
+
+    O = np.fft.rfft(output, n=n_fft)
+    I = np.fft.rfft(inverse_filter, n=n_fft)
+    ir = np.fft.irfft(O * I, n=n_fft)
+    return ir.astype(np.float32)
+
+
+def _check_minimum_phase(magnitude_db: np.ndarray, phase_deg: np.ndarray) -> bool:
+    """Hilbert 변환으로 최소위상 여부 판별
+
+    최소위상 시스템: phase = -Hilbert(ln|H(f)|)
+    측정 위상과 Hilbert 유도 위상의 차이가 작으면 최소위상.
+    """
+    # log magnitude → Hilbert transform → minimum phase
+    log_mag = np.log(10 ** (magnitude_db / 20.0) + 1e-10)
+    # Hilbert 변환 (이산)
+    n = len(log_mag)
+    if n < 4:
+        return True
+
+    spectrum = np.fft.rfft(log_mag)
+    # 최소위상 계산: imag(Hilbert(log|H|))
+    min_phase_rad = -np.imag(np.fft.irfft(
+        1j * np.sign(np.fft.rfftfreq(2 * n - 1, 1.0)) * np.fft.rfft(log_mag, n=2 * n - 1),
+        n=2 * n - 1,
+    ))[:n]
+    min_phase_deg = np.degrees(min_phase_rad)
+
+    # 측정 위상과 비교 (DC, Nyquist 근처 제외)
+    trim = max(1, n // 20)
+    measured = np.array(phase_deg[trim:-trim])
+    expected = min_phase_deg[trim:-trim]
+
+    if len(measured) == 0:
+        return True
+
+    error = np.mean(np.abs(measured - expected))
+    return bool(error < 15.0)  # 15도 이내면 최소위상
+
+
+def measure_eq_response(
+    plugin_path: str,
+    params: Optional[dict] = None,
+    bypass_params: Optional[dict] = None,
+    sample_rate: int = 44100,
+    fft_size: int = 32768,
+    sweep_duration: float = 6.0,
+    level_db: float = -12.0,
+) -> EQResponseResult:
+    """EQ 주파수/위상/그룹딜레이 측정 — 로그 스윕 디컨볼루션 방식
+
+    1. bypass 상태로 스윕 → 레퍼런스 IR 추출
+    2. 타겟 파라미터로 스윕 → 타겟 IR 추출
+    3. 주파수 도메인에서 차이 계산 → bypass 대비 상대 응답
+
+    Args:
+        plugin_path: VST3 경로
+        params: 측정할 EQ 파라미터
+        bypass_params: bypass 상태 파라미터 (None이면 파라미터 없이 로드)
+        sample_rate: 샘플레이트
+        fft_size: FFT 크기 (저주파 해상도용, 기본 32768)
+        sweep_duration: 스윕 길이 (초)
+        level_db: 입력 레벨 (dBFS)
+
+    Returns:
+        EQResponseResult
+    """
+    sweep_audio, inverse_filter = generate_log_sweep_deconv(
+        sample_rate=sample_rate,
+        duration_sec=sweep_duration,
+        level_db=level_db,
+    )
+    inv_mono = inverse_filter[0]
+
+    # 1) Bypass 측정 (레퍼런스)
+    wrapper_bypass = _load_plugin(plugin_path, bypass_params)
+    bypass_output = wrapper_bypass.process(sweep_audio, sample_rate)
+    bypass_mono = bypass_output[0] if bypass_output.ndim == 2 else bypass_output
+    bypass_ir = _deconvolve(bypass_mono, inv_mono)
+
+    # 2) 타겟 파라미터 측정
+    wrapper_target = _load_plugin(plugin_path, params)
+    target_output = wrapper_target.process(sweep_audio, sample_rate)
+    target_mono = target_output[0] if target_output.ndim == 2 else target_output
+    target_ir = _deconvolve(target_mono, inv_mono)
+
+    # 3) FFT — bypass 대비 상대 응답
+    window = np.hanning(fft_size).astype(np.float32)
+
+    # IR의 피크 위치 찾기 (디컨볼루션 결과에서 선형 응답이 집중되는 지점)
+    bypass_peak = int(np.argmax(np.abs(bypass_ir)))
+    target_peak = int(np.argmax(np.abs(target_ir)))
+
+    # 피크 중심으로 fft_size 윈도우 추출
+    def _extract_ir_window(ir, peak_idx):
+        half = fft_size // 2
+        start = max(0, peak_idx - half // 4)  # 피크 약간 앞부터
+        end = start + fft_size
+        if end > len(ir):
+            start = max(0, len(ir) - fft_size)
+            end = start + fft_size
+        segment = ir[start:end]
+        if len(segment) < fft_size:
+            segment = np.pad(segment, (0, fft_size - len(segment)))
+        return segment * window
+
+    bypass_frame = _extract_ir_window(bypass_ir, bypass_peak)
+    target_frame = _extract_ir_window(target_ir, target_peak)
+
+    bypass_spectrum = np.fft.rfft(bypass_frame)
+    target_spectrum = np.fft.rfft(target_frame)
+    freqs = np.fft.rfftfreq(fft_size, 1.0 / sample_rate)
+
+    # 상대 응답: H_eq = H_target / H_bypass
+    bypass_mag = np.abs(bypass_spectrum) + 1e-10
+    target_mag = np.abs(target_spectrum)
+    relative_mag = target_mag / bypass_mag
+    magnitude_db = (20 * np.log10(relative_mag + 1e-10)).tolist()
+
+    # 위상 (상대)
+    bypass_phase = np.angle(bypass_spectrum)
+    target_phase = np.angle(target_spectrum)
+    relative_phase = np.degrees(target_phase - bypass_phase)
+    # unwrap
+    relative_phase_unwrapped = np.unwrap(np.radians(relative_phase))
+    phase_deg = np.degrees(relative_phase_unwrapped).tolist()
+
+    # 그룹 딜레이: -d(phase)/d(omega)
+    df = freqs[1] - freqs[0] if len(freqs) > 1 else 1.0
+    d_phase = np.gradient(relative_phase_unwrapped, 2 * np.pi * df)
+    group_delay_ms = (-d_phase * 1000).tolist()
+
+    # 최소위상 판별
+    is_min_phase = _check_minimum_phase(
+        np.array(magnitude_db), np.array(phase_deg),
+    )
+
+    # THD @ 1kHz (비선형성 지표)
+    thd_result = measure_thd(plugin_path, params, frequency=1000.0,
+                             level_db=level_db, sample_rate=sample_rate)
+    thd_at_1k = thd_result.thd_percent
+
+    return EQResponseResult(
+        frequencies=freqs.tolist(),
+        magnitude_db=magnitude_db,
+        phase_deg=phase_deg,
+        group_delay_ms=group_delay_ms,
+        params=params or {},
+        sample_rate=sample_rate,
+        fft_size=fft_size,
+        is_minimum_phase=is_min_phase,
+        thd_at_1k=thd_at_1k,
+    )
+
+
+def measure_eq_parameter_sweep(
+    plugin_path: str,
+    sweep_config: dict[str, dict],
+    bypass_params: Optional[dict] = None,
+    sample_rate: int = 44100,
+    fft_size: int = 32768,
+    level_db: float = -12.0,
+) -> list[EQResponseResult]:
+    """EQ 파라미터 조합별 일괄 주파수 응답 측정
+
+    Args:
+        plugin_path: VST3 경로
+        sweep_config: 스윕 설정 dict
+            {
+                "gain_sweep": {
+                    "param": "band1_gain",
+                    "values": [-12, -6, 0, 6, 12],
+                    "fixed": {"band1_freq": 1000, "band1_q": 1.0}
+                },
+                "freq_sweep": {
+                    "param": "band1_freq",
+                    "values": [100, 500, 1000, 5000, 10000],
+                    "fixed": {"band1_gain": 6.0, "band1_q": 1.0}
+                },
+            }
+        bypass_params: bypass 상태 파라미터
+        sample_rate: 샘플레이트
+        fft_size: FFT 크기
+        level_db: 입력 레벨
+
+    Returns:
+        list[EQResponseResult] — 각 파라미터 조합에 대한 측정 결과
+    """
+    results = []
+
+    for sweep_name, config in sweep_config.items():
+        param_name = config["param"]
+        values = config["values"]
+        fixed = config.get("fixed", {})
+
+        logger.info(f"EQ sweep '{sweep_name}': {param_name} = {values}")
+
+        for value in values:
+            # 고정 파라미터 + 스윕 파라미터 결합
+            params = dict(fixed)
+            params[param_name] = value
+
+            try:
+                result = measure_eq_response(
+                    plugin_path, params, bypass_params,
+                    sample_rate=sample_rate,
+                    fft_size=fft_size,
+                    level_db=level_db,
+                )
+                results.append(result)
+                logger.info(
+                    f"  {param_name}={value}: peak={max(result.magnitude_db):.1f}dB, "
+                    f"min_phase={result.is_minimum_phase}, thd={result.thd_at_1k:.4f}%"
+                )
+            except Exception as e:
+                logger.warning(f"  {param_name}={value}: 측정 실패 — {e}")
+
+    return results
+
+
+def measure_eq_nonlinearity(
+    plugin_path: str,
+    params: Optional[dict] = None,
+    bypass_params: Optional[dict] = None,
+    levels_db: Optional[list[float]] = None,
+    sample_rate: int = 44100,
+    fft_size: int = 32768,
+) -> list[EQResponseResult]:
+    """EQ 비선형성(레벨 의존성) 측정
+
+    동일한 EQ 설정을 다른 입력 레벨에서 측정.
+    아날로그 모델링 EQ는 레벨에 따라 응답이 변함 (saturation).
+
+    Args:
+        plugin_path: VST3 경로
+        params: EQ 파라미터
+        bypass_params: bypass 상태 파라미터
+        levels_db: 측정할 입력 레벨 목록 (dBFS)
+        sample_rate: 샘플레이트
+        fft_size: FFT 크기
+
+    Returns:
+        list[EQResponseResult] — 레벨별 응답 결과
+    """
+    if levels_db is None:
+        levels_db = [-36.0, -24.0, -18.0, -12.0, -6.0, -3.0, 0.0]
+
+    results = []
+    for level in levels_db:
+        try:
+            result = measure_eq_response(
+                plugin_path, params, bypass_params,
+                sample_rate=sample_rate,
+                fft_size=fft_size,
+                level_db=level,
+            )
+            # 레벨 정보를 params에 추가
+            result.params = dict(result.params)
+            result.params["_input_level_db"] = level
+            results.append(result)
+            logger.info(f"  level={level}dB: thd={result.thd_at_1k:.4f}%")
+        except Exception as e:
+            logger.warning(f"  level={level}dB: 측정 실패 — {e}")
+
+    if len(results) >= 2:
+        # 레벨 간 응답 차이 확인
+        ref = np.array(results[0].magnitude_db)
+        max_deviation = 0.0
+        for r in results[1:]:
+            diff = np.max(np.abs(np.array(r.magnitude_db) - ref))
+            max_deviation = max(max_deviation, diff)
+        logger.info(f"  레벨 간 최대 응답 편차: {max_deviation:.2f} dB "
+                     f"({'비선형' if max_deviation > 0.5 else '선형'})")
+
+    return results
