@@ -21,21 +21,41 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
 
     fx_sub = parser.add_subparsers(dest="effect", help=_("Effect type"))
 
+    fade_curve_help = _("Fade curve: linear/cosine/equal_power/exponential/logarithmic (default: linear)")
+
     # fade-in
-    fi = fx_sub.add_parser("fade-in", help=_("Linear fade in"))
+    fi = fx_sub.add_parser("fade-in", help=_("Fade in (linear or curved)"))
     fi.add_argument("--samples", type=int, default=None, help=_("Fade length (samples)"))
     fi.add_argument("--duration", type=float, default=None, help=_("Fade length (seconds)"))
+    fi.add_argument("--curve", choices=list(dsp.FADE_CURVES), default="linear", help=fade_curve_help)
     fi.add_argument("--output", "-o", required=True, help=_("Output path"))
     fi.add_argument("--recursive", "-r", action="store_true")
     fi.add_argument("--suffix", default="")
 
     # fade-out
-    fo = fx_sub.add_parser("fade-out", help=_("Linear fade out"))
+    fo = fx_sub.add_parser("fade-out", help=_("Fade out (linear or curved)"))
     fo.add_argument("--samples", type=int, default=None, help=_("Fade length (samples)"))
     fo.add_argument("--duration", type=float, default=None, help=_("Fade length (seconds)"))
+    fo.add_argument("--curve", choices=list(dsp.FADE_CURVES), default="linear", help=fade_curve_help)
     fo.add_argument("--output", "-o", required=True, help=_("Output path"))
     fo.add_argument("--recursive", "-r", action="store_true")
     fo.add_argument("--suffix", default="")
+
+    # pad (헤드/테일 무음 추가)
+    pd = fx_sub.add_parser("pad", help=_("Prepend/append silence (mastering delivery prep)"))
+    pd.add_argument("--head-ms", type=float, default=0.0, help=_("Head silence (ms)"))
+    pd.add_argument("--head-sec", type=float, default=None, help=_("Head silence (seconds, overrides --head-ms)"))
+    pd.add_argument("--tail-ms", type=float, default=0.0, help=_("Tail silence (ms)"))
+    pd.add_argument("--tail-sec", type=float, default=None, help=_("Tail silence (seconds, overrides --tail-ms)"))
+    pd.add_argument("--output", "-o", required=True, help=_("Output path"))
+    pd.add_argument("--recursive", "-r", action="store_true")
+    pd.add_argument("--suffix", default="")
+
+    # remove-dc
+    dc = fx_sub.add_parser("remove-dc", help=_("Remove DC offset (subtract per-channel mean)"))
+    dc.add_argument("--output", "-o", required=True, help=_("Output path"))
+    dc.add_argument("--recursive", "-r", action="store_true")
+    dc.add_argument("--suffix", default="")
 
     # trim
     tr = fx_sub.add_parser("trim", help=_("Trim by samples/time"))
@@ -111,11 +131,19 @@ def _apply_effect(audio: np.ndarray, sr: int, args: argparse.Namespace) -> np.nd
 
     if effect == "fade-in":
         samples = args.samples or (int(args.duration * sr) if args.duration else sr // 10)
-        return dsp.fade_in(audio, samples)
+        return dsp.fade_in(audio, samples, curve=args.curve)
 
     elif effect == "fade-out":
         samples = args.samples or (int(args.duration * sr) if args.duration else sr // 10)
-        return dsp.fade_out(audio, samples)
+        return dsp.fade_out(audio, samples, curve=args.curve)
+
+    elif effect == "pad":
+        head = int(args.head_sec * sr) if args.head_sec is not None else int(args.head_ms / 1000.0 * sr)
+        tail = int(args.tail_sec * sr) if args.tail_sec is not None else int(args.tail_ms / 1000.0 * sr)
+        return dsp.pad(audio, head_samples=head, tail_samples=tail)
+
+    elif effect == "remove-dc":
+        return dsp.remove_dc(audio)
 
     elif effect == "trim":
         start = args.start
@@ -184,7 +212,7 @@ def _apply_effect(audio: np.ndarray, sr: int, args: argparse.Namespace) -> np.nd
 
 def run(args: argparse.Namespace) -> None:
     if not args.effect:
-        print_error("이펙트를 지정해주세요. (fade-in, fade-out, trim, trim-silence, cut-region, splice, normalize, gate, gain)")
+        print_error("이펙트를 지정해주세요. (fade-in, fade-out, pad, remove-dc, trim, trim-silence, cut-region, splice, normalize, gate, gain)")
 
     input_path = Path(args.input)
 

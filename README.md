@@ -11,6 +11,10 @@ Built for AI agents and automated audio pipelines — every command supports `--
 git clone https://github.com/unohee/audioman.git
 cd audioman
 uv sync
+
+# Install as global CLI tool
+uv tool install -e .
+audioman --help
 ```
 
 ## Quick Start
@@ -56,6 +60,7 @@ audioman process ./input_dir/ -p dereverb -o ./output_dir/ -r  # recursive
 | `analyze <input>` | Audio analysis (RMS, spectral, silence detection) |
 | `fx <input>` | Built-in DSP effects (normalize, gate, trim, fade) |
 | `visualize <input>` | Export analysis to Sonic Visualiser SVL files |
+| `doctor -p <plugin>` | Plugin analysis (freq response, THD, dynamics, waveshaper) |
 
 ## Batch Processing
 
@@ -173,6 +178,30 @@ audioman visualize input.wav -b spectrogram --open
 
 Built-in analysis types: `spectrogram`, `spectral-centroid`, `spectral-entropy`, `rms`, `peak`, `zcr`
 
+## Plugin Analysis (Doctor)
+
+PluginDoctor-style measurements for any VST3/AU plugin:
+
+```bash
+# Full analysis (frequency response, THD, dynamics, waveshaper, performance)
+audioman doctor -p denoise
+
+# Single mode
+audioman doctor -p saturn-2 --mode thd --frequency 1000 --level -6
+
+# Waveshaper v2 (multi-level measurement)
+audioman doctor -p decapitator --mode waveshaper --ws-levels 7 --ws-points 256
+
+# A/B comparison
+audioman doctor -p saturn-2 --compare vsm-3
+
+# CLAP embedding profiling
+audioman doctor -p vsm-3 --clap --clap-sweep drive=0,25,50,75,100 \
+  --clap-output vsm3_embeddings.npy
+```
+
+Modes: `linear`, `thd`, `imd`, `sweep`, `dynamics`, `attack-release`, `waveshaper`, `performance`, `all`
+
 ### Vamp Plugin Setup (macOS)
 
 ```bash
@@ -208,6 +237,21 @@ Tested with iZotope RX 10 (15 VST3 plugins, all parameters accessible):
 | Repair Assistant | `repair-assistant` | `repair` | 15 |
 
 Any VST3 or AU plugin installed on the system can be used — not limited to iZotope.
+
+## Internationalization (i18n)
+
+CLI help text supports locale-based translation. Default is English; Korean is included.
+
+```bash
+# Force language via environment variable
+AUDIOMAN_LANG=ko audioman --help   # Korean
+AUDIOMAN_LANG=en audioman --help   # English
+
+# Auto-detects from system locale (LC_ALL, LANG)
+audioman --help
+```
+
+To add a new language, add a catalog dict to `src/audioman/i18n.py`.
 
 ## Requirements
 

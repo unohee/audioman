@@ -188,30 +188,110 @@ def concat(clips: list[np.ndarray], crossfade_samples: int = 0) -> np.ndarray:
     return out
 
 
-def fade_in(audio: np.ndarray, samples: int) -> np.ndarray:
-    """선형 fade in. samples: fade 길이 (샘플 수)"""
+FADE_CURVES = ("linear", "cosine", "equal_power", "exponential", "logarithmic")
+
+
+def _fade_curve(n: int, kind: str, direction: str) -> np.ndarray:
+    """길이 n의 페이드 곡선. direction: 'in' (0→1) 또는 'out' (1→0).
+
+    - linear: 진폭 선형
+    - cosine: cosine equal-amplitude (S-curve, 가장 부드러움)
+    - equal_power: sqrt(linear) — 합성 시 RMS 보존 (crossfade 표준)
+    - exponential: 빠른 시작/느린 끝 (감쇠 자연)
+    - logarithmic: 느린 시작/빠른 끝
+    """
+    if n <= 0:
+        return np.zeros(0, dtype=np.float32)
+    if kind not in FADE_CURVES:
+        raise ValueError(f"알 수 없는 fade curve: {kind!r} (지원: {FADE_CURVES})")
+
+    x = np.linspace(0.0, 1.0, n, dtype=np.float32)
+    if kind == "linear":
+        c = x
+    elif kind == "cosine":
+        c = 0.5 * (1.0 - np.cos(np.pi * x)).astype(np.float32)
+    elif kind == "equal_power":
+        c = np.sqrt(x).astype(np.float32)
+    elif kind == "exponential":
+        # 60 dB dynamic range. x=0 → -60dB, x=1 → 0dB
+        c = (10 ** ((x - 1.0) * 3.0)).astype(np.float32)
+        c -= c[0]
+        c /= c[-1] if c[-1] > 0 else 1.0
+    elif kind == "logarithmic":
+        c = (1.0 - 10 ** (-x * 3.0)).astype(np.float32)
+        c -= c[0]
+        c /= c[-1] if c[-1] > 0 else 1.0
+    else:
+        c = x
+
+    return c if direction == "in" else c[::-1].copy()
+
+
+def fade_in(audio: np.ndarray, samples: int, curve: str = "linear") -> np.ndarray:
+    """fade in. samples: fade 길이 (샘플 수). curve: linear/cosine/equal_power/exponential/logarithmic"""
     out = audio.copy()
     if audio.ndim == 1:
         n = min(samples, len(out))
-        out[:n] *= np.linspace(0.0, 1.0, n, dtype=np.float32)
+        out[:n] *= _fade_curve(n, curve, "in")
     else:
         n = min(samples, out.shape[1])
-        curve = np.linspace(0.0, 1.0, n, dtype=np.float32)
-        out[:, :n] *= curve
+        out[:, :n] *= _fade_curve(n, curve, "in")
     return out
 
 
-def fade_out(audio: np.ndarray, samples: int) -> np.ndarray:
-    """선형 fade out. samples: fade 길이 (샘플 수)"""
+def fade_out(audio: np.ndarray, samples: int, curve: str = "linear") -> np.ndarray:
+    """fade out. samples: fade 길이 (샘플 수). curve: linear/cosine/equal_power/exponential/logarithmic"""
     out = audio.copy()
     if audio.ndim == 1:
         n = min(samples, len(out))
-        out[-n:] *= np.linspace(1.0, 0.0, n, dtype=np.float32)
+        out[-n:] *= _fade_curve(n, curve, "out")
     else:
         n = min(samples, out.shape[1])
-        curve = np.linspace(1.0, 0.0, n, dtype=np.float32)
-        out[:, -n:] *= curve
+        out[:, -n:] *= _fade_curve(n, curve, "out")
     return out
+
+
+def pad(
+    audio: np.ndarray,
+    head_samples: int = 0,
+    tail_samples: int = 0,
+) -> np.ndarray:
+    """오디오 앞/뒤에 무음 패딩 추가. 마스터링 납품 표준 동작."""
+    if head_samples < 0 or tail_samples < 0:
+        raise ValueError("pad 길이는 음수일 수 없습니다.")
+    if head_samples == 0 and tail_samples == 0:
+        return audio.copy()
+
+    if audio.ndim == 1:
+        head = np.zeros(head_samples, dtype=audio.dtype)
+        tail = np.zeros(tail_samples, dtype=audio.dtype)
+        return np.concatenate([head, audio, tail])
+
+    n_ch = audio.shape[0]
+    head = np.zeros((n_ch, head_samples), dtype=audio.dtype)
+    tail = np.zeros((n_ch, tail_samples), dtype=audio.dtype)
+    return np.concatenate([head, audio, tail], axis=1)
+
+
+def remove_dc(audio: np.ndarray) -> np.ndarray:
+    """DC offset 제거. 채널별로 독립 mean을 빼낸다.
+
+    마스터링 납품 전 표준 절차. 미세한 DC bias가 있으면 후속 처리 시
+    intermodulation/headroom 손실이 발생한다.
+    """
+    if audio.ndim == 1:
+        return (audio - np.mean(audio)).astype(audio.dtype)
+    out = audio.copy()
+    for ch in range(out.shape[0]):
+        out[ch] = out[ch] - np.mean(out[ch])
+    return out
+
+
+def measure_dc_offset(audio: np.ndarray) -> list[float]:
+    """채널별 DC offset (mean) 반환."""
+    if audio.ndim == 1:
+        return [float(np.mean(audio))]
+    return [float(np.mean(audio[ch])) for ch in range(audio.shape[0])]
 
 
 def trim(

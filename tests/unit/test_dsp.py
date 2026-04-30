@@ -69,6 +69,124 @@ class TestGain:
         assert np.max(np.abs(result)) < np.max(np.abs(test_audio))
 
 
+class TestFadeCurves:
+    def test_linear_curve_endpoints(self, test_audio, sample_rate):
+        from audioman.core.dsp import fade_in, fade_out
+        n = sample_rate // 10
+        fi = fade_in(test_audio, n, curve="linear")
+        fo = fade_out(test_audio, n, curve="linear")
+        assert abs(fi[0, 0]) < 1e-6
+        assert abs(fo[0, -1]) < 1e-6
+
+    def test_cosine_curve_smooth(self, test_audio, sample_rate):
+        from audioman.core.dsp import fade_in
+        n = sample_rate // 10
+        fi = fade_in(test_audio, n, curve="cosine")
+        # cosine S-curve: 시작과 끝 미분이 0이어야 부드럽다
+        # 첫 두 샘플의 차이 < 중간 두 샘플의 차이
+        diff_start = abs(fi[0, 1] - fi[0, 0])
+        diff_mid = abs(fi[0, n // 2 + 1] - fi[0, n // 2])
+        assert diff_start < diff_mid
+
+    def test_equal_power_midpoint(self, test_audio, sample_rate):
+        from audioman.core.dsp import fade_in
+        n = sample_rate // 10
+        fi = fade_in(test_audio, n, curve="equal_power")
+        # equal_power 중간점: sqrt(0.5) ≈ 0.707 (linear는 0.5)
+        original_mid = test_audio[0, n // 2]
+        if abs(original_mid) > 0.01:  # silence 회피
+            ratio = fi[0, n // 2] / original_mid
+            assert 0.65 < ratio < 0.75
+
+    def test_unknown_curve_raises(self, test_audio):
+        from audioman.core.dsp import fade_in
+        with pytest.raises(ValueError, match="알 수 없는 fade curve"):
+            fade_in(test_audio, 100, curve="bouncy")
+
+    def test_all_curves_accept(self, test_audio, sample_rate):
+        from audioman.core.dsp import fade_in, fade_out, FADE_CURVES
+        n = sample_rate // 100
+        for curve in FADE_CURVES:
+            fade_in(test_audio, n, curve=curve)
+            fade_out(test_audio, n, curve=curve)
+
+
+class TestPad:
+    def test_pad_head_only(self, test_audio, sample_rate):
+        from audioman.core.dsp import pad
+        original_len = test_audio.shape[1]
+        result = pad(test_audio, head_samples=sample_rate // 2)  # 0.5초
+        assert result.shape[1] == original_len + sample_rate // 2
+        # 헤드 패딩은 무음
+        assert np.max(np.abs(result[:, :sample_rate // 2])) == 0.0
+        # 원본이 그 뒤에 보존됨
+        np.testing.assert_allclose(result[:, sample_rate // 2:], test_audio, atol=1e-6)
+
+    def test_pad_tail_only(self, test_audio, sample_rate):
+        from audioman.core.dsp import pad
+        result = pad(test_audio, tail_samples=sample_rate)  # 1초
+        assert result.shape[1] == test_audio.shape[1] + sample_rate
+        assert np.max(np.abs(result[:, -sample_rate:])) == 0.0
+
+    def test_pad_both(self, test_audio, sample_rate):
+        from audioman.core.dsp import pad
+        head = sample_rate // 4
+        tail = sample_rate // 2
+        result = pad(test_audio, head_samples=head, tail_samples=tail)
+        assert result.shape[1] == test_audio.shape[1] + head + tail
+        assert np.max(np.abs(result[:, :head])) == 0.0
+        assert np.max(np.abs(result[:, -tail:])) == 0.0
+
+    def test_pad_mono(self, test_audio_mono, sample_rate):
+        from audioman.core.dsp import pad
+        result = pad(test_audio_mono, head_samples=100, tail_samples=200)
+        assert result.shape == (test_audio_mono.shape[0] + 300,)
+
+    def test_pad_zero_returns_copy(self, test_audio):
+        from audioman.core.dsp import pad
+        result = pad(test_audio, head_samples=0, tail_samples=0)
+        np.testing.assert_array_equal(result, test_audio)
+        assert result is not test_audio  # copy, not same object
+
+    def test_pad_negative_raises(self, test_audio):
+        from audioman.core.dsp import pad
+        with pytest.raises(ValueError, match="음수일 수 없"):
+            pad(test_audio, head_samples=-1)
+
+
+class TestRemoveDC:
+    def test_remove_dc_offset(self, sample_rate):
+        from audioman.core.dsp import remove_dc, measure_dc_offset
+        # 채널별로 다른 DC bias
+        t = np.linspace(0, 1, sample_rate, dtype=np.float32)
+        sine = 0.3 * np.sin(2 * np.pi * 440 * t)
+        ch_l = sine + 0.1   # +0.1 DC
+        ch_r = sine - 0.05  # -0.05 DC
+        stereo = np.stack([ch_l, ch_r])
+
+        before = measure_dc_offset(stereo)
+        assert abs(before[0] - 0.1) < 0.01
+        assert abs(before[1] - (-0.05)) < 0.01
+
+        cleaned = remove_dc(stereo)
+        after = measure_dc_offset(cleaned)
+        assert abs(after[0]) < 1e-6
+        assert abs(after[1]) < 1e-6
+
+    def test_remove_dc_preserves_signal_shape(self, test_audio):
+        from audioman.core.dsp import remove_dc
+        result = remove_dc(test_audio)
+        assert result.shape == test_audio.shape
+        # 원래 DC가 거의 0이므로 신호는 거의 그대로
+        np.testing.assert_allclose(result, test_audio, atol=1e-3)
+
+    def test_remove_dc_mono(self, test_audio_mono):
+        from audioman.core.dsp import remove_dc
+        biased = test_audio_mono + 0.2
+        cleaned = remove_dc(biased)
+        assert abs(np.mean(cleaned)) < 1e-6
+
+
 class TestTrim:
     def test_trim_basic(self, test_audio):
         result = trim(test_audio, start=100, end=200)

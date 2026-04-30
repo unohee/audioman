@@ -13,7 +13,6 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 
@@ -31,6 +30,9 @@ OP_SCHEMA: dict[str, set[str]] = {
     "splice": {"clip", "position_sec", "mode"},
     "fade_in": {"duration_sec"},
     "fade_out": {"duration_sec"},
+    "pad": set(),
+    "remove_dc": set(),
+    "loudness_normalize": set(),
     "normalize": set(),
     "gain": {"db"},
     "gate": set(),
@@ -224,11 +226,38 @@ def _apply_op(audio: np.ndarray, sr: int, op: dict) -> np.ndarray:
 
     if t == "fade_in":
         n = _sec_to_samples(op["duration_sec"], sr)
-        return dsp.fade_in(audio, n)
+        return dsp.fade_in(audio, n, curve=op.get("curve", "linear"))
 
     if t == "fade_out":
         n = _sec_to_samples(op["duration_sec"], sr)
-        return dsp.fade_out(audio, n)
+        return dsp.fade_out(audio, n, curve=op.get("curve", "linear"))
+
+    if t == "pad":
+        head = _ms_to_samples(op.get("head_ms"), sr)
+        tail_ms = op.get("tail_ms")
+        tail_sec = op.get("tail_sec")
+        if tail_sec is not None:
+            tail = _sec_to_samples(tail_sec, sr)
+        else:
+            tail = _ms_to_samples(tail_ms, sr)
+        head_sec = op.get("head_sec")
+        if head_sec is not None:
+            head = _sec_to_samples(head_sec, sr)
+        return dsp.pad(audio, head_samples=head, tail_samples=tail)
+
+    if t == "remove_dc":
+        return dsp.remove_dc(audio)
+
+    if t == "loudness_normalize":
+        from audioman.core import loudness as loudness_mod
+        target_lufs = float(op.get("target_lufs", -14.0))
+        max_tp = float(op.get("max_true_peak_dbtp", -1.0))
+        out, _meta = loudness_mod.loudness_normalize(
+            audio, sr,
+            target_lufs=target_lufs,
+            max_true_peak_dbtp=max_tp,
+        )
+        return out
 
     if t == "normalize":
         peak = op.get("peak_db")
@@ -268,7 +297,6 @@ def _apply_op(audio: np.ndarray, sr: int, op: dict) -> np.ndarray:
         return audio
 
     if t == "chain":
-        from audioman.core.pipeline import PipelineStep
         from audioman.core.registry import get_registry
         from audioman.plugins.vst3 import VST3PluginWrapper
 

@@ -176,6 +176,185 @@ def generate_dynamics_attack_release(
     return np.stack([mono] * channels)
 
 
+def generate_log_sweep_deconv(
+    freq_start: float = 20.0,
+    freq_end: float = 20000.0,
+    sample_rate: int = 44100,
+    duration_sec: float = 6.0,
+    level_db: float = -12.0,
+    channels: int = 2,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Farina method 로그 스윕 + 역필터 — EQ 주파수 응답 디컨볼루션용
+
+    일반 임펄스 대비 장점:
+    - SNR이 훨씬 높음 (에너지가 시간에 걸쳐 분산)
+    - 저주파 shelving EQ의 긴 임펄스 응답 정확 캡처
+    - 비선형 왜곡 성분을 시간축에서 분리 가능
+
+    Returns: (sweep_audio, inverse_filter)
+        sweep_audio: (channels, samples) float32
+        inverse_filter: (1, samples) float32 — 디컨볼루션용 역필터
+    """
+    n = int(sample_rate * duration_sec)
+    amp = 10 ** (level_db / 20.0)
+    t = np.arange(n, dtype=np.float64) / sample_rate
+
+    # Farina log sweep
+    L = duration_sec / np.log(freq_end / freq_start)
+    phase = 2 * np.pi * freq_start * L * (np.exp(t / L) - 1)
+    sweep = (amp * np.sin(phase)).astype(np.float32)
+
+    # 역필터: 시간 반전 + 진폭 보상 (고주파로 갈수록 에너지 감소 보상)
+    # Farina의 역필터는 sweep를 시간 반전 후 주파수 의존 진폭 보상 적용
+    inverse = sweep[::-1].copy()
+
+    # 주파수 의존 진폭 보상: exp(-t/L) envelope
+    t_inv = np.arange(n, dtype=np.float64) / sample_rate
+    envelope = np.exp(-t_inv / L).astype(np.float32)
+    # 정규화: 디컨볼루션 결과가 단위 임펄스가 되도록
+    envelope /= np.sum(sweep ** 2) / n + 1e-10
+    inverse *= envelope
+
+    sweep_audio = np.stack([sweep] * channels)
+    inverse_filter = inverse.reshape(1, -1)
+
+    return sweep_audio, inverse_filter
+
+
+def generate_multitone(
+    n_tones: int = 64,
+    freq_start: float = 20.0,
+    freq_end: float = 20000.0,
+    sample_rate: int = 44100,
+    duration_sec: float = 4.0,
+    level_db: float = -18.0,
+    channels: int = 2,
+) -> np.ndarray:
+    """Schroeder-phase 멀티톤 — EQ 단일 패스 주파수 응답 측정용
+
+    로그 분포된 n_tones개의 사인파를 동시 생성.
+    Schroeder phase를 적용하여 crest factor를 최소화.
+
+    Returns: (channels, samples) float32
+    """
+    n = int(sample_rate * duration_sec)
+    amp_per_tone = 10 ** (level_db / 20.0) / np.sqrt(n_tones)
+
+    # 로그 분포 주파수
+    freqs = np.geomspace(freq_start, freq_end, n_tones)
+
+    t = np.arange(n, dtype=np.float64) / sample_rate
+    signal = np.zeros(n, dtype=np.float64)
+
+    for k, freq in enumerate(freqs):
+        # Schroeder phase: phi_k = -k*(k-1)*pi/n_tones
+        # crest factor를 줄여서 동일 peak에서 더 많은 에너지 전달
+        phase = -k * (k - 1) * np.pi / n_tones
+        signal += amp_per_tone * np.sin(2 * np.pi * freq * t + phase)
+
+    # 피크 정규화 (목표 레벨 유지)
+    target_amp = 10 ** (level_db / 20.0)
+    peak = np.max(np.abs(signal))
+    if peak > 0:
+        signal *= target_amp / peak
+
+    mono = signal.astype(np.float32)
+    return np.stack([mono] * channels)
+
+
+def generate_pink_noise(
+    sample_rate: int = 44100,
+    duration_sec: float = 3.0,
+    level_db: float = -12.0,
+    channels: int = 2,
+    seed: int = 42,
+) -> np.ndarray:
+    """핑크 노이즈 (1/f) — 음악적 스펙트럼에 가까운 EQ 테스트 신호
+
+    Returns: (channels, samples) float32
+    """
+    rng = np.random.RandomState(seed)
+    n = int(sample_rate * duration_sec)
+    amp = 10 ** (level_db / 20.0)
+
+    # 주파수 도메인에서 1/sqrt(f) 스펙트럼 생성
+    white = rng.randn(n).astype(np.float64)
+    spectrum = np.fft.rfft(white)
+    freqs = np.fft.rfftfreq(n, 1.0 / sample_rate)
+
+    # DC 제외, 1/sqrt(f) 적용
+    freqs[0] = 1.0  # DC 보호
+    pink_filter = 1.0 / np.sqrt(freqs)
+    spectrum *= pink_filter
+
+    pink = np.fft.irfft(spectrum, n=n).astype(np.float32)
+
+    # 피크 정규화
+    peak = np.max(np.abs(pink))
+    if peak > 0:
+        pink *= amp / peak
+
+    return np.stack([pink] * channels)
+
+
+def generate_band_limited_noise(
+    freq_low: float = 200.0,
+    freq_high: float = 2000.0,
+    sample_rate: int = 44100,
+    duration_sec: float = 3.0,
+    level_db: float = -12.0,
+    channels: int = 2,
+    seed: int = 42,
+) -> np.ndarray:
+    """밴드 제한 노이즈 — 특정 주파수 대역의 EQ 응답 테스트용
+
+    Returns: (channels, samples) float32
+    """
+    rng = np.random.RandomState(seed)
+    n = int(sample_rate * duration_sec)
+    amp = 10 ** (level_db / 20.0)
+
+    white = rng.randn(n).astype(np.float64)
+    spectrum = np.fft.rfft(white)
+    freqs = np.fft.rfftfreq(n, 1.0 / sample_rate)
+
+    # 밴드패스 마스크
+    mask = np.zeros_like(freqs)
+    mask[(freqs >= freq_low) & (freqs <= freq_high)] = 1.0
+    spectrum *= mask
+
+    band_noise = np.fft.irfft(spectrum, n=n).astype(np.float32)
+
+    # 피크 정규화
+    peak = np.max(np.abs(band_noise))
+    if peak > 0:
+        band_noise *= amp / peak
+
+    return np.stack([band_noise] * channels)
+
+
+def generate_impulse_train(
+    rate_hz: float = 10.0,
+    sample_rate: int = 44100,
+    duration_sec: float = 2.0,
+    level_db: float = -6.0,
+    channels: int = 2,
+) -> np.ndarray:
+    """임펄스 트레인 — EQ 과도 응답 + 주파수 착색 테스트
+
+    Returns: (channels, samples) float32
+    """
+    n = int(sample_rate * duration_sec)
+    amp = 10 ** (level_db / 20.0)
+    audio = np.zeros(n, dtype=np.float32)
+
+    period = int(sample_rate / rate_hz)
+    for i in range(0, n, period):
+        audio[i] = amp
+
+    return np.stack([audio] * channels)
+
+
 def to_mid_side(audio: np.ndarray) -> np.ndarray:
     """L/R → M/S 변환. audio: (2, samples)"""
     if audio.shape[0] != 2:
