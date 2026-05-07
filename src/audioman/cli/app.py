@@ -6,7 +6,7 @@ import logging
 import sys
 
 from audioman import __version__
-from audioman.cli import scan, list_cmd, info, process, chain, preset, dump, analyze, fx, visualize, doctor, eq_profile, bounce, commit_cmd, mixdown, edl as edl_cli, master as master_cli, fader_test as fader_test_cli, fader_compare as fader_compare_cli, voiceover as voiceover_cli, screen as screen_cli
+from audioman.cli import scan, list_cmd, info, process, chain, preset, dump, analyze, fx, visualize, doctor, eq_profile, bounce, commit_cmd, mixdown, edl as edl_cli, master as master_cli, fader_test as fader_test_cli, fader_compare as fader_compare_cli, voiceover as voiceover_cli, screen as screen_cli, obs as obs_cli
 from audioman.i18n import _
 
 
@@ -42,6 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
     fader_compare_cli.add_parser(subparsers)
     voiceover_cli.add_parser(subparsers)
     screen_cli.add_parser(subparsers)
+    obs_cli.add_parser(subparsers)
 
     return parser
 

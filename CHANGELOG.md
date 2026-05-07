@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **obs**: OBS Studio 멀티트랙 영상 자동 진단 명령 (`audioman obs probe`, `audioman obs dry-run`)
+  - 트랙 토폴로지 분류: `multitrack` / `single` / `duplicated` / `silent`
+  - 활성 트랙 분류: `voice` / `music` / `fullmix` / `silent` (VAD speech ratio + 스펙트럼 대역 + hf slope)
+  - 처치 룰 엔진: hum / clipping / DC offset / clicks / phase / channel imbalance 검사 후 RX 플러그인 단축명과 함께 처치 계획 JSON 생성
+  - 동일 RMS 신호 그룹 자동 검출 + mirror map (트랙 0 분석 결과를 트랙 1에 미러링)
+  - 디렉터리 일괄 모드, `--out-dir`로 영상별 JSON 리포트 저장
+  - dry-run only — 실제 처리는 사용자/후속 명령이 결정 (안전한 검토 단계)
+  - core 모듈: `audioman.core.obs` (probe_topology, classify_track, diagnose_track, recommend_treatment, dry_run_video)
+  - 단위 테스트 15개 (`tests/unit/test_obs.py`)
+  - 워크플로우 문서: `docs/obs-workflow.md`
+
 ## [0.1.0] - 2026-03-26
 
 ### Added
