@@ -139,10 +139,15 @@ def _extract_track_to_wav(
 def probe_topology(
     video: str | Path,
     *,
-    probe_seconds: float = 15.0,
+    probe_seconds: float | None = None,
     probe_sample_rate: int = 16000,
 ) -> TopologyReport:
-    """ffprobe로 트랙 수 파악 → 각 트랙 앞 N초만 mono 16k로 추출 → RMS로 토폴로지 분류.
+    """ffprobe로 트랙 수 파악 → 각 트랙을 mono 16k로 추출 → RMS로 토폴로지 분류.
+
+    `probe_seconds`:
+      - None  → 영상 전체를 RMS 측정 (기본). 데스크탑 트랙처럼 "앞은 무음, 중간에 신호"
+        패턴이 silent로 오분류되는 것을 막기 위해 전체 스캔이 안전.
+      - float → 트랙별 앞 N초만 추출. 빠른 토폴로지 확인용.
 
     분류 규칙:
       - n_active == 0       → silent

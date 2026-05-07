@@ -13,8 +13,15 @@ All notable changes to this project will be documented in this file.
   - 디렉터리 일괄 모드, `--out-dir`로 영상별 JSON 리포트 저장
   - dry-run only — 실제 처리는 사용자/후속 명령이 결정 (안전한 검토 단계)
   - core 모듈: `audioman.core.obs` (probe_topology, classify_track, diagnose_track, recommend_treatment, dry_run_video)
-  - 단위 테스트 15개 (`tests/unit/test_obs.py`)
+  - 단위 테스트 17개 (`tests/unit/test_obs.py`)
   - 워크플로우 문서: `docs/obs-workflow.md`
+
+### Changed
+- **obs probe**: 기본 동작이 트랙 앞 15초만 보던 것에서 **영상 전체 스캔**으로 변경.
+  - OBS 데스크탑 오디오처럼 산발적으로만 신호가 나오는 트랙이 앞 구간 무음으로 silent 오분류되는 문제 해결.
+  - `probe_seconds=None`(기본)이면 전체, 명시적으로 숫자를 주면 기존 동작(앞 N초만).
+  - CLI: `audioman obs probe --probe-seconds 15` 식으로 명시 가능.
+  - 회귀 테스트: `test_probe_topology_full_scan_catches_late_signal`, `test_probe_topology_default_is_full_scan`
 
 ## [0.1.0] - 2026-03-26
 

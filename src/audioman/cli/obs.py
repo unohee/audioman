@@ -30,8 +30,9 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p_probe = sub.add_parser("probe", help="트랙 토폴로지(분리/단일/복제/무음) 식별")
     p_probe.add_argument("input", help="입력 영상 파일 또는 디렉터리")
     p_probe.add_argument(
-        "--probe-seconds", type=float, default=15.0,
-        help="트랙별 RMS 측정 길이 (default: 15)",
+        "--probe-seconds", type=float, default=None,
+        help="트랙별 RMS 측정 길이(초). 미지정 시 영상 전체를 스캔. "
+             "빠른 확인이 필요하면 15 정도로 지정.",
     )
     p_probe.set_defaults(func=_run_probe)
 

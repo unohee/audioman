@@ -182,8 +182,12 @@ def test_recommend_channel_balance_warning():
 # ---------------------------------------------------------------------------
 
 
-def _try_make_multitrack_video(out_path, tracks_audio, sample_rate):
-    """ffmpeg로 multitrack 영상 만들기. 실패 시 None 반환."""
+def _try_make_multitrack_video(out_path, tracks_audio, sample_rate, video_duration=1.5):
+    """ffmpeg로 multitrack 영상 만들기. 실패 시 None 반환.
+
+    video_duration: 비디오 트랙 길이(초). -shortest 정책상 비디오/오디오 중 짧은
+    쪽에 맞춰 컷되므로, 오디오 길이와 같거나 길게 설정해야 오디오가 잘리지 않는다.
+    """
     import shutil
     import subprocess
     if shutil.which("ffmpeg") is None:
@@ -196,10 +200,9 @@ def _try_make_multitrack_video(out_path, tracks_audio, sample_rate):
         sf.write(str(wav), audio.T, sample_rate, subtype="PCM_24")
         wav_paths.append(wav)
 
-    # color video (1초)
     cmd = [
         "ffmpeg", "-y", "-loglevel", "error",
-        "-f", "lavfi", "-i", "color=size=64x64:rate=30:duration=1.5",
+        "-f", "lavfi", "-i", f"color=size=64x64:rate=30:duration={video_duration}",
     ]
     for wav in wav_paths:
         cmd += ["-i", str(wav)]
@@ -247,3 +250,52 @@ def test_probe_topology_duplicated(tmp_path):
     r = obs_core.probe_topology(video, probe_seconds=1.0)
     assert r.topology == "duplicated"
     assert len(r.unique_signal_groups) == 1
+
+
+def test_probe_topology_full_scan_catches_late_signal(tmp_path):
+    """앞 구간이 무음이고 후반에만 신호가 있는 트랙은 짧은 probe_seconds로
+    silent로 오분류되지만, probe_seconds=None(전체 스캔)이면 active로 잡혀야 함.
+
+    OBS 데스크탑 오디오 트랙처럼 산발적으로만 신호가 나오는 패턴 시뮬레이션.
+    """
+    sr = 48000
+    dur = 4.0
+    voice = _make_voice_like(sr=sr, dur=dur)
+    # 앞 2초 무음, 뒤 2초만 신호
+    sparse = np.zeros((2, int(sr * dur)), dtype=np.float32)
+    sparse[:, int(sr * 2.0):] = _make_voice_like(sr=sr, dur=2.0)
+
+    video = tmp_path / "sparse.mp4"
+    if _try_make_multitrack_video(video, [voice, sparse], sr, video_duration=dur) is None:
+        pytest.skip("ffmpeg 없음")
+
+    # 앞 1초만 보면 sparse 트랙은 silent로 오분류됨
+    r_short = obs_core.probe_topology(video, probe_seconds=1.0)
+    sparse_short = next(t for t in r_short.track_probes if t.index == 1)
+    assert sparse_short.is_silent, (
+        "전제 검증: 앞 1초 스캔에서는 sparse 트랙이 silent여야 회귀 테스트 의미가 있음"
+    )
+
+    # 전체 스캔(default = None)이면 sparse 트랙도 active로 잡혀야 함
+    r_full = obs_core.probe_topology(video, probe_seconds=None)
+    sparse_full = next(t for t in r_full.track_probes if t.index == 1)
+    assert not sparse_full.is_silent, (
+        "전체 스캔에서는 sparse 트랙(후반 신호)이 active로 분류돼야 함"
+    )
+    assert 1 in r_full.active_indices
+
+
+def test_probe_topology_default_is_full_scan(tmp_path):
+    """probe_seconds 미지정 시 전체 영상 RMS를 사용 — 인터페이스 변경 회귀 테스트."""
+    sr = 48000
+    dur = 3.0
+    sparse = np.zeros((2, int(sr * dur)), dtype=np.float32)
+    sparse[:, int(sr * 1.5):] = _make_voice_like(sr=sr, dur=1.5)
+
+    video = tmp_path / "default_sparse.mp4"
+    if _try_make_multitrack_video(video, [sparse], sr, video_duration=dur) is None:
+        pytest.skip("ffmpeg 없음")
+
+    # 인자 없이 호출 — 기본 동작이 전체 스캔이어야 함
+    r = obs_core.probe_topology(video)
+    assert r.active_indices == [0]
