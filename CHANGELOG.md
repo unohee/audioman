@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-10
+
 ### Added
 - **obs**: OBS Studio 멀티트랙 영상 자동 진단 명령 (`audioman obs probe`, `audioman obs dry-run`)
   - 트랙 토폴로지 분류: `multitrack` / `single` / `duplicated` / `silent`
