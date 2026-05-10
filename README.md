@@ -61,6 +61,8 @@ audioman process ./input_dir/ -p dereverb -o ./output_dir/ -r  # recursive
 | `fx <input>` | Built-in DSP effects (normalize, gate, trim, fade) |
 | `visualize <input>` | Export analysis to Sonic Visualiser SVL files |
 | `doctor -p <plugin>` | Plugin analysis (freq response, THD, dynamics, waveshaper) |
+| `vo {analyze,process}` | Voiceover workflow (VAD + RX denoise + utterance LUFS leveling) |
+| `obs {probe,dry-run}` | OBS multitrack 영상 자동 진단 — track topology + voice/music classification + 처치 계획 (dry-run only) |
 
 ## Batch Processing
 
@@ -177,6 +179,22 @@ audioman visualize input.wav -b spectrogram --open
 ```
 
 Built-in analysis types: `spectrogram`, `spectral-centroid`, `spectral-entropy`, `rms`, `peak`, `zcr`
+
+## OBS multitrack Diagnosis
+
+OBS Studio 영상의 audio 스트림을 자동 진단해 어떤 트랙이 음성/음악/풀믹스인지 식별하고 처치 계획(dry-run)을 만든다.
+
+```bash
+# 트랙 토폴로지만 빠르게 (multitrack/single/duplicated/silent)
+audioman obs probe /Volumes/T7/OBS/
+
+# 60초 분석 + 진단 + 처치 계획 JSON 저장 (실제 처리 없음)
+audioman obs dry-run /Volumes/T7/OBS/ --seconds 60 --out-dir reports/
+```
+
+각 활성 트랙은 `voice` / `music` / `fullmix` / `silent`로 분류되고, hum / clipping / DC offset / clicks / phase 검사 결과에 맞는 처치 (dehum, declip, voice-de-noise, leveling, stem_separate 등)가 정해진다. 같은 신호 그룹은 자동으로 미러링되어 동일 처치를 받는다.
+
+자세한 사용법, 분류 규칙, JSON 리포트 구조, 후속 처리 가이드는 [docs/obs-workflow.md](docs/obs-workflow.md) 참조.
 
 ## Plugin Analysis (Doctor)
 
