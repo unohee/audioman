@@ -9,27 +9,26 @@ from pathlib import Path
 from audioman.cli.output import output_console, print_error, print_json, print_table, print_warning
 from audioman.core.aesthetic import DEFAULT_ISSUES, screen_file
 from audioman.core.batch import collect_audio_files
-from audioman.i18n import _
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
         "screen",
-        help=_("Screen audio for aesthetic issues such as clicks, hum, breaths, sibilance, and noise"),
+        help="Screen audio for aesthetic issues such as clicks, hum, breaths, sibilance, and noise",
     )
-    parser.add_argument("input", help=_("Input audio file or directory"))
+    parser.add_argument("input", help="Input audio file or directory")
     parser.add_argument(
         "--issues",
         default=",".join(DEFAULT_ISSUES),
-        help=_("Comma-separated issue list (default: click,hum,mouth_click,sibilance,breath,background_noise,rf_noise)"),
+        help="Comma-separated issue list (default: click,hum,mouth_click,sibilance,breath,background_noise,rf_noise)",
     )
     parser.add_argument(
         "--backend",
         choices=["auto", "essentia", "fallback"],
         default="auto",
-        help=_("Detector backend (default: auto)"),
+        help="Detector backend (default: auto)",
     )
-    parser.add_argument("--recursive", "-r", action="store_true", help=_("Include subdirectories (batch)"))
+    parser.add_argument("--recursive", "-r", action="store_true", help="Include subdirectories (batch)")
     parser.set_defaults(func=run)
 
 

@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audioman://schema/analyze.v1.json",
+  "title": "Audioman Analyze Result",
+  "description": "Output envelope for `audioman analyze --json`. Contains audio metadata, summary statistics, silence regions, optional spectrum diagnostics, and a uniform finding[] array.",
+  "type": "object",
+  "required": [
+    "$schema",
+    "audioman_version",
+    "command",
+    "file",
+    "sample_rate",
+    "channels",
+    "duration_sec",
+    "total_samples",
+    "frames",
+    "rms",
+    "peak",
+    "summary",
+    "silence_regions",
+    "findings"
+  ],
+  "properties": {
+    "$schema": {"const": "audioman://schema/analyze.v1.json"},
+    "audioman_version": {"type": "string"},
+    "command": {"const": "analyze"},
+    "file": {"type": "string"},
+    "sample_rate": {"type": "integer"},
+    "channels": {"type": "integer"},
+    "duration": {
+      "type": "number",
+      "description": "Duration in seconds (legacy field, alias of duration_sec)."
+    },
+    "duration_sec": {"type": "number"},
+    "frames": {
+      "type": "integer",
+      "description": "Number of samples per channel (alias of total_samples)."
+    },
+    "total_samples": {"type": "integer"},
+    "rms": {"type": "number"},
+    "peak": {"type": "number"},
+    "summary": {"type": "object"},
+    "silence_regions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["start_sample", "end_sample", "duration_sec"],
+        "properties": {
+          "start_sample": {"type": "integer"},
+          "end_sample": {"type": "integer"},
+          "duration_sec": {"type": "number"}
+        }
+      }
+    },
+    "silence_total_sec": {"type": "number"},
+    "spectrum": {"type": "object"},
+    "findings": {
+      "type": "array",
+      "items": {"$ref": "audioman://schema/finding.v1.json"}
+    },
+    "ascii_waveform": {"type": "string"},
+    "ascii_envelope": {"type": "string"},
+    "ascii_spectral": {"type": "string"}
+  }
+}

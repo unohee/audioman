@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audioman://schema/finding.v1.json",
+  "title": "Audioman Finding",
+  "description": "Single audio fault observation emitted by audioman observe/analyze.",
+  "type": "object",
+  "required": ["id", "code", "category", "severity", "where", "measurement", "hint"],
+  "properties": {
+    "id": {"type": "string"},
+    "code": {
+      "type": "string",
+      "description": "Stable machine-readable code. New values may be added; existing values will not change."
+    },
+    "category": {
+      "type": "string",
+      "enum": ["signal", "spectral", "plugin", "container"]
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["info", "warn", "critical"]
+    },
+    "where": {
+      "type": "object",
+      "properties": {
+        "file": {"type": ["string", "null"]},
+        "track": {"type": ["integer", "null"]},
+        "start_sample": {"type": ["integer", "null"]},
+        "end_sample": {"type": ["integer", "null"]},
+        "start_sec": {"type": ["number", "null"]},
+        "end_sec": {"type": ["number", "null"]},
+        "channel": {"type": ["integer", "null"]},
+        "frequency_hz": {"type": ["number", "null"]}
+      }
+    },
+    "measurement": {
+      "type": "object",
+      "description": "Detector-specific numeric evidence (e.g. peak_dbfs, snr_db, samples_clipped)."
+    },
+    "hint": {"type": "string"},
+    "fix_hint": {
+      "type": "object",
+      "required": ["kind", "args"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["ffmpeg-plan", "audioman-fx", "audioman-process", "manual"]
+        },
+        "args": {"type": "array", "items": {"type": "string"}},
+        "note": {"type": "string"}
+      }
+    }
+  }
+}

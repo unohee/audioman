@@ -7,57 +7,56 @@ import json
 import numpy as np
 
 from audioman.cli.output import print_error, print_json, print_success, output_console
-from audioman.i18n import _
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
         "eq-profile",
-        help=_("EQ plugin profiling — frequency response, phase, group delay, nonlinearity"),
+        help="EQ plugin profiling — frequency response, phase, group delay, nonlinearity",
     )
-    parser.add_argument("--plugin", "-p", required=True, help=_("Plugin name or path"))
-    parser.add_argument("--param", action="append", default=[], help=_("EQ parameter (key=value)"))
+    parser.add_argument("--plugin", "-p", required=True, help="Plugin name or path")
+    parser.add_argument("--param", action="append", default=[], help="EQ parameter (key=value)")
     parser.add_argument("--bypass-param", action="append", default=[],
-                        help=_("Bypass state parameter (key=value)"))
+                        help="Bypass state parameter (key=value)")
 
     # 분석 모드
     parser.add_argument(
         "--mode", "-m",
         choices=["response", "sweep", "nonlinear", "all"],
         default="all",
-        help=_("Analysis mode (default: all)"),
+        help="Analysis mode (default: all)",
     )
 
     # 스윕 파라미터
     parser.add_argument(
         "--sweep-param", action="append", default=[],
         metavar="NAME=v1,v2,...",
-        help=_("Parameter sweep (e.g. --sweep-param band1_gain=-12,-6,0,6,12)"),
+        help="Parameter sweep (e.g. --sweep-param band1_gain=-12,-6,0,6,12)",
     )
     parser.add_argument(
         "--sweep-fixed", action="append", default=[],
         metavar="KEY=VALUE",
-        help=_("Fixed parameters during sweep (e.g. --sweep-fixed band1_freq=1000)"),
+        help="Fixed parameters during sweep (e.g. --sweep-fixed band1_freq=1000)",
     )
 
     # 비선형성 레벨
     parser.add_argument(
         "--levels", type=float, nargs="+",
         default=None,
-        help=_("Input levels for nonlinearity test (dBFS, default: -36 -24 -18 -12 -6 -3 0)"),
+        help="Input levels for nonlinearity test (dBFS, default: -36 -24 -18 -12 -6 -3 0)",
     )
 
     # 공통 옵션
     parser.add_argument("--sample-rate", "-sr", type=int, default=44100)
     parser.add_argument("--fft-size", type=int, default=32768)
-    parser.add_argument("--level", type=float, default=-12.0, help=_("Input level dB"))
+    parser.add_argument("--level", type=float, default=-12.0, help="Input level dB")
     parser.add_argument("--sweep-duration", type=float, default=6.0,
-                        help=_("Log sweep duration in seconds"))
+                        help="Log sweep duration in seconds")
 
     # 출력
-    parser.add_argument("--output", "-o", metavar="FILE", help=_("Save result JSON file"))
+    parser.add_argument("--output", "-o", metavar="FILE", help="Save result JSON file")
     parser.add_argument("--save-npy", metavar="DIR",
-                        help=_("Save frequency/phase/delay curves as .npy files"))
+                        help="Save frequency/phase/delay curves as .npy files")
 
     parser.set_defaults(func=run)
 

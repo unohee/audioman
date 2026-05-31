@@ -7,36 +7,35 @@ from audioman.cli.output import print_error, print_json, print_success, print_ta
 from audioman.config.paths import ensure_app_dirs
 from audioman.core.engine import parse_params
 from audioman.core.preset_manager import PresetManager
-from audioman.i18n import _
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
-    parser = subparsers.add_parser("preset", help=_("Preset management"))
+    parser = subparsers.add_parser("preset", help="Preset management")
     preset_sub = parser.add_subparsers(dest="preset_command")
 
     # save
-    save_p = preset_sub.add_parser("save", help=_("Save preset"))
-    save_p.add_argument("name", help=_("Preset name"))
-    save_p.add_argument("--plugin", "-p", required=True, help=_("Plugin name"))
-    save_p.add_argument("--param", action="append", default=[], help=_("Parameter (key=value)"))
-    save_p.add_argument("--description", "-d", default="", help=_("Description"))
+    save_p = preset_sub.add_parser("save", help="Save preset")
+    save_p.add_argument("name", help="Preset name")
+    save_p.add_argument("--plugin", "-p", required=True, help="Plugin name")
+    save_p.add_argument("--param", action="append", default=[], help="Parameter (key=value)")
+    save_p.add_argument("--description", "-d", default="", help="Description")
     save_p.set_defaults(func=run_save)
 
     # load
-    load_p = preset_sub.add_parser("load", help=_("Show preset info"))
-    load_p.add_argument("name", help=_("Preset name"))
-    load_p.add_argument("--plugin", "-p", help=_("Plugin name (optional)"))
+    load_p = preset_sub.add_parser("load", help="Show preset info")
+    load_p.add_argument("name", help="Preset name")
+    load_p.add_argument("--plugin", "-p", help="Plugin name (optional)")
     load_p.set_defaults(func=run_load)
 
     # list
-    list_p = preset_sub.add_parser("list", help=_("List presets"))
-    list_p.add_argument("--plugin", "-p", help=_("Plugin filter"))
+    list_p = preset_sub.add_parser("list", help="List presets")
+    list_p.add_argument("--plugin", "-p", help="Plugin filter")
     list_p.set_defaults(func=run_list)
 
     # delete
-    del_p = preset_sub.add_parser("delete", help=_("Delete preset"))
-    del_p.add_argument("name", help=_("Preset name"))
-    del_p.add_argument("--plugin", "-p", help=_("Plugin name (optional)"))
+    del_p = preset_sub.add_parser("delete", help="Delete preset")
+    del_p.add_argument("name", help="Preset name")
+    del_p.add_argument("--plugin", "-p", help="Plugin name (optional)")
     del_p.set_defaults(func=run_delete)
 
     parser.set_defaults(func=lambda args: parser.print_help())

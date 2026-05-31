@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audioman://schema/changelog.v1.json",
+  "title": "Audioman Changelog",
+  "description": "Parsed view of CHANGELOG.md (Keep a Changelog format).",
+  "type": "object",
+  "required": ["$schema", "audioman_version", "command", "entries"],
+  "properties": {
+    "$schema": {"const": "audioman://schema/changelog.v1.json"},
+    "audioman_version": {"type": "string"},
+    "command": {"const": "changelog"},
+    "source": {"type": "string"},
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["version", "sections"],
+        "properties": {
+          "version": {"type": "string"},
+          "date": {"type": ["string", "null"]},
+          "sections": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "error": {"type": "string"}
+  }
+}

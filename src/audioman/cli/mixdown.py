@@ -4,51 +4,50 @@
 import argparse
 
 from audioman.cli.output import print_error, print_json, print_success, print_warning, output_console
-from audioman.i18n import _
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
-    parser = subparsers.add_parser("mixdown", help=_("Mix tracks with master chain processing"))
-    parser.add_argument("inputs", nargs="*", help=_("Input audio files"))
-    parser.add_argument("--output", "-o", required=True, help=_("Output file path"))
+    parser = subparsers.add_parser("mixdown", help="Mix tracks with master chain processing")
+    parser.add_argument("inputs", nargs="*", help="Input audio files")
+    parser.add_argument("--output", "-o", required=True, help="Output file path")
     parser.add_argument(
         "--gain", default="",
-        help=_("Comma-separated gain values in dB per track"),
+        help="Comma-separated gain values in dB per track",
     )
     parser.add_argument(
         "--pan", default="",
-        help=_("Comma-separated pan values per track (-1.0 L ~ 0.0 C ~ 1.0 R)"),
+        help="Comma-separated pan values per track (-1.0 L ~ 0.0 C ~ 1.0 R)",
     )
     parser.add_argument(
         "--chain", default="",
-        help=_("Per-track plugin chains separated by '|'"),
+        help="Per-track plugin chains separated by '|'",
     )
     parser.add_argument(
         "--master", default="",
-        help=_("Master bus plugin chain (e.g. 'limiter:threshold=-1')"),
+        help="Master bus plugin chain (e.g. 'limiter:threshold=-1')",
     )
-    parser.add_argument("--session", help=_("Session file (YAML/JSON)"))
+    parser.add_argument("--session", help="Session file (YAML/JSON)")
     parser.add_argument(
         "--no-compensation", action="store_true",
-        help=_("Disable master chain delay compensation"),
+        help="Disable master chain delay compensation",
     )
-    parser.add_argument("--dry-run", action="store_true", help=_("Show plan without executing"))
+    parser.add_argument("--dry-run", action="store_true", help="Show plan without executing")
     parser.add_argument(
         "--automix", action="store_true",
-        help=_("Auto-balance track gains using spectral analysis (default target: pink noise)"),
+        help="Auto-balance track gains using spectral analysis (default target: pink noise)",
     )
     parser.add_argument(
         "--target", default="",
-        help=_("Automix target: 'pink' (default), 'pop', 'rock', 'electronica', 'default', "
+        help="Automix target: 'pink' (default), 'pop', 'rock', 'electronica', 'default', "
                "'reference', or genre cluster profiles: "
                "yt_rock, yt_bright_pop, yt_hiphop, yt_mid_scoop, yt_low_heavy_vocal, "
                "yt_high_dr, yt_ballad, yt_dark_lofi, "
                "archive_techno_standard, archive_sub_kick_driven, archive_minimal_sub, "
-               "archive_groovy_low, archive_dub_techno, archive_midrange_ambient"),
+               "archive_groovy_low, archive_dub_techno, archive_midrange_ambient",
     )
     parser.add_argument(
         "--reference", default="",
-        help=_("Reference audio file for automix target spectrum (requires --automix --target reference)"),
+        help="Reference audio file for automix target spectrum (requires --automix --target reference)",
     )
     parser.set_defaults(func=run)
 

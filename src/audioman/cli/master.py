@@ -21,7 +21,6 @@ from audioman.cli.output import (
     print_table,
 )
 from audioman.core import dsp, edl as edl_core, qc
-from audioman.i18n import _
 
 
 # 마스터링 프로파일별 권장 prep 파라미터
@@ -61,49 +60,49 @@ PREP_PROFILES = {
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
-        "master", help=_("Mastering delivery workflow (prep / qc / verify)")
+        "master", help="Mastering delivery workflow (prep / qc / verify)"
     )
-    sub = parser.add_subparsers(dest="action", help=_("Master action"))
+    sub = parser.add_subparsers(dest="action", help="Master action")
 
     # prep
-    p_prep = sub.add_parser("prep", help=_("Prepare master file (DC remove, pad, fade, loudness norm)"))
-    p_prep.add_argument("input", help=_("Source audio file"))
-    p_prep.add_argument("--output", "-o", required=True, help=_("Output file path"))
+    p_prep = sub.add_parser("prep", help="Prepare master file (DC remove, pad, fade, loudness norm)")
+    p_prep.add_argument("input", help="Source audio file")
+    p_prep.add_argument("--output", "-o", required=True, help="Output file path")
     p_prep.add_argument("--profile", choices=list(PREP_PROFILES.keys()), default="spotify",
-                        help=_("Mastering profile (default: spotify)"))
-    p_prep.add_argument("--head-pad-ms", type=float, default=None, help=_("Override head pad (ms)"))
-    p_prep.add_argument("--tail-pad-sec", type=float, default=None, help=_("Override tail pad (seconds)"))
-    p_prep.add_argument("--fade-in-ms", type=float, default=None, help=_("Override fade-in (ms)"))
-    p_prep.add_argument("--fade-out-ms", type=float, default=None, help=_("Override fade-out (ms)"))
+                        help="Mastering profile (default: spotify)")
+    p_prep.add_argument("--head-pad-ms", type=float, default=None, help="Override head pad (ms)")
+    p_prep.add_argument("--tail-pad-sec", type=float, default=None, help="Override tail pad (seconds)")
+    p_prep.add_argument("--fade-in-ms", type=float, default=None, help="Override fade-in (ms)")
+    p_prep.add_argument("--fade-out-ms", type=float, default=None, help="Override fade-out (ms)")
     p_prep.add_argument("--fade-curve", choices=list(dsp.FADE_CURVES), default=None,
-                        help=_("Fade curve (default: cosine)"))
-    p_prep.add_argument("--target-lufs", type=float, default=None, help=_("Target LUFS (None to skip norm)"))
-    p_prep.add_argument("--max-tp", type=float, default=None, help=_("Max true peak dBTP"))
-    p_prep.add_argument("--no-dc-remove", action="store_true", help=_("Skip DC offset removal"))
+                        help="Fade curve (default: cosine)")
+    p_prep.add_argument("--target-lufs", type=float, default=None, help="Target LUFS (None to skip norm)")
+    p_prep.add_argument("--max-tp", type=float, default=None, help="Max true peak dBTP")
+    p_prep.add_argument("--no-dc-remove", action="store_true", help="Skip DC offset removal")
     p_prep.add_argument("--write-edl", action="store_true",
-                        help=_("Also write the generated EDL into .audioman workspace"))
+                        help="Also write the generated EDL into .audioman workspace")
     p_prep.set_defaults(func=run_prep)
 
     # qc
-    p_qc = sub.add_parser("qc", help=_("Run mastering QC report against a target profile"))
-    p_qc.add_argument("input", help=_("Audio file to evaluate"))
+    p_qc = sub.add_parser("qc", help="Run mastering QC report against a target profile")
+    p_qc.add_argument("input", help="Audio file to evaluate")
     p_qc.add_argument("--target", choices=qc.list_targets(), default="spotify",
-                      help=_("Target profile (default: spotify)"))
+                      help="Target profile (default: spotify)")
     p_qc.add_argument("--click-sensitivity", type=float, default=6.0,
-                      help=_("Click detector sensitivity (default: 6.0). Lower = more sensitive"))
+                      help="Click detector sensitivity (default: 6.0). Lower = more sensitive")
     p_qc.set_defaults(func=run_qc)
 
     # verify (prep + qc)
-    p_verify = sub.add_parser("verify", help=_("Prep + QC in one shot"))
-    p_verify.add_argument("input", help=_("Source audio file"))
-    p_verify.add_argument("--output", "-o", required=True, help=_("Output file path"))
+    p_verify = sub.add_parser("verify", help="Prep + QC in one shot")
+    p_verify.add_argument("input", help="Source audio file")
+    p_verify.add_argument("--output", "-o", required=True, help="Output file path")
     p_verify.add_argument("--profile", choices=list(PREP_PROFILES.keys()), default="spotify")
     p_verify.add_argument("--target", choices=qc.list_targets(), default=None,
-                          help=_("QC target profile (default: same as --profile)"))
+                          help="QC target profile (default: same as --profile)")
     p_verify.set_defaults(func=run_verify)
 
     # list-profiles
-    p_list = sub.add_parser("list-profiles", help=_("List available mastering profiles"))
+    p_list = sub.add_parser("list-profiles", help="List available mastering profiles")
     p_list.set_defaults(func=run_list_profiles)
 
     parser.set_defaults(func=lambda args: parser.print_help())

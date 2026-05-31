@@ -5,16 +5,15 @@ import argparse
 import json
 
 from audioman.cli.output import print_error, print_json, print_success, print_info, output_console
-from audioman.i18n import _
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
         "doctor",
-        help=_("Plugin analysis — frequency response, THD, dynamics, waveshaper, performance"),
+        help="Plugin analysis — frequency response, THD, dynamics, waveshaper, performance",
     )
-    parser.add_argument("--plugin", "-p", required=True, help=_("Plugin name or path"))
-    parser.add_argument("--param", action="append", default=[], help=_("Parameter (key=value)"))
+    parser.add_argument("--plugin", "-p", required=True, help="Plugin name or path")
+    parser.add_argument("--param", action="append", default=[], help="Parameter (key=value)")
 
     # 분석 모드
     parser.add_argument(
@@ -22,37 +21,37 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         choices=["linear", "thd", "imd", "sweep", "dynamics", "attack-release",
                  "waveshaper", "performance", "all"],
         default="all",
-        help=_("Analysis mode (default: all)"),
+        help="Analysis mode (default: all)",
     )
 
     # 옵션
-    parser.add_argument("--frequency", "-f", type=float, default=1000.0, help=_("Test frequency Hz"))
-    parser.add_argument("--level", type=float, default=-6.0, help=_("Input level dB"))
+    parser.add_argument("--frequency", "-f", type=float, default=1000.0, help="Test frequency Hz")
+    parser.add_argument("--level", type=float, default=-6.0, help="Input level dB")
     parser.add_argument("--sample-rate", "-sr", type=int, default=44100)
     parser.add_argument("--fft-size", type=int, default=16384)
-    parser.add_argument("--mid-side", action="store_true", help=_("M/S mode"))
+    parser.add_argument("--mid-side", action="store_true", help="M/S mode")
 
     # 비교 모드
-    parser.add_argument("--compare", metavar="PLUGIN2", help=_("Compare with second plugin"))
-    parser.add_argument("--compare-param", action="append", default=[], help=_("Second plugin parameters"))
+    parser.add_argument("--compare", metavar="PLUGIN2", help="Compare with second plugin")
+    parser.add_argument("--compare-param", action="append", default=[], help="Second plugin parameters")
 
     # CLAP 임베딩
-    parser.add_argument("--clap", action="store_true", help=_("CLAP embedding profiling (per-parameter saturation fingerprint)"))
+    parser.add_argument("--clap", action="store_true", help="CLAP embedding profiling (per-parameter saturation fingerprint)")
     parser.add_argument("--clap-sweep", metavar="PARAM=v1,v2,...", action="append", default=[],
-                        help=_("CLAP sweep parameters (e.g. --clap-sweep drive=0,25,50,75,100)"))
-    parser.add_argument("--clap-output", metavar="NPY", help=_("CLAP embedding npy save path"))
+                        help="CLAP sweep parameters (e.g. --clap-sweep drive=0,25,50,75,100)")
+    parser.add_argument("--clap-output", metavar="NPY", help="CLAP embedding npy save path")
 
     # waveshaper v2 옵션
     parser.add_argument("--legacy-waveshaper", action="store_true",
-                        help=_("Use legacy waveshaper (single level, single cycle)"))
+                        help="Use legacy waveshaper (single level, single cycle)")
     parser.add_argument("--ws-levels", metavar="dB", type=float, nargs="+",
                         default=None,
-                        help=_("Waveshaper v2 measurement levels in dBFS (default: -24 -18 -12 -6 -3 -1 0)"))
+                        help="Waveshaper v2 measurement levels in dBFS (default: -24 -18 -12 -6 -3 -1 0)")
     parser.add_argument("--ws-points", type=int, default=256,
-                        help=_("Waveshaper v2 resampling points (default: 256)"))
+                        help="Waveshaper v2 resampling points (default: 256)")
 
     # 출력
-    parser.add_argument("--output", "-o", metavar="FILE", help=_("Save result JSON file"))
+    parser.add_argument("--output", "-o", metavar="FILE", help="Save result JSON file")
 
     parser.set_defaults(func=run)
 

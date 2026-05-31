@@ -16,64 +16,63 @@ from audioman.cli.output import (
     print_table,
 )
 from audioman.core import edl as edl_core
-from audioman.i18n import _
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
-        "edl", help=_("Non-destructive edit workflow (EDL)")
+        "edl", help="Non-destructive edit workflow (EDL)"
     )
-    sub = parser.add_subparsers(dest="action", help=_("EDL action"))
+    sub = parser.add_subparsers(dest="action", help="EDL action")
 
     # init
-    p_init = sub.add_parser("init", help=_("Initialize EDL workspace for an input file"))
-    p_init.add_argument("input", help=_("Source audio file"))
+    p_init = sub.add_parser("init", help="Initialize EDL workspace for an input file")
+    p_init.add_argument("input", help="Source audio file")
     p_init.set_defaults(func=run_init)
 
     # add
-    p_add = sub.add_parser("add", help=_("Append an op to the active EDL"))
-    p_add.add_argument("--source", "-s", required=True, help=_("Source audio file"))
-    p_add.add_argument("op_type", help=_(
+    p_add = sub.add_parser("add", help="Append an op to the active EDL")
+    p_add.add_argument("--source", "-s", required=True, help="Source audio file")
+    p_add.add_argument("op_type", help=
         "Op type (cut_region, trim, trim_silence, splice, fade_in, fade_out, "
         "normalize, gain, gate, process, chain)"
-    ))
+    )
     p_add.add_argument(
         "--param", "-p", action="append", default=[],
-        help=_("Op parameter as key=value (repeat). Numbers/bools auto-detected; "
-              "use json:<value> for arrays/objects."),
+        help="Op parameter as key=value (repeat). Numbers/bools auto-detected; "
+              "use json:<value> for arrays/objects.",
     )
     p_add.set_defaults(func=run_add)
 
     # list (= show ops)
-    p_list = sub.add_parser("list", help=_("Show all ops in the active EDL"))
+    p_list = sub.add_parser("list", help="Show all ops in the active EDL")
     p_list.add_argument("--source", "-s", required=True)
     p_list.set_defaults(func=run_list)
 
     # undo
-    p_undo = sub.add_parser("undo", help=_("Undo the most recent op"))
+    p_undo = sub.add_parser("undo", help="Undo the most recent op")
     p_undo.add_argument("--source", "-s", required=True)
     p_undo.set_defaults(func=run_undo)
 
     # redo
-    p_redo = sub.add_parser("redo", help=_("Redo the most recently undone op"))
+    p_redo = sub.add_parser("redo", help="Redo the most recently undone op")
     p_redo.add_argument("--source", "-s", required=True)
     p_redo.set_defaults(func=run_redo)
 
     # render
-    p_render = sub.add_parser("render", help=_("Render the EDL to a final output file"))
+    p_render = sub.add_parser("render", help="Render the EDL to a final output file")
     p_render.add_argument("--source", "-s", required=True)
-    p_render.add_argument("--output", "-o", required=True, help=_("Output WAV path"))
+    p_render.add_argument("--output", "-o", required=True, help="Output WAV path")
     p_render.add_argument("--no-verify", action="store_true",
-                          help=_("Skip source SHA-256 verification"))
+                          help="Skip source SHA-256 verification")
     p_render.set_defaults(func=run_render)
 
     # status (= 워크스페이스 상태)
-    p_status = sub.add_parser("status", help=_("Show workspace status"))
+    p_status = sub.add_parser("status", help="Show workspace status")
     p_status.add_argument("--source", "-s", required=True)
     p_status.set_defaults(func=run_status)
 
     # clear
-    p_clear = sub.add_parser("clear", help=_("Remove all ops from active EDL (history kept)"))
+    p_clear = sub.add_parser("clear", help="Remove all ops from active EDL (history kept)")
     p_clear.add_argument("--source", "-s", required=True)
     p_clear.set_defaults(func=run_clear)
 

@@ -5,13 +5,12 @@ import argparse
 
 from audioman.cli.output import print_json, print_table
 from audioman.core.registry import get_registry
-from audioman.i18n import _
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
-    parser = subparsers.add_parser("list", help=_("List registered plugins"))
-    parser.add_argument("--format", choices=["vst3", "au"], help=_("Format filter"))
-    parser.add_argument("--vendor", help=_("Vendor filter"))
+    parser = subparsers.add_parser("list", help="List registered plugins")
+    parser.add_argument("--format", choices=["vst3", "au"], help="Format filter")
+    parser.add_argument("--vendor", help="Vendor filter")
     parser.set_defaults(func=run)
 
 

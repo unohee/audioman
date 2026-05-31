@@ -4,27 +4,26 @@
 import argparse
 
 from audioman.cli.output import print_error, print_json, print_success, print_warning, output_console
-from audioman.i18n import _
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
-    parser = subparsers.add_parser("bounce", help=_("Bounce multiple tracks into a single stereo file"))
-    parser.add_argument("inputs", nargs="*", help=_("Input audio files"))
-    parser.add_argument("--output", "-o", required=True, help=_("Output file path"))
+    parser = subparsers.add_parser("bounce", help="Bounce multiple tracks into a single stereo file")
+    parser.add_argument("inputs", nargs="*", help="Input audio files")
+    parser.add_argument("--output", "-o", required=True, help="Output file path")
     parser.add_argument(
         "--gain", default="",
-        help=_("Comma-separated gain values in dB per track (e.g. '0,-3,-6')"),
+        help="Comma-separated gain values in dB per track (e.g. '0,-3,-6')",
     )
     parser.add_argument(
         "--pan", default="",
-        help=_("Comma-separated pan values per track (-1.0 L ~ 0.0 C ~ 1.0 R, e.g. '0,-0.5,0.5')"),
+        help="Comma-separated pan values per track (-1.0 L ~ 0.0 C ~ 1.0 R, e.g. '0,-0.5,0.5')",
     )
     parser.add_argument(
         "--chain", default="",
-        help=_("Per-track plugin chains separated by '|' (e.g. 'denoise|limiter:threshold=-1|')"),
+        help="Per-track plugin chains separated by '|' (e.g. 'denoise|limiter:threshold=-1|')",
     )
-    parser.add_argument("--session", help=_("Session file (YAML/JSON) — overrides other track options"))
-    parser.add_argument("--dry-run", action="store_true", help=_("Show plan without executing"))
+    parser.add_argument("--session", help="Session file (YAML/JSON) — overrides other track options")
+    parser.add_argument("--dry-run", action="store_true", help="Show plan without executing")
     parser.set_defaults(func=run)
 
 

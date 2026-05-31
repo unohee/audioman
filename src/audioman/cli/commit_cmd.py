@@ -4,26 +4,25 @@
 import argparse
 
 from audioman.cli.output import print_error, print_json, print_success, print_warning, output_console
-from audioman.i18n import _
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
-    parser = subparsers.add_parser("commit", help=_("Commit plugin chain to audio with auto delay compensation"))
-    parser.add_argument("input", help=_("Input audio file"))
-    parser.add_argument("--output", "-o", required=True, help=_("Output file path"))
+    parser = subparsers.add_parser("commit", help="Commit plugin chain to audio with auto delay compensation")
+    parser.add_argument("input", help="Input audio file")
+    parser.add_argument("--output", "-o", required=True, help="Output file path")
     parser.add_argument(
         "--chain", "-s", required=True,
-        help=_("Plugin chain (e.g. 'denoise:threshold=-20,dehum:freq=60')"),
+        help="Plugin chain (e.g. 'denoise:threshold=-20,dehum:freq=60')",
     )
     parser.add_argument(
         "--no-compensation", action="store_true",
-        help=_("Disable auto delay compensation"),
+        help="Disable auto delay compensation",
     )
     parser.add_argument(
         "--no-tail-trim", action="store_true",
-        help=_("Keep plugin tail (don't trim to original length)"),
+        help="Keep plugin tail (don't trim to original length)",
     )
-    parser.add_argument("--dry-run", action="store_true", help=_("Measure latency only (no processing)"))
+    parser.add_argument("--dry-run", action="store_true", help="Measure latency only (no processing)")
     parser.set_defaults(func=run)
 
 
