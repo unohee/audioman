@@ -63,6 +63,31 @@ audioman process ./input_dir/ -p dereverb -o ./output_dir/ -r  # recursive
 | `doctor -p <plugin>` | Plugin analysis (freq response, THD, dynamics, waveshaper) |
 | `vo {analyze,process}` | Voiceover workflow (VAD + RX denoise + utterance LUFS leveling) |
 | `obs {probe,dry-run}` | OBS multitrack 영상 자동 진단 — track topology + voice/music classification + 처치 계획 (dry-run only) |
+| `stream {bench,triage,compare,play}` | DAW 실시간 블록 처리 재현 — 플러그인 클릭/드롭아웃 triage + CPU 부하 벤치마크 |
+
+## Plugin Click / Dropout Triage (DAW streaming)
+
+실제 DAW(Ableton 등)에서 나는 클릭을 audioman이 재현하고 자동 진단한다. DAW는 오디오를 고정 블록(128/256/512 samples)으로 콜백 처리하며 블록 사이 플러그인 내부 상태를 연속 유지한다 — `stream`은 그 환경을 재현해 오프라인 바운스와 무엇이 다른지 노출한다.
+
+```bash
+# 블록 크기별 실시간 CPU 부하 (RT factor, xrun, 동시 트랙 추정)
+audioman stream bench mix.wav -p reverb --blocks 64,128,256,512,1024
+
+# 클릭/불연속 triage — 블록 경계 정렬 = 스트리밍 버그, 비정렬 = 소스 클릭
+audioman stream triage mix.wav -p denoise --block-size 512 --json
+
+# 잘못된 호스트 동작(매 블록 reset) 시뮬레이션 — 클릭 강제 유발
+audioman stream triage mix.wav -p denoise --reset-per-block
+
+# 블록 크기 의존 버그: 출력이 블록 크기마다 다른지 null test
+audioman stream compare mix.wav -p delay --blocks 128,256,512
+
+# 실제 오디오 디바이스로 재생 + PortAudio underflow(실 xrun) 카운트
+audioman stream play mix.wav -p reverb --block-size 256
+
+# VST3 없이 테스트: builtin: 접두사로 pedalboard 내장 이펙트 사용
+audioman stream triage sine -p builtin:reverb --reset-per-block
+```
 
 ## Batch Processing
 

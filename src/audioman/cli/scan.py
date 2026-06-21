@@ -6,13 +6,12 @@ import argparse
 from audioman.cli.output import print_json, print_success, print_table
 from audioman.config.paths import ensure_app_dirs
 from audioman.core.registry import get_registry
-from audioman.i18n import _
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
-    parser = subparsers.add_parser("scan", help=_("Scan system for VST3/AU plugins"))
-    parser.add_argument("--paths", nargs="*", help=_("Additional search paths"))
-    parser.add_argument("--refresh", action="store_true", help=_("Ignore cache and rescan"))
+    parser = subparsers.add_parser("scan", help="Scan system for VST3/AU plugins")
+    parser.add_argument("--paths", nargs="*", help="Additional search paths")
+    parser.add_argument("--refresh", action="store_true", help="Ignore cache and rescan")
     parser.set_defaults(func=run)
 
 

@@ -14,22 +14,21 @@ from audioman.cli.output import (
     print_json,
     print_table,
 )
-from audioman.i18n import _
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
         "fader-compare",
-        help=_("Compare automix recommendations against a fader-test ground truth"),
+        help="Compare automix recommendations against a fader-test ground truth",
     )
-    parser.add_argument("ground_truth", help=_("fader-test gains JSON (ground truth)"))
+    parser.add_argument("ground_truth", help="fader-test gains JSON (ground truth)")
     parser.add_argument(
         "--target", default="archive_techno_standard",
-        help=_("Automix target profile (default: archive_techno_standard)"),
+        help="Automix target profile (default: archive_techno_standard)",
     )
     parser.add_argument(
         "--reference", default=None,
-        help=_("Reference WAV (used when --target reference)"),
+        help="Reference WAV (used when --target reference)",
     )
     parser.set_defaults(func=run)
 

@@ -112,8 +112,18 @@ class VST3PluginWrapper:
                 except Exception as e:
                     logger.warning(f"파라미터 설정 실패: {name} = {value}: {e}")
 
-    def process(self, audio: np.ndarray, sample_rate: int) -> np.ndarray:
-        """오디오 처리. audio shape: (channels, samples), float32"""
+    def process(self, audio: np.ndarray, sample_rate: int, reset: bool = True) -> np.ndarray:
+        """오디오 처리. audio shape: (channels, samples), float32
+
+        Args:
+            reset: True(기본)면 처리 전 플러그인 내부 상태를 리셋한다 — 전체 버퍼를
+                   한 번에 통과시키는 오프라인 렌더에 맞다. 블록 단위 스트리밍
+                   (DAW 재생 재현)에서는 reset=False로 호출해 이전 블록의 상태
+                   (필터 히스토리, lookahead 버퍼)를 연속 유지해야 한다.
+                   pedalboard 실측: reset=False 연속 호출은 whole-buffer 렌더와
+                   비트 단위로 일치(-600dB)하지만, 매 블록 reset=True면 경계마다
+                   상태가 끊겨 클릭이 발생(-7.5dB)한다.
+        """
         self.load()
 
         # shape 검증/변환
@@ -124,7 +134,7 @@ class VST3PluginWrapper:
         if audio.dtype != np.float32:
             audio = audio.astype(np.float32)
 
-        return self._plugin.process(audio, sample_rate)
+        return self._plugin.process(audio, sample_rate, reset=reset)
 
     def reset(self) -> None:
         """플러그인 상태 리셋"""

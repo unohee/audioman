@@ -11,7 +11,6 @@ import sys
 from pathlib import Path
 
 from audioman.cli.output import print_error, print_success
-from audioman.i18n import _
 
 logger = logging.getLogger(__name__)
 
@@ -19,12 +18,12 @@ logger = logging.getLogger(__name__)
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
         "fader-test",
-        help=_("Open a multitrack mixer GUI to set per-track gain balance (export as ground truth JSON)"),
+        help="Open a multitrack mixer GUI to set per-track gain balance (export as ground truth JSON)",
     )
-    parser.add_argument("input", help=_("Stem directory (folder of .wav files)"))
-    parser.add_argument("--load", help=_("Load gains JSON at startup"))
+    parser.add_argument("input", help="Stem directory (folder of .wav files)")
+    parser.add_argument("--load", help="Load gains JSON at startup")
     parser.add_argument("--block-size", type=int, default=1024,
-                        help=_("Audio block size (default: 1024)"))
+                        help="Audio block size (default: 1024)")
     parser.set_defaults(func=run)
 
 

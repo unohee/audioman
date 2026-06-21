@@ -5,13 +5,12 @@ import argparse
 
 from audioman.cli.output import print_error, print_json, print_table, output_console
 from audioman.core.registry import get_registry
-from audioman.i18n import _
 from audioman.plugins.vst3 import VST3PluginWrapper
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
-    parser = subparsers.add_parser("info", help=_("Plugin details + parameter list"))
-    parser.add_argument("plugin", help=_("Plugin name (short_name or alias)"))
+    parser = subparsers.add_parser("info", help="Plugin details + parameter list")
+    parser.add_argument("plugin", help="Plugin name (short_name or alias)")
     parser.set_defaults(func=run)
 
 

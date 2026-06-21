@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audioman://schema/observe.v1.json",
+  "title": "Audioman Observe Result",
+  "description": "Output envelope for `audioman observe`. Contains audio metadata and a uniform finding[] array.",
+  "type": "object",
+  "required": [
+    "$schema",
+    "audioman_version",
+    "command",
+    "file",
+    "sample_rate",
+    "channels",
+    "duration_sec",
+    "total_samples",
+    "findings",
+    "summary"
+  ],
+  "properties": {
+    "$schema": {"const": "audioman://schema/finding.v1.json"},
+    "audioman_version": {"type": "string"},
+    "command": {"const": "observe"},
+    "file": {"type": "string"},
+    "sample_rate": {"type": "integer"},
+    "channels": {"type": "integer"},
+    "duration_sec": {"type": "number"},
+    "total_samples": {"type": "integer"},
+    "filter": {
+      "type": "object",
+      "properties": {
+        "categories": {"type": "array", "items": {"type": "string"}},
+        "min_severity": {"type": "string", "enum": ["info", "warn", "critical"]}
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {"$ref": "audioman://schema/finding.v1.json"}
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "total": {"type": "integer"},
+        "by_severity": {"type": "object"},
+        "by_category": {"type": "object"}
+      }
+    }
+  }
+}

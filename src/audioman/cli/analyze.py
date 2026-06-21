@@ -5,6 +5,7 @@ import argparse
 import json
 from pathlib import Path
 
+from audioman import __version__
 from audioman.cli.output import print_error, print_json, print_table, print_success, output_console
 from audioman.core.audio_file import read_audio, get_audio_stats
 from audioman.core.analysis import (
@@ -14,28 +15,32 @@ from audioman.core.analysis import (
     spectrum_diagnostics,
 )
 from audioman.core.batch import collect_audio_files
+from audioman.core.detectors import (
+    detect_signal_findings,
+    spectrum_to_findings,
+    silence_to_findings,
+)
 from audioman.core.waveform import render_waveform, render_envelope, render_spectral_envelope
-from audioman.i18n import _
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
-    parser = subparsers.add_parser("analyze", help=_("Audio analysis (RMS, spectral entropy, silence detection, etc.)"))
-    parser.add_argument("input", help=_("Input audio file or directory"))
-    parser.add_argument("--frames", action="store_true", help=_("Per-frame detailed output"))
-    parser.add_argument("--frame-size", type=int, default=2048, help=_("Frame size (default: 2048)"))
-    parser.add_argument("--hop", type=int, default=512, help=_("Hop size (default: 512)"))
-    parser.add_argument("--silence-threshold", type=float, default=-40.0, help=_("Silence detection threshold dB (default: -40)"))
-    parser.add_argument("--waveform", "-w", action="store_true", help=_("Show ASCII waveform"))
-    parser.add_argument("--waveform-width", type=int, default=80, help=_("Waveform width (default: 80)"))
-    parser.add_argument("--waveform-height", type=int, default=16, help=_("Waveform height (default: 16)"))
-    parser.add_argument("--waveform-mode", choices=["rms", "peak"], default="peak", help=_("Waveform mode (default: peak)"))
-    parser.add_argument("--recursive", "-r", action="store_true", help=_("Include subdirectories (batch)"))
+    parser = subparsers.add_parser("analyze", help="Audio analysis (RMS, spectral entropy, silence detection, etc.)")
+    parser.add_argument("input", help="Input audio file or directory")
+    parser.add_argument("--frames", action="store_true", help="Per-frame detailed output")
+    parser.add_argument("--frame-size", type=int, default=2048, help="Frame size (default: 2048)")
+    parser.add_argument("--hop", type=int, default=512, help="Hop size (default: 512)")
+    parser.add_argument("--silence-threshold", type=float, default=-40.0, help="Silence detection threshold dB (default: -40)")
+    parser.add_argument("--waveform", "-w", action="store_true", help="Show ASCII waveform")
+    parser.add_argument("--waveform-width", type=int, default=80, help="Waveform width (default: 80)")
+    parser.add_argument("--waveform-height", type=int, default=16, help="Waveform height (default: 16)")
+    parser.add_argument("--waveform-mode", choices=["rms", "peak"], default="peak", help="Waveform mode (default: peak)")
+    parser.add_argument("--recursive", "-r", action="store_true", help="Include subdirectories (batch)")
     parser.add_argument("--spectrum", action="store_true",
-                        help=_("Add long-term FFT diagnostics (band energy, dominant frequencies, hum, hf slope)"))
+                        help="Add long-term FFT diagnostics (band energy, dominant frequencies, hum, hf slope)")
     parser.add_argument("--spectrum-fft", type=int, default=16384,
-                        help=_("FFT size for spectrum diagnostics (default: 16384)"))
+                        help="FFT size for spectrum diagnostics (default: 16384)")
     parser.add_argument("--spectrum-min-rms", type=float, default=0.01,
-                        help=_("Skip frames below this RMS when averaging spectrum (default: 0.01)"))
+                        help="Skip frames below this RMS when averaging spectrum (default: 0.01)")
     parser.set_defaults(func=run)
 
 
@@ -45,17 +50,26 @@ def _analyze_file(
 ) -> dict:
     audio, sr = read_audio(path)
     stats = get_audio_stats(audio, sr)
+    audio_length = audio.shape[-1] if audio.ndim == 2 else audio.shape[0]
 
     metrics = compute_frame_metrics(audio, sr, frame_size=frame_size, hop_size=hop)
     summary = compute_summary(metrics)
     silence = detect_silence(audio, sr, threshold_db=silence_threshold)
 
+    # Findings: signal + (optional) spectral. LLM agent 후기 대응.
+    findings = detect_signal_findings(audio, sr, file=str(path))
+    findings.extend(silence_to_findings(silence, audio_length, sr, file=str(path)))
+
+    # LLM agent 후기 #3 대응: duration/total_samples를 명시적으로 보장.
+    # `frames`는 채널당 샘플 수, `total_samples`는 그 별칭(명시적 이름).
     result = {
         "file": str(path),
         "sample_rate": sr,
         "channels": stats.channels,
         "duration": round(stats.duration, 4),
+        "duration_sec": round(stats.duration, 6),
         "frames": stats.frames,
+        "total_samples": int(stats.frames),
         "rms": round(stats.rms, 6),
         "peak": round(stats.peak, 6),
         "summary": summary,
@@ -64,9 +78,13 @@ def _analyze_file(
     }
 
     if spectrum:
-        result["spectrum"] = spectrum_diagnostics(
+        spec = spectrum_diagnostics(
             audio, sr, fft_size=spectrum_fft, min_rms=spectrum_min_rms
         )
+        result["spectrum"] = spec
+        findings.extend(spectrum_to_findings(spec, file=str(path)))
+
+    result["findings"] = [f.to_dict() for f in findings]
 
     if frames_mode:
         result["frame_metrics"] = {
@@ -124,7 +142,12 @@ def _run_single(args: argparse.Namespace, path: Path) -> None:
         )
 
     if args.json:
-        out = {"command": "analyze", **result}
+        out = {
+            "$schema": "audioman://schema/analyze.v1.json",
+            "audioman_version": __version__,
+            "command": "analyze",
+            **result,
+        }
         if waveform_text:
             out["ascii_waveform"] = waveform_text
             out["ascii_envelope"] = envelope_text
@@ -206,7 +229,12 @@ def _run_batch(args: argparse.Namespace, input_dir: Path) -> None:
                 spectrum_min_rms=args.spectrum_min_rms,
             )
             if args.json:
-                print(json.dumps({"command": "analyze", **result}, ensure_ascii=False, default=str))
+                print(json.dumps({
+                    "$schema": "audioman://schema/analyze.v1.json",
+                    "audioman_version": __version__,
+                    "command": "analyze",
+                    **result,
+                }, ensure_ascii=False, default=str))
             else:
                 output_console.print(
                     f"  [{i+1}/{len(files)}] {fpath.name}: "
