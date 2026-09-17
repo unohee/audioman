@@ -57,8 +57,11 @@ def run(args: argparse.Namespace) -> None:
             print_error("입력 파일을 지정하세요 (또는 --session 사용)")
             return
 
-        gains = _parse_float_list(args.gain)
-        pans = _parse_float_list(args.pan)
+        try:
+            gains = _parse_float_list(args.gain)
+            pans = _parse_float_list(args.pan)
+        except ValueError as e:
+            print_error(f"--gain 및 --pan은 쉼표로 구분된 숫자여야 합니다: {e}")
 
         # 트랙별 체인 파싱 ('|'로 구분)
         chains = []

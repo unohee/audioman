@@ -23,21 +23,28 @@ from audioman.core.detectors import (
 from audioman.core.waveform import render_waveform, render_envelope, render_spectral_envelope
 
 
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("analyze", help="Audio analysis (RMS, spectral entropy, silence detection, etc.)")
     parser.add_argument("input", help="Input audio file or directory")
     parser.add_argument("--frames", action="store_true", help="Per-frame detailed output")
-    parser.add_argument("--frame-size", type=int, default=2048, help="Frame size (default: 2048)")
-    parser.add_argument("--hop", type=int, default=512, help="Hop size (default: 512)")
+    parser.add_argument("--frame-size", type=_positive_int, default=2048, help="Frame size (default: 2048)")
+    parser.add_argument("--hop", type=_positive_int, default=512, help="Hop size (default: 512)")
     parser.add_argument("--silence-threshold", type=float, default=-40.0, help="Silence detection threshold dB (default: -40)")
     parser.add_argument("--waveform", "-w", action="store_true", help="Show ASCII waveform")
-    parser.add_argument("--waveform-width", type=int, default=80, help="Waveform width (default: 80)")
-    parser.add_argument("--waveform-height", type=int, default=16, help="Waveform height (default: 16)")
+    parser.add_argument("--waveform-width", type=_positive_int, default=80, help="Waveform width (default: 80)")
+    parser.add_argument("--waveform-height", type=_positive_int, default=16, help="Waveform height (default: 16)")
     parser.add_argument("--waveform-mode", choices=["rms", "peak"], default="peak", help="Waveform mode (default: peak)")
     parser.add_argument("--recursive", "-r", action="store_true", help="Include subdirectories (batch)")
     parser.add_argument("--spectrum", action="store_true",
                         help="Add long-term FFT diagnostics (band energy, dominant frequencies, hum, hf slope)")
-    parser.add_argument("--spectrum-fft", type=int, default=16384,
+    parser.add_argument("--spectrum-fft", type=_positive_int, default=16384,
                         help="FFT size for spectrum diagnostics (default: 16384)")
     parser.add_argument("--spectrum-min-rms", type=float, default=0.01,
                         help="Skip frames below this RMS when averaging spectrum (default: 0.01)")

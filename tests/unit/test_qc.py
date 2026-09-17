@@ -80,6 +80,10 @@ class TestDetectClicks:
         # 5개 spike이 한 클릭으로 그룹핑돼야 함
         assert result["n_clicks"] <= 2  # 대개 1개
 
+    def test_short_buffer_does_not_crash(self):
+        result = qc.detect_clicks(np.array([0.0, 0.8, 0.0], dtype=np.float32), SR)
+        assert "n_clicks" in result
+
 
 class TestPhaseCorrelation:
     def test_mono_in_phase_correlation_one(self):

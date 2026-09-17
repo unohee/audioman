@@ -2,6 +2,7 @@
 # Purpose: pedalboard 기반 VST3 플러그인 래퍼
 
 import logging
+import threading
 from pathlib import Path
 from typing import Any, Optional
 
@@ -10,6 +11,7 @@ import numpy as np
 from audioman.plugins.parameter import ParameterInfo
 
 logger = logging.getLogger(__name__)
+_FD_REDIRECT_LOCK = threading.Lock()
 
 
 class VST3PluginWrapper:
@@ -32,23 +34,35 @@ class VST3PluginWrapper:
         if self._plugin is not None:
             return
         import os
-        import sys
         from pedalboard import load_plugin
         logger.debug(f"VST3 로드: {self._path}")
         # iZotope 플러그인 로드 시 objc 런타임 로그가 stdout에 출력되는 문제 억제
-        devnull = os.open(os.devnull, os.O_WRONLY)
-        old_stdout = os.dup(1)
-        old_stderr = os.dup(2)
-        os.dup2(devnull, 1)
-        os.dup2(devnull, 2)
-        try:
-            self._plugin = load_plugin(str(self._path))
-        finally:
-            os.dup2(old_stdout, 1)
-            os.dup2(old_stderr, 2)
-            os.close(devnull)
-            os.close(old_stdout)
-            os.close(old_stderr)
+        devnull: Optional[int] = None
+        old_stdout: Optional[int] = None
+        old_stderr: Optional[int] = None
+        with _FD_REDIRECT_LOCK:
+            if self._plugin is not None:
+                return
+            try:
+                devnull = os.open(os.devnull, os.O_WRONLY)
+                old_stdout = os.dup(1)
+                old_stderr = os.dup(2)
+                os.dup2(devnull, 1)
+                os.dup2(devnull, 2)
+                self._plugin = load_plugin(str(self._path))
+            finally:
+                if old_stdout is not None:
+                    try:
+                        os.dup2(old_stdout, 1)
+                    finally:
+                        os.close(old_stdout)
+                if old_stderr is not None:
+                    try:
+                        os.dup2(old_stderr, 2)
+                    finally:
+                        os.close(old_stderr)
+                if devnull is not None:
+                    os.close(devnull)
 
     def get_parameters(self) -> list[ParameterInfo]:
         """플러그인 파라미터 목록 추출"""
@@ -68,7 +82,11 @@ class VST3PluginWrapper:
 
             # 현재값 읽기
             try:
-                current = getattr(self._plugin, attr_name.replace(" ", "_"), None)
+                current = getattr(param, "value", None)
+                if current is None:
+                    current = getattr(self._plugin, attr_name, None)
+                if current is None:
+                    current = getattr(self._plugin, attr_name.replace(" ", "_"), None)
             except Exception:
                 current = None
 
@@ -110,7 +128,8 @@ class VST3PluginWrapper:
                 try:
                     setattr(self._plugin, space_name, value)
                 except Exception as e:
-                    logger.warning(f"파라미터 설정 실패: {name} = {value}: {e}")
+                    raise AttributeError(f"파라미터 설정 실패: {name} = {value}") from e
+        self._parameters = None
 
     def process(self, audio: np.ndarray, sample_rate: int, reset: bool = True) -> np.ndarray:
         """오디오 처리. audio shape: (channels, samples), float32
@@ -139,7 +158,4 @@ class VST3PluginWrapper:
     def reset(self) -> None:
         """플러그인 상태 리셋"""
         if self._plugin is not None:
-            try:
-                self._plugin.reset()
-            except Exception:
-                pass
+            self._plugin.reset()

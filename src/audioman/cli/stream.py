@@ -28,7 +28,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p_bench.add_argument("input", help="Audio file (or 'sine'/'impulse' for synthetic)")
     p_bench.add_argument("--plugin", "-p", required=True, help="Plugin name/path, or 'chain:...'")
     p_bench.add_argument("--param", action="append", default=[], help="Parameter key=value")
-    p_bench.add_argument("--blocks", help="Comma block sizes (default 64,128,256,512,1024)")
+    p_bench.add_argument("--blocks", type=_parse_blocks, help="Comma block sizes (default 64,128,256,512,1024)")
     p_bench.add_argument("--sample-rate", "-sr", type=int, default=48000, help="For synthetic input")
     p_bench.add_argument("--duration", type=float, default=5.0, help="Synthetic input seconds")
     p_bench.set_defaults(func=run_bench)
@@ -53,7 +53,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p_cmp.add_argument("input", help="Audio file (or 'sine'/'impulse')")
     p_cmp.add_argument("--plugin", "-p", required=True, help="Plugin name/path, or 'chain:...'")
     p_cmp.add_argument("--param", action="append", default=[], help="Parameter key=value")
-    p_cmp.add_argument("--blocks", help="Comma block sizes (default 64,128,256,512,1024)")
+    p_cmp.add_argument("--blocks", type=_parse_blocks, help="Comma block sizes (default 64,128,256,512,1024)")
     p_cmp.add_argument("--sample-rate", "-sr", type=int, default=48000)
     p_cmp.add_argument("--duration", type=float, default=2.0)
     p_cmp.set_defaults(func=run_compare)
@@ -80,10 +80,18 @@ def _no_subcommand(args: argparse.Namespace) -> None:
 # Shared helpers
 # ---------------------------------------------------------------------------
 
-def _parse_blocks(raw: str | None) -> list[int]:
+def _parse_blocks(raw: str | list[int] | None) -> list[int]:
     if not raw:
         return list(DEFAULT_BLOCK_SIZES)
-    return [int(x.strip()) for x in raw.split(",") if x.strip()]
+    if isinstance(raw, list):
+        return raw
+    try:
+        blocks = [int(x.strip()) for x in raw.split(",") if x.strip()]
+    except ValueError as e:
+        raise argparse.ArgumentTypeError("blocks must be comma-separated integers") from e
+    if not blocks or any(block <= 0 for block in blocks):
+        raise argparse.ArgumentTypeError("blocks must contain one or more positive integers")
+    return blocks
 
 
 def _load_input(args: argparse.Namespace):

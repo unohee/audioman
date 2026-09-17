@@ -10,6 +10,13 @@ from audioman.core.batch import collect_audio_files, resolve_output_path
 from pathlib import Path
 
 
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("chain", help="Process audio through multiple plugins sequentially")
     parser.add_argument("input", help="Input audio file or directory")
@@ -21,7 +28,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--recursive", "-r", action="store_true", help="Include subdirectories (batch)")
     parser.add_argument("--suffix", default="", help="Output filename suffix (batch)")
     parser.add_argument("--dry-run", action="store_true", help="Show plan without executing")
-    parser.add_argument("--workers", "-w", type=int, default=1, help="Number of parallel workers (default: 1)")
+    parser.add_argument("--workers", "-w", type=_positive_int, default=1, help="Number of parallel workers (default: 1)")
     parser.set_defaults(func=run)
 
 

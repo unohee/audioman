@@ -32,6 +32,7 @@ class Segment:
 
 
 _VAD_SR = 16000  # silero-vad 권장: 16kHz mono
+_SILERO_VAD_MODEL = None
 
 
 def _to_mono_16k(audio: np.ndarray, sample_rate: int) -> np.ndarray:
@@ -46,6 +47,16 @@ def _to_mono_16k(audio: np.ndarray, sample_rate: int) -> np.ndarray:
     if sample_rate != _VAD_SR:
         mono = soxr.resample(mono, sample_rate, _VAD_SR).astype(np.float32, copy=False)
     return mono
+
+
+def _get_silero_vad_model():
+    global _SILERO_VAD_MODEL
+
+    if _SILERO_VAD_MODEL is None:
+        from silero_vad import load_silero_vad
+
+        _SILERO_VAD_MODEL = load_silero_vad()
+    return _SILERO_VAD_MODEL
 
 
 def detect_speech(
@@ -70,13 +81,13 @@ def detect_speech(
         kind="speech" Segment 목록 (원본 sample_rate 기준 인덱스).
         시간순 정렬, 겹치지 않음.
     """
-    from silero_vad import load_silero_vad, get_speech_timestamps
+    from silero_vad import get_speech_timestamps
     import torch
 
     mono16k = _to_mono_16k(audio, sample_rate)
     tensor = torch.from_numpy(mono16k)
 
-    model = load_silero_vad()
+    model = _get_silero_vad_model()
     timestamps = get_speech_timestamps(
         tensor,
         model,

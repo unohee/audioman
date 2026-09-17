@@ -11,6 +11,13 @@ from audioman.core.batch import collect_audio_files, resolve_output_path
 from pathlib import Path
 
 
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("process", help="Process audio with a single plugin")
     # 입력: 파일 또는 디렉토리
@@ -18,11 +25,11 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--plugin", "-p", required=True, help="Plugin name")
     parser.add_argument("--param", action="append", default=[], help="Parameter (key=value)")
     parser.add_argument("--output", "-o", required=True, help="Output file or directory")
-    parser.add_argument("--passes", type=int, default=1, help="Number of passes (2=adaptive learning multi-pass)")
+    parser.add_argument("--passes", type=_positive_int, default=1, help="Number of passes (2=adaptive learning multi-pass)")
     parser.add_argument("--recursive", "-r", action="store_true", help="Include subdirectories (batch)")
     parser.add_argument("--suffix", default="", help="Output filename suffix (batch)")
     parser.add_argument("--dry-run", action="store_true", help="Show plan without executing")
-    parser.add_argument("--workers", "-w", type=int, default=1, help="Number of parallel workers (default: 1)")
+    parser.add_argument("--workers", "-w", type=_positive_int, default=1, help="Number of parallel workers (default: 1)")
     parser.set_defaults(func=run)
 
 

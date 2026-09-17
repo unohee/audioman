@@ -62,9 +62,8 @@ def benchmark(result: StreamResult, *, warmup_blocks: int = 1) -> RTBenchReport:
     proc_ms = np.array([t.process_sec * 1000.0 for t in timings], dtype=np.float64)
     deadline_ms = result.block_size / result.sample_rate * 1000.0
 
-    n = result.audio.shape[1] if result.audio.ndim == 2 else len(result.audio)
-    audio_sec = n / result.sample_rate if result.sample_rate else 0.0
-    total_proc = sum(t.process_sec for t in result.timings)
+    total_proc = sum(t.process_sec for t in timings)
+    audio_sec = sum(t.deadline_sec for t in timings)
 
     p99 = float(np.percentile(rt, 99))
     xruns = int(np.sum(rt > 1.0))

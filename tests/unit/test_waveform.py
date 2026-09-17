@@ -64,6 +64,21 @@ class TestRenderWaveform:
         expected = 1 + height // 2 + 1 + height // 2 + 1
         assert len(lines) == expected
 
+    @pytest.mark.parametrize("kwargs", [
+        {"height": 1},
+        {"width": 7},
+        {"mode": "unknown"},
+    ])
+    def test_rejects_unrenderable_parameters(self, kwargs):
+        with pytest.raises(ValueError):
+            render_waveform(np.ones(32, dtype=np.float32), sample_rate=44100, **kwargs)
+
+    def test_trailing_peak_is_rendered(self):
+        audio = np.zeros(10, dtype=np.float32)
+        audio[-1] = 1.0
+        result = render_waveform(audio, sample_rate=44100, width=8, height=4, mode="peak")
+        assert "peak: 1.000" in result
+
 
 class TestRenderEnvelope:
     def test_returns_string(self):

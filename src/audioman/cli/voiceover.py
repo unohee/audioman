@@ -87,6 +87,7 @@ def _run_analyze(args: argparse.Namespace) -> None:
             vad_threshold=args.vad_threshold,
             min_speech_ms=args.min_speech_ms,
             min_silence_ms=args.min_silence_ms,
+            speech_pad_ms=args.speech_pad_ms,
         )
     except Exception as e:
         print_error(f"분석 실패: {e}")

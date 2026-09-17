@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -74,16 +75,23 @@ def _run_list(args: argparse.Namespace) -> None:
 
 def _run_show(args: argparse.Namespace) -> None:
     name = args.name
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name):
+        print(f"error: invalid schema name: {name}", file=sys.stderr)
+        sys.exit(2)
     if not name.endswith(".json"):
         name = name + ".json"
-    target = _schemas_dir() / name
+    schema_dir = _schemas_dir().resolve()
+    target = (schema_dir / name).resolve()
+    if schema_dir not in target.parents or target.suffix != ".json":
+        print(f"error: invalid schema name: {args.name}", file=sys.stderr)
+        sys.exit(2)
     if not target.is_file():
         # fallback: name 기반 검색 ("finding" → "finding.v1.json")
         matches = sorted(_schemas_dir().glob(f"{args.name}*.json"))
         if not matches:
             print(f"error: schema not found: {args.name}", file=sys.stderr)
             sys.exit(1)
-        target = matches[0]
+        target = matches[0].resolve()
 
     text = target.read_text(encoding="utf-8")
     # 그대로 stdout (JSONSchema 자체가 JSON이므로 --json과 무관하게 valid JSON)

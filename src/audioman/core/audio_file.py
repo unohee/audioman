@@ -90,10 +90,16 @@ def stream_process(
     """
     input_path = Path(input_path)
     output_path = Path(output_path)
+    if chunk_seconds <= 0:
+        raise ValueError(f"chunk_seconds must be positive, got {chunk_seconds}")
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     info = sf.info(str(input_path))
     chunk_frames = int(chunk_seconds * info.samplerate)
+    if chunk_frames <= 0:
+        raise ValueError(
+            f"chunk_seconds is too small for sample rate {info.samplerate}: {chunk_seconds}"
+        )
     total_frames = info.frames
     frames_done = 0
     chunks = 0
@@ -113,13 +119,17 @@ def stream_process(
 
                 # (samples, channels) → (channels, samples) 변환
                 chunk = data.T
-                processed = process_fn(chunk, info.samplerate)
+                processed = np.asarray(process_fn(chunk, info.samplerate))
+                if processed.ndim == 1:
+                    processed = processed.reshape(1, -1)
+                if processed.shape != chunk.shape:
+                    raise ValueError(
+                        "process_fn must return audio with the input chunk shape: "
+                        f"expected {chunk.shape}, got {processed.shape}"
+                    )
 
                 # (channels, samples) → (samples, channels) 저장
-                if processed.ndim == 1:
-                    outfile.write(processed)
-                else:
-                    outfile.write(processed.T)
+                outfile.write(processed.T)
 
                 frames_done += len(data)
                 chunks += 1

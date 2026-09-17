@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from enum import Enum
+import hashlib
+import json
 from typing import Any, Optional
 
 
@@ -119,9 +121,18 @@ class Finding:
         return d
 
     def _auto_id(self) -> str:
-        # category-code의 hash가 아닌, 안정적인 슬러그
+        # 같은 code라도 발생 위치와 측정값이 다르면 독립적으로 식별한다.
         slug = self.code.value.lower().replace("_", "-")
-        return slug
+        identity = {
+            "category": self.category.value,
+            "code": self.code.value,
+            "where": self.where.to_dict(),
+            "measurement": self.measurement,
+        }
+        digest = hashlib.sha256(
+            json.dumps(identity, ensure_ascii=False, sort_keys=True, default=str).encode()
+        ).hexdigest()[:12]
+        return f"{slug}-{digest}"
 
 
 def filter_findings(

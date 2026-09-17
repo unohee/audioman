@@ -159,15 +159,26 @@ def _to_mono(audio: np.ndarray) -> np.ndarray:
     return audio
 
 
-def k_weight_magnitude(freqs: np.ndarray) -> np.ndarray:
+def k_weight_magnitude(freqs: np.ndarray, sample_rate: int = 48000) -> np.ndarray:
     """ITU-R BS.1770 K-weighting 주파수 응답 (magnitude)"""
-    b1 = np.array([1.53512485958697, -2.69169618940638, 1.19839281085285])
-    a1 = np.array([1.0, -1.69065929318241, 0.73248077421585])
-    b2 = np.array([1.0, -2.0, 1.0])
-    a2 = np.array([1.0, -1.99004745483398, 0.99007225036621])
+    if sample_rate <= 0:
+        raise ValueError(f"sample_rate must be positive, got {sample_rate}")
 
-    sr = 48000.0
-    w = 2.0 * np.pi * np.minimum(freqs, sr / 2 - 1) / sr
+    # ITU-R BS.1770 De Man 보정 계수. RBJ cookbook 계수를 매 샘플레이트에서
+    # 다시 계산해 48 kHz 전용 응답을 다른 레이트에 재사용하지 않는다.
+    from pyloudnorm import IIRfilter
+
+    shelf = IIRfilter(
+        3.99984385397, 0.7071752369554193, 1681.9744509555319,
+        sample_rate, "high_shelf_DeMan",
+    )
+    high_pass = IIRfilter(
+        0.0, 0.5003270373253953, 38.13547087613982,
+        sample_rate, "high_pass_DeMan",
+    )
+    b1, a1 = shelf.b, shelf.a
+    b2, a2 = high_pass.b, high_pass.a
+    w = 2.0 * np.pi * np.minimum(freqs, sample_rate / 2 - 1) / sample_rate
 
     def biquad_response(b, a, w):
         ejw = np.exp(-1j * w)
@@ -309,7 +320,7 @@ def compute_band_rms(
 
     window = np.hanning(frame_size).astype(np.float32)
     freqs = np.fft.rfftfreq(frame_size, d=1.0 / sample_rate)
-    k_mag = k_weight_magnitude(freqs) if k_weighted else None
+    k_mag = k_weight_magnitude(freqs, sample_rate) if k_weighted else None
 
     band_masks = [(freqs >= b.low_hz) & (freqs < b.high_hz) for b in bands]
     band_power_accum = [[] for _ in range(n_bands)]
@@ -345,7 +356,7 @@ def compute_broadband_rms_db(audio: np.ndarray, sample_rate: int, k_weighted: bo
         hop_size = 2048
         window = np.hanning(frame_size).astype(np.float32)
         freqs = np.fft.rfftfreq(frame_size, d=1.0 / sample_rate)
-        k_mag = k_weight_magnitude(freqs)
+        k_mag = k_weight_magnitude(freqs, sample_rate)
         powers = []
         for start in range(0, len(mono) - frame_size + 1, hop_size):
             frame = mono[start:start + frame_size]

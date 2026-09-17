@@ -8,6 +8,15 @@ from xml.etree.ElementTree import Element, SubElement, ElementTree, indent
 import numpy as np
 
 
+def _require_same_length(**series: object) -> None:
+    lengths = {name: len(values) for name, values in series.items()}
+    if len(set(lengths.values())) > 1:
+        raise ValueError(
+            "SVL series lengths must match: "
+            + ", ".join(f"{name}={length}" for name, length in lengths.items())
+        )
+
+
 def write_time_instants(
     path: Path,
     frames: list[int],
@@ -48,6 +57,8 @@ def write_time_values(
     resolution: int = 512,
 ) -> None:
     """Time Values 레이어 (spectral centroid, 에너지 등)"""
+    _require_same_length(frames=frames, values=values)
+
     sv = Element("sv")
     data = SubElement(sv, "data")
 
@@ -90,6 +101,13 @@ def write_notes(
         levels = [1.0] * len(frames)
     if labels is None:
         labels = [""] * len(frames)
+    _require_same_length(
+        frames=frames,
+        pitches=pitches,
+        durations=durations,
+        levels=levels,
+        labels=labels,
+    )
 
     sv = Element("sv")
     data = SubElement(sv, "data")
@@ -136,7 +154,12 @@ def write_dense3d(
         hop_size: 홉 크기 (resolution)
         bin_names: 각 bin의 이름 (예: "0-86Hz")
     """
+    matrix = np.asarray(matrix)
+    if matrix.ndim != 2:
+        raise ValueError(f"dense 3D matrix must be two-dimensional, got shape {matrix.shape}")
     n_frames, n_bins = matrix.shape
+    minimum = float(matrix.min()) if matrix.size else 0.0
+    maximum = float(matrix.max()) if matrix.size else 0.0
 
     sv = Element("sv")
     data = SubElement(sv, "data")
@@ -147,9 +170,10 @@ def write_dense3d(
         start="0",
         type="dense", dimensions="3",
         windowSize=str(window_size),
+        resolution=str(hop_size),
         yBinCount=str(n_bins),
-        minimum=str(float(matrix.min())),
-        maximum=str(float(matrix.max())),
+        minimum=str(minimum),
+        maximum=str(maximum),
         startFrame="0",
         dataset="0",
     )

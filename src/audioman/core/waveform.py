@@ -8,6 +8,17 @@ BLOCKS_UP = " ▁▂▃▄▅▆▇█"
 BLOCKS_DOWN = " ▔▔▀▀▀█████"  # 상단 미러용 (간소화)
 
 
+def _validate_render_params(width: int, height: int, sample_rate: int) -> None:
+    if width <= 0:
+        raise ValueError(f"width must be positive, got {width}")
+    if height < 2:
+        raise ValueError(f"height must be at least 2, got {height}")
+    if width < 8:
+        raise ValueError(f"width must be at least 8, got {width}")
+    if sample_rate <= 0:
+        raise ValueError(f"sample_rate must be positive, got {sample_rate}")
+
+
 def render_waveform(
     audio: np.ndarray,
     sample_rate: int,
@@ -27,6 +38,10 @@ def render_waveform(
     Returns:
         멀티라인 ASCII 문자열
     """
+    _validate_render_params(width, height, sample_rate)
+    if mode not in {"rms", "peak"}:
+        raise ValueError(f"mode must be 'rms' or 'peak', got {mode!r}")
+
     # mono로 변환
     if audio.ndim == 2:
         mono = audio.mean(axis=0)
@@ -34,16 +49,16 @@ def render_waveform(
         mono = audio
 
     n_samples = len(mono)
-    samples_per_col = max(1, n_samples // width)
     half_h = height // 2
 
     # 컬럼별 RMS/peak 계산
     pos_values = []
     neg_values = []
 
+    boundaries = np.linspace(0, n_samples, width + 1, dtype=int)
     for i in range(width):
-        start = i * samples_per_col
-        end = min(start + samples_per_col, n_samples)
+        start = boundaries[i]
+        end = boundaries[i + 1]
         chunk = mono[start:end]
 
         if len(chunk) == 0:
@@ -130,18 +145,19 @@ def render_envelope(
     height: int = 8,
 ) -> str:
     """단방향 RMS envelope (컴팩트 버전)"""
+    _validate_render_params(width, height, sample_rate)
+
     if audio.ndim == 2:
         mono = audio.mean(axis=0)
     else:
         mono = audio
 
     n_samples = len(mono)
-    samples_per_col = max(1, n_samples // width)
-
     rms_values = []
+    boundaries = np.linspace(0, n_samples, width + 1, dtype=int)
     for i in range(width):
-        start = i * samples_per_col
-        end = min(start + samples_per_col, n_samples)
+        start = boundaries[i]
+        end = boundaries[i + 1]
         chunk = mono[start:end]
         rms = float(np.sqrt(np.mean(chunk**2))) if len(chunk) > 0 else 0.0
         rms_values.append(rms)
@@ -187,6 +203,8 @@ def render_spectral_envelope(
     height: int = 6,
 ) -> str:
     """spectral centroid와 entropy의 ASCII 시간축 플롯"""
+    _validate_render_params(width, height, sample_rate)
+
     lines = []
 
     for label, values, unit in [

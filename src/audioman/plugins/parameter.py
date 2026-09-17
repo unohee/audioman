@@ -53,6 +53,7 @@ class PluginMeta:
             "path": self.path,
             "format": self.format,
             "vendor": self.vendor,
+            "version": self.version,
             "aliases": self.aliases,
             "param_count": self.param_count,
         }

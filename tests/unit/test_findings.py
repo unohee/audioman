@@ -19,6 +19,7 @@ from audioman.core.findings import (
     Finding,
     Severity,
     SCHEMA_URI,
+    Where,
     envelope,
     filter_findings,
 )
@@ -50,6 +51,17 @@ class TestFindingSerialization:
 
     def test_severity_rank(self):
         assert Severity.INFO.rank < Severity.WARN.rank < Severity.CRITICAL.rank
+
+    def test_auto_ids_distinguish_occurrences(self):
+        first = Finding(
+            Code.CLIP_SAMPLE_PEAK_EXCEEDED, Category.SIGNAL, Severity.WARN,
+            where=Where(start_sample=10),
+        )
+        second = Finding(
+            Code.CLIP_SAMPLE_PEAK_EXCEEDED, Category.SIGNAL, Severity.WARN,
+            where=Where(start_sample=20),
+        )
+        assert first.to_dict()["id"] != second.to_dict()["id"]
 
     def test_filter_findings_by_severity(self):
         items = [
@@ -90,6 +102,11 @@ class TestClipDetector:
     def test_no_clip_no_finding(self):
         sig = 0.5 * _sine()
         assert detect_clipping(sig, SR) == []
+
+    def test_opposite_polarity_stereo_clips_are_detected_per_channel(self):
+        stereo = np.array([[1.0], [-1.0]], dtype=np.float32)
+        findings = detect_clipping(stereo, SR)
+        assert {finding.where.channel for finding in findings} == {0, 1}
 
 
 class TestDcOffsetDetector:
