@@ -52,6 +52,10 @@ class TestFade:
         assert abs(result[0, -1]) < 0.01
         np.testing.assert_allclose(result[:, :1000], test_audio[:, :1000], atol=1e-6)
 
+    @pytest.mark.parametrize("fade", [fade_in, fade_out])
+    def test_zero_length_fade_preserves_audio(self, test_audio, fade):
+        np.testing.assert_array_equal(fade(test_audio, 0), test_audio)
+
 
 class TestGain:
     def test_gain_6db(self, test_audio):

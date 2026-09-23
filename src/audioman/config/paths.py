@@ -2,7 +2,6 @@
 # Purpose: 플랫폼별 VST3/AU 플러그인 경로 및 앱 디렉토리 해석
 
 import platform
-import sys
 from pathlib import Path
 
 

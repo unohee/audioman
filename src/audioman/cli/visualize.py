@@ -28,6 +28,13 @@ BUILTIN_TYPES = {
 }
 
 
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
         "visualize",
@@ -48,8 +55,8 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
 
     parser.add_argument("-o", "--output", help="Output SVL file path (default: auto)")
     parser.add_argument("--output-name", help="Vamp plugin output name (for multiple outputs)")
-    parser.add_argument("--frame-size", type=int, default=2048, help="FFT frame size (default: 2048)")
-    parser.add_argument("--hop", type=int, default=512, help="Hop size (default: 512)")
+    parser.add_argument("--frame-size", type=_positive_int, default=2048, help="FFT frame size (default: 2048)")
+    parser.add_argument("--hop", type=_positive_int, default=512, help="Hop size (default: 512)")
     parser.add_argument("--list-plugins", action="store_true", help="List installed Vamp plugins")
     parser.add_argument("--plugin-info", help="Query plugin output info")
     parser.add_argument("--open", action="store_true", help="Open in Sonic Visualiser after creation")
@@ -223,6 +230,11 @@ def _run_builtin(args: argparse.Namespace, input_path: Path) -> None:
     console.print(f"[dim]내장 분석: {builtin} (frame={frame_size}, hop={hop})[/dim]")
 
     if builtin == "spectrogram":
+        if audio.shape[-1] < frame_size:
+            print_error(
+                f"입력 오디오가 spectrogram frame-size보다 짧습니다: "
+                f"samples={audio.shape[-1]}, frame-size={frame_size}"
+            )
         matrix = _compute_spectrogram(audio, sr, frame_size, hop)
 
         if args.png or args.png_only:
@@ -300,6 +312,9 @@ def _compute_spectrogram(
     Returns:
         (n_frames, n_bins) 배열, dB 스케일
     """
+    if frame_size <= 0 or hop_size <= 0:
+        raise ValueError("frame_size and hop_size must be positive")
+
     # mono 변환
     if audio.ndim == 2:
         mono = audio.mean(axis=0)
@@ -307,6 +322,10 @@ def _compute_spectrogram(
         mono = audio
 
     n_samples = len(mono)
+    if n_samples < frame_size:
+        raise ValueError(
+            f"audio has {n_samples} samples, shorter than frame_size {frame_size}"
+        )
     window = np.hanning(frame_size)
     frames_list = []
 

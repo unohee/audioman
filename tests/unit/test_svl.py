@@ -218,3 +218,8 @@ class TestWriteDense3d:
         tree = parse_xml(str(path))
         model = tree.find(".//model")
         assert model.get("yBinCount") == "128"
+
+    @pytest.mark.parametrize("matrix", [np.array([]), np.zeros((1, 2, 3))])
+    def test_rejects_non_2d_matrix(self, tmp_path, matrix):
+        with pytest.raises(ValueError, match="two-dimensional"):
+            write_dense3d(tmp_path / "bad.svl", matrix)

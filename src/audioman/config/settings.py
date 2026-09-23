@@ -1,20 +1,43 @@
 # Created: 2026-03-21
 # Purpose: 앱 설정 관리 (pydantic-settings)
 
+import tomllib
 from pathlib import Path
-from typing import Optional
+from typing import Any, ClassVar, Optional
 
 from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 
 from audioman.config.paths import get_app_dir, get_cache_dir, get_preset_dir
+
+
+class _TomlSettingsSource(PydanticBaseSettingsSource):
+    """Python 3.12 stdlib TOML source, compatible with pydantic-settings 2.x."""
+
+    def get_field_value(self, field: Any, field_name: str) -> tuple[Any, str, bool]:
+        data = self()
+        return data.get(field_name), field_name, False
+
+    def __call__(self) -> dict[str, Any]:
+        path = self.settings_cls.config_file
+        if not path.is_file():
+            return {}
+        with path.open("rb") as handle:
+            data = tomllib.load(handle)
+        if not isinstance(data, dict):
+            raise ValueError(f"Audioman TOML settings must be a table: {path}")
+        return data
 
 
 class AudiomanSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="AUDIOMAN_",
-        toml_file=str(get_app_dir() / "config.toml"),
     )
+    config_file: ClassVar[Path] = get_app_dir() / "config.toml"
 
     # 일반
     default_output_format: str = "wav"
@@ -36,6 +59,23 @@ class AudiomanSettings(BaseSettings):
     # GPU (Phase 2)
     gpu_enabled: bool = False
     gpu_device: str = "auto"
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return (
+            init_settings,
+            env_settings,
+            _TomlSettingsSource(settings_cls),
+            dotenv_settings,
+            file_secret_settings,
+        )
 
 
 _settings: Optional[AudiomanSettings] = None

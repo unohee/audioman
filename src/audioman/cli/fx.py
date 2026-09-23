@@ -129,11 +129,15 @@ def _apply_effect(audio: np.ndarray, sr: int, args: argparse.Namespace) -> np.nd
     effect = args.effect
 
     if effect == "fade-in":
-        samples = args.samples or (int(args.duration * sr) if args.duration else sr // 10)
+        samples = args.samples if args.samples is not None else (
+            int(args.duration * sr) if args.duration is not None else sr // 10
+        )
         return dsp.fade_in(audio, samples, curve=args.curve)
 
     elif effect == "fade-out":
-        samples = args.samples or (int(args.duration * sr) if args.duration else sr // 10)
+        samples = args.samples if args.samples is not None else (
+            int(args.duration * sr) if args.duration is not None else sr // 10
+        )
         return dsp.fade_out(audio, samples, curve=args.curve)
 
     elif effect == "pad":

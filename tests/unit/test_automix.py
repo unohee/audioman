@@ -58,6 +58,13 @@ class TestKWeighting:
         # 50Hz < 200Hz < 1kHz (저역 → 중역으로 증가)
         assert mag[0] < mag[1] < mag[2]
 
+    def test_response_uses_supplied_sample_rate(self):
+        """동일 물리 주파수에서도 레이트별 디지털 필터 계수를 사용한다."""
+        freqs = np.array([1000.0, 4000.0])
+        at_44k = k_weight_magnitude(freqs, 44100)
+        at_48k = k_weight_magnitude(freqs, 48000)
+        assert not np.allclose(at_44k, at_48k)
+
 
 class TestComputeBandRms:
     """밴드별 RMS 측정"""

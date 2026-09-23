@@ -229,7 +229,11 @@ def _fade_curve(n: int, kind: str, direction: str) -> np.ndarray:
 
 def fade_in(audio: np.ndarray, samples: int, curve: str = "linear") -> np.ndarray:
     """fade in. samples: fade 길이 (샘플 수). curve: linear/cosine/equal_power/exponential/logarithmic"""
+    if samples < 0:
+        raise ValueError("fade samples cannot be negative")
     out = audio.copy()
+    if samples == 0:
+        return out
     if audio.ndim == 1:
         n = min(samples, len(out))
         out[:n] *= _fade_curve(n, curve, "in")
@@ -241,7 +245,11 @@ def fade_in(audio: np.ndarray, samples: int, curve: str = "linear") -> np.ndarra
 
 def fade_out(audio: np.ndarray, samples: int, curve: str = "linear") -> np.ndarray:
     """fade out. samples: fade 길이 (샘플 수). curve: linear/cosine/equal_power/exponential/logarithmic"""
+    if samples < 0:
+        raise ValueError("fade samples cannot be negative")
     out = audio.copy()
+    if samples == 0:
+        return out
     if audio.ndim == 1:
         n = min(samples, len(out))
         out[-n:] *= _fade_curve(n, curve, "out")

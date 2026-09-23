@@ -113,7 +113,7 @@ class PluginRegistry:
     def __init__(self) -> None:
         self._plugins: dict[str, PluginMeta] = {}  # short_name → meta
         self._alias_map: dict[str, str] = {}  # alias → short_name
-        self._cache_path = get_cache_dir() / "plugins.json"
+        self._cache_path: Optional[Path] = None
 
     def scan(
         self,
@@ -121,6 +121,8 @@ class PluginRegistry:
         refresh: bool = False,
     ) -> list[PluginMeta]:
         """시스템에서 VST3/AU 플러그인 검색"""
+        settings = get_settings()
+        self._cache_path = Path(settings.cache_dir) / "plugins.json"
         if not refresh and self._try_load_cache():
             return list(self._plugins.values())
 
@@ -132,7 +134,6 @@ class PluginRegistry:
         if extra_paths:
             vst3_paths.extend(Path(p) for p in extra_paths)
 
-        settings = get_settings()
         for p in settings.extra_vst3_paths:
             vst3_paths.append(Path(p))
 
@@ -145,7 +146,9 @@ class PluginRegistry:
                     self._register(meta)
 
         # AU 검색 (macOS만)
-        for search_dir in get_au_search_paths():
+        au_paths = get_au_search_paths()
+        au_paths.extend(Path(p) for p in settings.extra_au_paths)
+        for search_dir in au_paths:
             if not search_dir.exists():
                 continue
             for au in sorted(search_dir.glob("*.component")):
@@ -209,6 +212,8 @@ class PluginRegistry:
 
     def _try_load_cache(self) -> bool:
         """캐시 파일에서 플러그인 목록 로드"""
+        if self._cache_path is None:
+            self._cache_path = Path(get_settings().cache_dir) / "plugins.json"
         if not self._cache_path.exists():
             return False
 
@@ -226,6 +231,8 @@ class PluginRegistry:
 
     def _save_cache(self) -> None:
         """플러그인 목록을 캐시 파일에 저장"""
+        if self._cache_path is None:
+            self._cache_path = Path(get_settings().cache_dir) / "plugins.json"
         self._cache_path.parent.mkdir(parents=True, exist_ok=True)
         data = [p.to_dict() for p in self._plugins.values()]
         self._cache_path.write_text(json.dumps(data, indent=2, ensure_ascii=False))

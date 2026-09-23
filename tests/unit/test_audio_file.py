@@ -116,3 +116,11 @@ class TestStreamProcess:
         original, _ = sf.read(str(test_wav), dtype="float32")
         processed, _ = sf.read(str(out), dtype="float32")
         assert np.max(np.abs(processed)) < np.max(np.abs(original))
+
+    def test_rejects_non_positive_chunk_seconds(self, test_wav, tmp_path):
+        with pytest.raises(ValueError, match="chunk_seconds must be positive"):
+            stream_process(test_wav, tmp_path / "out.wav", lambda audio, sr: audio, chunk_seconds=0)
+
+    def test_rejects_processor_shape_change(self, test_wav, tmp_path):
+        with pytest.raises(ValueError, match="input chunk shape"):
+            stream_process(test_wav, tmp_path / "out.wav", lambda audio, sr: audio[:, :-1])

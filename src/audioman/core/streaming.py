@@ -161,6 +161,11 @@ def render_streamed(
         elapsed = time.perf_counter() - start
 
         processed = _as_2d(np.asarray(processed))
+        if processed.shape != block.shape:
+            raise ValueError(
+                "process_fn must return the same shape as the input block: "
+                f"expected {block.shape}, got {processed.shape}"
+            )
         out_chunks.append(processed)
         timings.append(BlockTiming(
             index=idx,

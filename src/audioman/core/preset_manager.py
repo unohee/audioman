@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-from audioman.config.paths import get_preset_dir
+from audioman.config.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,21 @@ class PresetManager:
     """프리셋 CRUD"""
 
     def __init__(self, preset_dir: Optional[Path] = None) -> None:
-        self._dir = preset_dir or get_preset_dir()
+        self._dir = preset_dir or Path(get_settings().preset_dir)
+
+    @staticmethod
+    def _safe_component(value: str, field: str) -> str:
+        candidate = Path(value)
+        if not value or candidate.name != value or value in {".", ".."}:
+            raise ValueError(f"{field} must be a single path component")
+        return value
+
+    def _plugin_dir(self, plugin: str) -> Path:
+        return self._dir / self._safe_component(plugin, "plugin")
+
+    def _preset_path(self, directory: Path, name: str) -> Path:
+        safe_name = self._safe_component(name, "preset name")
+        return directory / f"{safe_name}.json"
 
     def save(
         self,
@@ -46,7 +60,7 @@ class PresetManager:
         description: str = "",
     ) -> Path:
         """프리셋 저장"""
-        plugin_dir = self._dir / plugin
+        plugin_dir = self._plugin_dir(plugin)
         plugin_dir.mkdir(parents=True, exist_ok=True)
 
         preset = PresetData(
@@ -57,7 +71,7 @@ class PresetManager:
             created=datetime.now().isoformat(),
         )
 
-        path = plugin_dir / f"{name}.json"
+        path = self._preset_path(plugin_dir, name)
         path.write_text(json.dumps(preset.to_dict(), indent=2, ensure_ascii=False))
         logger.debug(f"프리셋 저장: {path}")
         return path
@@ -76,9 +90,9 @@ class PresetManager:
         results = []
 
         if plugin:
-            search_dirs = [self._dir / plugin]
+            search_dirs = [self._plugin_dir(plugin)]
         else:
-            search_dirs = [d for d in self._dir.iterdir() if d.is_dir()]
+            search_dirs = [d for d in self._dir.iterdir() if d.is_dir()] if self._dir.exists() else []
 
         for d in search_dirs:
             if not d.exists():
@@ -102,13 +116,15 @@ class PresetManager:
     def _find_preset(self, name: str, plugin: Optional[str] = None) -> Optional[Path]:
         """프리셋 파일 검색"""
         if plugin:
-            path = self._dir / plugin / f"{name}.json"
+            path = self._preset_path(self._plugin_dir(plugin), name)
             return path if path.exists() else None
 
         # 모든 플러그인 디렉토리에서 검색
+        if not self._dir.exists():
+            return None
         for d in self._dir.iterdir():
             if d.is_dir():
-                path = d / f"{name}.json"
+                path = self._preset_path(d, name)
                 if path.exists():
                     return path
 

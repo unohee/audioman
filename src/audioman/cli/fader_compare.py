@@ -65,6 +65,12 @@ def run(args: argparse.Namespace) -> None:
         print_error(f"automix 실패: {e}")
         return
 
+    if len(result.gains_db) != len(track_paths):
+        print_error(
+            "automix 결과의 gain 수가 입력 트랙 수와 다릅니다: "
+            f"tracks={len(track_paths)}, gains={len(result.gains_db)}"
+        )
+
     # 트랙 이름으로 매핑 (alphabetical 순서 가정 — fader-test와 automix 둘 다 sorted)
     rows: list[dict] = []
     for path, auto_db in zip(track_paths, result.gains_db):

@@ -37,51 +37,50 @@ def detect_clipping(
     threshold: float = 0.999,
 ) -> list[Finding]:
     """Sample peak ≥ threshold 가 연속된 구간(런)을 clipping으로 잡는다."""
-    mono = _to_mono(audio)
-    clipped = np.abs(mono) >= threshold
-    if not clipped.any():
-        return []
-
-    # 연속 런 찾기
-    diffs = np.diff(clipped.astype(np.int8))
-    starts = np.where(diffs == 1)[0] + 1
-    ends = np.where(diffs == -1)[0] + 1
-    if clipped[0]:
-        starts = np.concatenate(([0], starts))
-    if clipped[-1]:
-        ends = np.concatenate((ends, [len(clipped)]))
-
     findings: list[Finding] = []
-    total_clipped = int(clipped.sum())
-    n_runs = len(starts)
-    peak = float(np.max(np.abs(mono)))
-    peak_dbfs = 20.0 * np.log10(peak + 1e-30)
+    channels = audio.reshape(1, -1) if audio.ndim == 1 else audio
+    for channel, samples in enumerate(channels):
+        clipped = np.abs(samples) >= threshold
+        if not clipped.any():
+            continue
+        diffs = np.diff(clipped.astype(np.int8))
+        starts = np.where(diffs == 1)[0] + 1
+        ends = np.where(diffs == -1)[0] + 1
+        if clipped[0]:
+            starts = np.concatenate(([0], starts))
+        if clipped[-1]:
+            ends = np.concatenate((ends, [len(clipped)]))
 
-    severity = Severity.CRITICAL if total_clipped > sample_rate * 0.001 else Severity.WARN
-    findings.append(Finding(
-        code=Code.CLIP_SAMPLE_PEAK_EXCEEDED,
-        category=Category.SIGNAL,
-        severity=severity,
-        where=Where(
-            file=file,
-            start_sample=int(starts[0]),
-            end_sample=int(ends[-1]),
-            start_sec=round(float(starts[0]) / sample_rate, 6),
-            end_sec=round(float(ends[-1]) / sample_rate, 6),
-        ),
-        measurement={
-            "peak_dbfs": round(peak_dbfs, 3),
-            "samples_clipped": total_clipped,
-            "run_count": n_runs,
-            "threshold": threshold,
-        },
-        hint=f"{n_runs} clipping run(s), {total_clipped} samples at/above {threshold}. Reduce input gain or apply a limiter.",
-        fix_hint=FixHint(
-            kind="ffmpeg-plan",
-            args=["loudnorm-or-limit", "--ceiling", "-1.0"],
-            note="audioman plan loudnorm / limit (Phase B)",
-        ),
-    ))
+        total_clipped = int(clipped.sum())
+        n_runs = len(starts)
+        peak = float(np.max(np.abs(samples)))
+        peak_dbfs = 20.0 * np.log10(peak + 1e-30)
+        severity = Severity.CRITICAL if total_clipped > sample_rate * 0.001 else Severity.WARN
+        findings.append(Finding(
+            code=Code.CLIP_SAMPLE_PEAK_EXCEEDED,
+            category=Category.SIGNAL,
+            severity=severity,
+            where=Where(
+                file=file,
+                channel=channel if audio.ndim == 2 else None,
+                start_sample=int(starts[0]),
+                end_sample=int(ends[-1]),
+                start_sec=round(float(starts[0]) / sample_rate, 6),
+                end_sec=round(float(ends[-1]) / sample_rate, 6),
+            ),
+            measurement={
+                "peak_dbfs": round(peak_dbfs, 3),
+                "samples_clipped": total_clipped,
+                "run_count": n_runs,
+                "threshold": threshold,
+            },
+            hint=f"{n_runs} clipping run(s), {total_clipped} samples at/above {threshold}. Reduce input gain or apply a limiter.",
+            fix_hint=FixHint(
+                kind="ffmpeg-plan",
+                args=["loudnorm-or-limit", "--ceiling", "-1.0"],
+                note="audioman plan loudnorm / limit (Phase B)",
+            ),
+        ))
     return findings
 
 

@@ -141,6 +141,24 @@ def detect_clicks(
     diff = np.abs(np.diff(mono))
     win = max(int(window_ms / 1000.0 * sample_rate), 16)
 
+    if n < win:
+        local_rms = float(np.sqrt(np.mean(mono.astype(np.float64) ** 2)))
+        ratio = diff / max(local_rms, 1e-6)
+        candidates = np.where(ratio > sensitivity)[0]
+        if len(candidates) == 0:
+            return {"n_clicks": 0, "locations_sec": [], "max_ratio": float(ratio.max())}
+        min_sep = max(int(min_separation_ms / 1000.0 * sample_rate), 1)
+        grouped = [candidates[0]]
+        for c in candidates[1:]:
+            if c - grouped[-1] > min_sep:
+                grouped.append(c)
+        return {
+            "n_clicks": len(grouped),
+            "locations_sec": [round(int(c) / sample_rate, 4) for c in grouped[:20]],
+            "max_ratio": round(float(ratio.max()), 2),
+            "sensitivity": sensitivity,
+        }
+
     # 국부 RMS: rolling square mean
     sq = mono.astype(np.float64) ** 2
     cumsum = np.concatenate([[0.0], np.cumsum(sq)])

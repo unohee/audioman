@@ -42,3 +42,12 @@ class TestPresetManager:
         manager.save("ow", plugin="test", params={"v": 2})
         loaded = manager.load("ow", plugin="test")
         assert loaded.parameters["v"] == 2
+
+    @pytest.mark.parametrize("name,plugin", [
+        ("../escape", "denoise"),
+        ("preset", "../escape"),
+        ("nested/preset", "denoise"),
+    ])
+    def test_rejects_path_traversal(self, manager, name, plugin):
+        with pytest.raises(ValueError, match="single path component"):
+            manager.save(name, plugin=plugin, params={})
