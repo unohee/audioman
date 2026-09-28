@@ -28,7 +28,11 @@ class _TomlSettingsSource(PydanticBaseSettingsSource):
             return {}
         with path.open("rb") as handle:
             data = tomllib.load(handle)
-        if not isinstance(data, dict):
+        # Unreachable in practice, kept as the boundary's diagnostic: `tomllib.load`
+        # returns the document table and rejects a non-table root with TOMLDecodeError
+        # while parsing, so `data` is always a dict. The premise is pinned by
+        # TestTomlNonTableRootIsDead in tests/unit/cli_extra2/test_residual_lines.py.
+        if not isinstance(data, dict):  # pragma: no cover - load returns a table
             raise ValueError(f"Audioman TOML settings must be a table: {path}")
         return data
 

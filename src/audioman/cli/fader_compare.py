@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from typing import Optional
 
 from audioman.cli.output import (
     output_console,
@@ -34,19 +35,42 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.set_defaults(func=run)
 
 
+def _load_ground_truth(gt_path: Path) -> Optional[dict]:
+    """Read + validate the fader-test export. Returns None after print_error."""
+    try:
+        data = json.loads(gt_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:
+        print_error(f"ground truth JSON을 읽을 수 없습니다: {gt_path} ({e})")
+        return None
+
+    if not isinstance(data, dict):
+        print_error(f"ground truth JSON의 최상위가 객체가 아닙니다: {type(data).__name__}")
+        return None
+
+    source_dir = data.get("source_dir")
+    if not isinstance(source_dir, str) or not Path(source_dir).is_dir():
+        print_error(f"ground truth의 source_dir가 유효하지 않습니다: {source_dir}")
+        return None
+
+    gt_gains = data.get("gains")
+    if not isinstance(gt_gains, dict) or not gt_gains:
+        print_error("ground truth JSON에 'gains' 필드가 없습니다.")
+        return None
+
+    return {"source_dir": source_dir, "gains": gt_gains}
+
+
 def run(args: argparse.Namespace) -> None:
     gt_path = Path(args.ground_truth)
     if not gt_path.exists():
         print_error(f"파일 없음: {gt_path}")
+        return
 
-    data = json.loads(gt_path.read_text())
-    source_dir = data.get("source_dir")
-    if not source_dir or not Path(source_dir).is_dir():
-        print_error(f"ground truth의 source_dir가 유효하지 않습니다: {source_dir}")
-
-    gt_gains = data.get("gains") or {}
-    if not gt_gains:
-        print_error("ground truth JSON에 'gains' 필드가 없습니다.")
+    loaded = _load_ground_truth(gt_path)
+    if loaded is None:
+        return
+    source_dir = loaded["source_dir"]
+    gt_gains = loaded["gains"]
 
     # automix 권고값 계산
     from pathlib import Path as _P
@@ -55,6 +79,7 @@ def run(args: argparse.Namespace) -> None:
     track_paths = sorted(_P(source_dir).glob("*.wav"))
     if not track_paths:
         print_error(f"source_dir에 wav 없음: {source_dir}")
+        return
 
     try:
         result = run_automix(
@@ -71,6 +96,7 @@ def run(args: argparse.Namespace) -> None:
             "automix 결과의 gain 수가 입력 트랙 수와 다릅니다: "
             f"tracks={len(track_paths)}, gains={len(result.gains_db)}"
         )
+        return
 
     # 트랙 이름으로 매핑 (alphabetical 순서 가정 — fader-test와 automix 둘 다 sorted)
     rows: list[dict] = []
@@ -82,15 +108,21 @@ def run(args: argparse.Namespace) -> None:
             gt_db = gt_gains.get(path.stem)
         if gt_db is None:
             continue
+        try:
+            gt_db_f = float(gt_db)
+        except (TypeError, ValueError):
+            print_error(f"ground truth의 gain 값이 숫자가 아닙니다: {name}={gt_db!r}")
+            return
         rows.append({
             "track": name,
-            "ground_truth_db": float(gt_db),
+            "ground_truth_db": gt_db_f,
             "automix_db": float(auto_db),
-            "diff_db": float(auto_db) - float(gt_db),  # automix가 ground truth보다 얼마나 큰가
+            "diff_db": float(auto_db) - gt_db_f,  # automix가 ground truth보다 얼마나 큰가
         })
 
     if not rows:
         print_error("매칭된 트랙이 없습니다 — 트랙명이 일치하는지 확인.")
+        return
 
     n = len(rows)
     diffs = [abs(r["diff_db"]) for r in rows]

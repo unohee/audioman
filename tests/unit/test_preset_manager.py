@@ -51,3 +51,35 @@ class TestPresetManager:
     def test_rejects_path_traversal(self, manager, name, plugin):
         with pytest.raises(ValueError, match="single path component"):
             manager.save(name, plugin=plugin, params={})
+
+
+class TestPresetManagerResidual:
+    def test_list_skips_malformed_json(self, manager):
+        manager.save("good", plugin="denoise", params={"a": 1})
+        bad = manager._plugin_dir("denoise") / "broken.json"
+        bad.write_text("{not json")
+        presets = manager.list(plugin="denoise")
+        assert [p.name for p in presets] == ["good"]
+
+    def test_delete_missing_raises(self, manager):
+        with pytest.raises(FileNotFoundError, match="프리셋을 찾을 수 없습니다"):
+            manager.delete("does-not-exist", plugin="denoise")
+
+    def test_find_preset_without_plugin_scans_dirs(self, manager):
+        manager.save("scanme", plugin="denoise", params={"a": 1})
+        found = manager._find_preset("scanme")
+        assert found is not None and found.exists()
+
+    def test_find_preset_without_plugin_missing_dir(self, manager):
+        # preset dir never created → early None
+        assert manager._find_preset("nothing") is None
+
+    def test_find_preset_without_plugin_not_found(self, manager):
+        manager.save("only_one", plugin="denoise", params={})
+        assert manager._find_preset("absent") is None
+
+    def test_find_preset_skips_non_directory_entries(self, manager):
+        manager._dir.mkdir(parents=True, exist_ok=True)
+        (manager._dir / "stray.txt").write_text("x")
+        manager.save("real", plugin="denoise", params={})
+        assert manager._find_preset("real") is not None

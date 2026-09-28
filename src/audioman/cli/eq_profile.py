@@ -241,7 +241,9 @@ def run(args: argparse.Namespace) -> None:
                     for r in eq_results[1:]:
                         diff = np.max(np.abs(np.array(r.magnitude_db) - ref))
                         max_deviation = max(max_deviation, diff)
-                    is_level_dependent = max_deviation > 0.5
+                    # bool() keeps numpy.bool_ out of the JSON payload: json.dumps
+                    # would otherwise render it as the string "True".
+                    is_level_dependent = bool(max_deviation > 0.5)
 
                 results["nonlinear"] = {
                     "n_levels": len(eq_results),

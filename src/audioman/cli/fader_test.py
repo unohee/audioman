@@ -38,12 +38,14 @@ def run(args: argparse.Namespace) -> None:
     input_dir = Path(args.input).resolve()
     if not input_dir.is_dir():
         print_error(f"디렉터리 아님: {input_dir}")
+        return
 
     # PyQt + audio engine은 무거우니 lazy import
     try:
         from PyQt6.QtWidgets import QApplication
     except ImportError:
         print_error("PyQt6 미설치 — uv add PyQt6")
+        return
 
     from audioman.cli._fader_test_ui import FaderTestWindow
     from audioman.core.multitrack_player import MultitrackPlayer

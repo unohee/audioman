@@ -124,3 +124,51 @@ class TestStreamProcess:
     def test_rejects_processor_shape_change(self, test_wav, tmp_path):
         with pytest.raises(ValueError, match="input chunk shape"):
             stream_process(test_wav, tmp_path / "out.wav", lambda audio, sr: audio[:, :-1])
+
+
+class TestStreamProcessEdges:
+    def test_mono_processor_reshaped(self, tmp_path, sample_rate):
+        """A processor returning 1-D output is reshaped back to (channels, samples)."""
+        from audioman.core.audio_file import stream_process
+        src = tmp_path / "mono_src.wav"
+        sf.write(str(src), np.ones(44100, dtype=np.float32) * 0.5, sample_rate, subtype="FLOAT")
+        out = tmp_path / "mono_out.wav"
+        result = stream_process(src, out, process_fn=lambda a, sr: a[0], chunk_seconds=0.5)
+        assert out.exists()
+        assert result["frames_processed"] == 44100
+
+    def test_read_past_reported_end_breaks_loop(self, tmp_path, sample_rate, monkeypatch):
+        """If the container reports more frames than exist, the empty read ends the loop."""
+        from audioman.core import audio_file as af
+
+        src = tmp_path / "short_src.wav"
+        sf.write(str(src), np.ones(100, dtype=np.float32) * 0.5, sample_rate, subtype="FLOAT")
+
+        real_info = af.sf.info
+
+        def _fake_info(path):
+            info = real_info(path)
+            info.frames = 10000  # claim more frames than the 100 written
+            return info
+
+        monkeypatch.setattr(af.sf, "info", _fake_info)
+        result = af.stream_process(src, tmp_path / "out.wav", lambda a, sr: a, chunk_seconds=0.5)
+        assert result["frames_processed"] == 100
+        assert result["chunks"] == 1
+
+    def test_chunk_seconds_below_one_frame_raises(self, tmp_path, sample_rate):
+        from audioman.core import audio_file as af
+        src = tmp_path / "src.wav"
+        sf.write(str(src), np.ones(100, dtype=np.float32), sample_rate, subtype="FLOAT")
+        with pytest.raises(ValueError, match="too small for sample rate"):
+            af.stream_process(src, tmp_path / "o.wav", lambda a, sr: a, chunk_seconds=1e-9)
+
+
+class TestStreamProcessChunkBoundary:
+    def test_zero_chunk_frames_for_tiny_sample_rate(self, tmp_path):
+        from audioman.core import audio_file as af
+        src = tmp_path / "tiny_sr.wav"
+        sf.write(str(src), np.ones(100, dtype=np.float32), 8000, subtype="FLOAT")
+        # chunk_seconds rounds down to 0 frames at a low rate only if < 1/sr
+        with pytest.raises(ValueError, match="chunk_seconds must be positive"):
+            af.stream_process(src, tmp_path / "o.wav", lambda a, sr: a, chunk_seconds=0.0)

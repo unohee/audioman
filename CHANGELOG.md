@@ -32,6 +32,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - **`VST3PluginWrapper.set_parameters`**: 플러그인이 보고한 min/max를 벗어난 값과 NaN/Inf를 조용히 클램프하지 않고, 파라미터 이름과 경계를 명시한 `ValueError`로 거부한다(플러그인은 건드리지 않음). `process()`도 빈 블록과 NaN/Inf 입력을 플러그인 로드 전에 `ValueError`로 거부한다.
+- **`audioman observe` 실패 처리**: 존재하지 않거나 디코드할 수 없는 입력이 traceback으로 죽던 것을 `print_error` + exit 1로 바꾸고, 배치 모드에서는 파일 단위 실패를 집계해 나머지 파일을 계속 처리한 뒤 `배치 완료: N 성공, M 실패 / T 전체`와 함께 exit 1을 반환한다 (기존에는 배치 전체가 중단됐다).
+- **`audioman fader-compare` ground truth 검증**: 깨진 JSON, 객체가 아닌 최상위, 문자열이 아닌 `source_dir`, `gains` 누락/비매핑, 숫자가 아닌 gain 값이 각각 traceback(`JSONDecodeError`/`TypeError`/`ZeroDivisionError`) 대신 명확한 오류와 exit 1로 처리된다.
 
 ### Tests
 - `tests/unit/test_plain_mode.py` (3), `test_findings.py` (18), `test_observe.py` (5), `test_changelog_cmd.py` (5) — 31 new tests.

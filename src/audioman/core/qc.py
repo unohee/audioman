@@ -164,13 +164,16 @@ def detect_clicks(
     cumsum = np.concatenate([[0.0], np.cumsum(sq)])
     rolling_mean_sq = (cumsum[win:] - cumsum[:-win]) / win
     # diff와 길이 맞추기 (앞뒤 패딩)
+    # `win >= 16` and `n >= win` here, so the rolling mean has n - win + 1 entries and
+    # the gap to the n - 1 the ratio needs is exactly win - 2 >= 14: `pad` is never
+    # negative, and padding by `pad` on the left and the remainder on the right makes
+    # the result exactly n - 1 long, so no truncation or top-up can be needed.
     pad = (n - 1 - len(rolling_mean_sq)) // 2
-    if pad > 0:
-        rolling_mean_sq = np.pad(rolling_mean_sq, (pad, n - 1 - len(rolling_mean_sq) - pad), mode="edge")
-    elif pad < 0:
-        rolling_mean_sq = rolling_mean_sq[:n - 1]
-    if len(rolling_mean_sq) < n - 1:
-        rolling_mean_sq = np.pad(rolling_mean_sq, (0, n - 1 - len(rolling_mean_sq)), mode="edge")
+    rolling_mean_sq = np.pad(
+        rolling_mean_sq,
+        (pad, n - 1 - len(rolling_mean_sq) - pad),
+        mode="edge",
+    )
 
     local_rms = np.sqrt(np.maximum(rolling_mean_sq, 1e-12))
     ratio = diff / local_rms

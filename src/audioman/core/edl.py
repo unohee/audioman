@@ -212,7 +212,8 @@ def _apply_op(audio: np.ndarray, sr: int, op: dict) -> np.ndarray:
                 src = clip_audio if clip_audio.ndim == 1 else clip_audio[0]
                 clip_audio = np.stack([src, src], axis=0)
             elif in_ch == 1 and clip_ch == 2:
-                clip_audio = clip_audio.mean(axis=0)
+                # keep the (1, samples) layout so dsp.splice sees matching ndim
+                clip_audio = clip_audio.mean(axis=0, keepdims=True)
             else:
                 raise ValueError(f"splice 채널 변환 불가: in={in_ch}, clip={clip_ch}")
         position = _sec_to_samples(op["position_sec"], sr)

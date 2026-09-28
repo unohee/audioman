@@ -15,6 +15,11 @@ from audioman.core.automix import (
     automix,
     k_weight_magnitude,
     K20_REF_LUFS,
+    classify_tracks,
+    genre_profile,
+    compute_broadband_rms_db,
+    _match_relative_keyword,
+    GENRE_PROFILES,
 )
 
 
@@ -317,3 +322,184 @@ class TestAutomix:
 
         assert result.target_profile["type"] == "reference"
         assert len(result.gains_db) == 1
+
+
+# ---------------------------------------------------------------------------
+# Residual branches: classify_tracks, relative-level keyword match, grouped staging
+# ---------------------------------------------------------------------------
+
+
+class TestClassifyTracks:
+    def test_mixed_filenames(self):
+        groups = classify_tracks([
+            "01_Kick.wav", "02_Snare.wav", "Bass DI.wav",
+            "LeadVox_comp.wav", "Piano.wav", "mystery_thing.wav",
+        ])
+        assert groups["drums"] == [0, 1]
+        assert groups["bass"] == [2]
+        assert groups["vocals"] == [3]
+        assert groups["keys"] == [4]
+        assert groups["other"] == [5]
+
+    def test_returns_only_nonempty_groups(self):
+        groups = classify_tracks(["kick.wav"])
+        assert list(groups.keys()) == ["drums"]
+
+    def test_empty_input(self):
+        assert classify_tracks([]) == {}
+
+
+class TestMatchRelativeKeyword:
+    def test_most_specific_longest_keyword_wins(self):
+        levels = {"kick": 0.0, "oh": -8.0, "overhead": -10.0, "_default": -6.0}
+        # "overhead" is longer than "oh" → -10.0
+        assert _match_relative_keyword("OH_Overhead_L.wav", levels) == -10.0
+
+    def test_fallback_default(self):
+        assert _match_relative_keyword("whatever.wav", {"kick": 0.0, "_default": -5.0}) == -5.0
+
+    def test_no_default_returns_zero(self):
+        assert _match_relative_keyword("x.wav", {"kick": 0.0}) == 0.0
+
+
+class TestGenreProfile:
+    def test_unknown_genre_falls_back_to_default(self):
+        prof = genre_profile("not_a_genre")
+        default = genre_profile("default")
+        assert prof == default
+
+    def test_missing_band_name_uses_minus30(self):
+        bands = [BandDefinition("unknown_band", 10, 20)]
+        assert genre_profile("pop", bands) == [-30.0]
+
+    def test_custom_band_order(self):
+        bands = [BandDefinition("high", 4000, 20000), BandDefinition("sub", 20, 200)]
+        prof = genre_profile("rock", bands)
+        assert prof == [GENRE_PROFILES["rock"]["bands"]["high"],
+                        GENRE_PROFILES["rock"]["bands"]["sub"]]
+
+
+class TestKWeightSampleRateValidation:
+    def test_zero_sample_rate_raises(self):
+        with pytest.raises(ValueError, match="sample_rate must be positive"):
+            k_weight_magnitude(np.array([1000.0]), 0)
+
+
+class TestComputeBroadbandRmsUnweighted:
+    def test_unweighted_matches_plain_rms(self):
+        t = np.arange(48000) / 48000
+        audio = (0.5 * np.sin(2 * np.pi * 1000 * t)).astype(np.float32)
+        db = compute_broadband_rms_db(audio, 48000, k_weighted=False)
+        expected = 20.0 * np.log10(0.5 / np.sqrt(2))
+        assert db == pytest.approx(expected, abs=0.05)
+
+    def test_unweighted_silence_returns_floor(self):
+        # unweighted path floors at 1e-10 linear amplitude → -200 dBFS
+        assert compute_broadband_rms_db(np.zeros(1000, dtype=np.float32), 48000,
+                                        k_weighted=False) == pytest.approx(-200.0)
+
+    def test_weighted_too_short_returns_floor(self):
+        assert compute_broadband_rms_db(np.zeros(100, dtype=np.float32), 48000) == -120.0
+
+
+class TestComputeAutomixGainsGrouped:
+    def _synthetic(self):
+        # 3 tracks across 2 groups (drums kick/snare, bass)
+        tracks_band_rms = [
+            [-20.0, -25.0, -30.0, -40.0],   # kick
+            [-30.0, -28.0, -26.0, -42.0],   # snare
+            [-18.0, -20.0, -34.0, -50.0],   # bass
+        ]
+        target = [-25.0, -26.0, -28.0, -35.0]
+        paths = ["kick.wav", "snare.wav", "bass.wav"]
+        rms_db = [-18.0, -22.0, -16.0]
+        return tracks_band_rms, target, paths, rms_db
+
+    def test_grouped_gains_and_groups_info(self):
+        tracks, target, paths, rms_db = self._synthetic()
+        gains, residual, groups = compute_automix_gains(
+            tracks, target, track_paths=paths, track_rms_db=rms_db,
+        )
+        assert len(gains) == 3
+        assert groups is not None
+        assert "drums" in groups and "bass" in groups
+        assert isinstance(residual, float)
+
+    def test_group_balance_override(self):
+        tracks, target, paths, rms_db = self._synthetic()
+        gains, _res, _g = compute_automix_gains(
+            tracks, target, track_paths=paths, track_rms_db=rms_db,
+            group_balance={"drums": 0.0, "bass": 0.0, "other": 0.0},
+        )
+        assert len(gains) == 3
+
+    def test_grouped_without_drums_uses_loudest_group(self):
+        tracks = [[-20.0, -25.0, -30.0, -40.0], [-18.0, -20.0, -34.0, -50.0]]
+        target = [-25.0, -26.0, -28.0, -35.0]
+        _gains, _res, groups = compute_automix_gains(
+            tracks, target, track_paths=["bass.wav", "keys.wav"],
+            track_rms_db=[-18.0, -16.0],
+        )
+        assert "drums" not in groups
+
+    def test_flat_fallback_when_paths_missing(self):
+        tracks, target, _paths, _rms = self._synthetic()
+        gains, residual, groups = compute_automix_gains(tracks, target)
+        assert groups is None
+        assert len(gains) == 3
+
+    def test_zero_power_track_skips_flat_gain_assignment(self):
+        # band power 10**(-120) < the 1e-20 guard → gain left at 0.0, not boosted
+        tracks = [[-1200.0] * 4, [-20.0, -25.0, -30.0, -40.0]]
+        target = [-25.0, -26.0, -28.0, -35.0]
+        gains, _res, _g = compute_automix_gains(tracks, target)
+        assert gains[0] == 0.0
+
+    def test_gain_clamped_to_bounds(self):
+        tracks = [[-120.0, -120.0, -120.0, -120.0]]
+        target = [-25.0, -26.0, -28.0, -35.0]
+        gains, _res, _g = compute_automix_gains(tracks, target, min_gain_db=-6.0, max_gain_db=3.0)
+        assert -6.0 <= gains[0] <= 3.0
+
+
+class TestAutomixEntryPoint:
+    def _tracks(self, tmp_path):
+        sr = 48000
+        t = np.arange(sr * 2) / sr
+        paths = []
+        for name, freq in [("kick.wav", 60.0), ("bass.wav", 100.0)]:
+            audio = (0.4 * np.sin(2 * np.pi * freq * t)).astype(np.float32)
+            p = tmp_path / name
+            sf.write(str(p), audio, sr, subtype="FLOAT")
+            paths.append(str(p))
+        return paths
+
+    def test_genre_target_path(self, tmp_path):
+        result = automix(self._tracks(tmp_path), target="rock")
+        assert result.target_profile["type"] == "genre"
+        assert result.target_profile["genre"] == "rock"
+        assert "bands" in result.target_profile
+        assert result.groups is not None
+        assert len(result.gains_db) == 2
+
+    def test_reference_target_path(self, tmp_path):
+        paths = self._tracks(tmp_path)
+        result = automix(paths, target="reference", reference_path=paths[0])
+        assert result.target_profile["type"] == "reference"
+        assert result.target_profile["path"] == paths[0]
+
+    def test_reference_target_without_path_falls_back_to_pink(self, tmp_path):
+        result = automix(self._tracks(tmp_path), target="reference", reference_path=None)
+        assert result.target_profile["type"] == "pink_noise"
+
+    def test_custom_bands_respected(self, tmp_path):
+        bands = [BandDefinition("low", 20, 1000), BandDefinition("high", 1000, 20000)]
+        result = automix(self._tracks(tmp_path), target="pop", bands=bands)
+        assert set(result.target_profile["bands"].keys()) == {"low", "high"}
+        assert set(result.band_analysis[0]["bands"].keys()) == {"low", "high"}
+
+    def test_to_dict_serializable(self, tmp_path):
+        result = automix(self._tracks(tmp_path))
+        d = result.to_dict()
+        assert isinstance(d["gains_db"], list)
+        assert d["target_profile"]["type"] == "pink_noise"

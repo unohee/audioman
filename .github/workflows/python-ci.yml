@@ -46,21 +46,21 @@ jobs:
           cache: pip
       - name: Install project and test tooling
         run: python -m pip install -e ".[dev]"
-      # ── Coverage gate — flip this on when AUD-1851 reaches 100% ────────────────
+      # ── Coverage gate ─────────────────────────────────────────────────────────
       #
-      # Once `pytest --cov=audioman` reports 100%, add to the command below:
+      # AUD-1851 reached 100% (`TOTAL 8255 0 100%`, 2355 passed), so the threshold is
+      # now enforced. It was deliberately absent before: a floor set below 100% would
+      # have frozen that day's debt as the contract and stayed green through a
+      # regression that remained above it.
       #
-      #     --cov-fail-under=100
-      #
-      # That is the only edit required. The threshold is not pre-set to a lower number
-      # on purpose: a floor of 46% would freeze today's debt as the contract and quietly
-      # turn green on a regression that stays above it.
+      # `--cov-fail-under=100` is the gate. If a change legitimately cannot be covered,
+      # exclude it explicitly and visibly (a `# pragma: no cover` carrying its reason);
+      # never lower this number.
       - name: Run tests with coverage
-        # The repository's own invocation, plus coverage reporting. `--cov-fail-under`
-        # is deliberately absent: see the note above.
         run: |
           pytest tests -q -p no:cacheprovider \
             --cov=audioman \
+            --cov-fail-under=100 \
             --cov-report=term-missing \
             --cov-report=xml
       - name: Upload coverage report

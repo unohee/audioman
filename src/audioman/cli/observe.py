@@ -6,13 +6,16 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 from audioman.cli.output import (
     output_console,
     print_error,
     print_json,
+    print_success,
     print_table,
+    print_warning,
 )
 from audioman.core.analysis import detect_silence, spectrum_diagnostics
 from audioman.core.audio_file import get_audio_stats, read_audio
@@ -155,34 +158,53 @@ def run(args: argparse.Namespace) -> None:
     categories = _parse_categories(args.category)
     min_severity = Severity(args.severity)
     input_path = Path(args.input)
+    kwargs = {
+        "categories": categories,
+        "min_severity": min_severity,
+        "silence_threshold": args.silence_threshold,
+        "spectrum_fft": args.spectrum_fft,
+        "spectrum_min_rms": args.spectrum_min_rms,
+    }
 
     if input_path.is_dir():
         files = collect_audio_files(input_path, recursive=args.recursive)
         if not files:
             print_error(f"No audio files in: {input_path}")
+            return
+
+        # A broken file must not abort the batch: count it, report it, continue.
+        # Exit status stays non-zero so scripting sees the partial failure.
+        fail = 0
         for fpath in files:
-            payload = _observe_file(
-                fpath,
-                categories=categories,
-                min_severity=min_severity,
-                silence_threshold=args.silence_threshold,
-                spectrum_fft=args.spectrum_fft,
-                spectrum_min_rms=args.spectrum_min_rms,
-            )
+            try:
+                payload = _observe_file(fpath, **kwargs)
+            except Exception as e:
+                fail += 1
+                if args.json:
+                    print_json(json_envelope(
+                        "observe",
+                        {"file": str(fpath), "error": str(e)},
+                        schema=schema_uri("observe"),
+                    ))
+                else:
+                    print_warning(f"  {fpath.name}: {e}")
+                continue
             if args.json:
                 print_json(payload)
             else:
                 _print_human(payload)
+
+        if not args.json:
+            print_success(f"배치 완료: {len(files) - fail} 성공, {fail} 실패 / {len(files)} 전체")
+        if fail:
+            sys.exit(1)
         return
 
-    payload = _observe_file(
-        input_path,
-        categories=categories,
-        min_severity=min_severity,
-        silence_threshold=args.silence_threshold,
-        spectrum_fft=args.spectrum_fft,
-        spectrum_min_rms=args.spectrum_min_rms,
-    )
+    try:
+        payload = _observe_file(input_path, **kwargs)
+    except Exception as e:
+        print_error(str(e))
+        return
     if args.json:
         print_json(payload)
         return

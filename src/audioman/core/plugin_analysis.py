@@ -224,7 +224,9 @@ def measure_thd(
             break
         sr = max(3, h_bin // 50)
         region = spectrum[max(0, h_bin - sr):min(len(spectrum), h_bin + sr)]
-        if len(region) == 0:
+        # Unreachable: line 223 breaks as soon as h_bin >= len(spectrum), so h_bin <
+        # bins here and the slice reaches at least min(h_bin + sr, bins) > h_bin >= 0.
+        if len(region) == 0:  # pragma: no cover - h_bin < len(spectrum), sr >= 3
             continue
         h_peak = np.max(region)
         h_db = 20 * np.log10(h_peak + 1e-10)
@@ -292,7 +294,10 @@ def measure_imd(
                 continue
             sr2 = max(2, sb_bin // 100)
             region = spectrum[max(0, sb_bin - sr2):min(len(spectrum), sb_bin + sr2)]
-            if len(region) == 0:
+            # Unreachable: the `sb_bin >= len(spectrum)` check above skips every bin
+            # that is out of range, so sb_bin is in range here and the slice reaches
+            # min(sb_bin + sr2, bins) > sb_bin >= 0, which is never empty.
+            if len(region) == 0:  # pragma: no cover - sb_bin < len(spectrum), sr2 >= 2
                 continue
             sb_peak = np.max(region)
             imd_energy += sb_peak**2

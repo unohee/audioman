@@ -72,6 +72,8 @@ def _screen_one(path: Path, issues: list[str], backend: str) -> dict:
         print_error(f"{e}. Install essentia or use --backend fallback.")
     except Exception as e:
         print_error(str(e))
+    # Unreachable in production: print_error exits. The explicit raise keeps a
+    # future edit that stops exiting from returning None into the report path.
     raise AssertionError("unreachable")
 
 

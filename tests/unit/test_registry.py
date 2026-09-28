@@ -293,3 +293,212 @@ class TestAliases:
         for aliases in ALIASES.values():
             all_aliases.extend(aliases)
         assert len(all_aliases) == len(set(all_aliases))
+
+
+class TestRegistryScanAndCacheEdges:
+    """scan()/cache branch coverage with a patched settings + search paths."""
+
+    def _registry(self):
+        reg = PluginRegistry.__new__(PluginRegistry)
+        reg._plugins = {}
+        reg._alias_map = {}
+        reg._cache_path = None
+        return reg
+
+    def _settings(self, tmp_path, extra_vst3=None, extra_au=None):
+        from types import SimpleNamespace
+        return SimpleNamespace(
+            cache_dir=str(tmp_path / "cache"),
+            extra_vst3_paths=extra_vst3 or [],
+            extra_au_paths=extra_au or [],
+        )
+
+    def test_scan_cached_plugins_short_circuits(self, tmp_path, monkeypatch):
+        from audioman.core import registry as reg_mod
+        reg = self._registry()
+        meta = PluginMeta(name="Cached", short_name="cached",
+                          path=str(tmp_path / "c.vst3"), format="vst3")
+        (tmp_path / "c.vst3").mkdir()
+        reg._register(meta)
+        monkeypatch.setattr(reg_mod, "get_settings", lambda: self._settings(tmp_path))
+        reg._cache_path = tmp_path / "cache" / "plugins.json"
+        reg._save_cache()
+
+        # a fresh registry with the same cache path must return cached plugins
+        # without touching the filesystem search paths
+        reg2 = self._registry()
+        monkeypatch.setattr(reg_mod, "get_vst3_search_paths",
+                            lambda: (_ for _ in ()).throw(AssertionError("rescan should be skipped")))
+        out = reg2.scan(refresh=False)
+        assert [m.short_name for m in out] == ["cached"]
+
+    def test_scan_uses_extra_paths_and_settings(self, tmp_path, monkeypatch):
+        from audioman.core import registry as reg_mod
+        reg = self._registry()
+        extra = tmp_path / "extra"
+        extra.mkdir()
+        bundle = extra / "Extra.vst3" / "Contents"
+        bundle.mkdir(parents=True)
+        with open(bundle / "Info.plist", "wb") as f:
+            plistlib.dump({"CFBundleName": "Extra Plugin"}, f)
+
+        monkeypatch.setattr(reg_mod, "get_settings",
+                            lambda: self._settings(tmp_path, extra_vst3=[str(tmp_path / "nonexistent_dir")]))
+        monkeypatch.setattr(reg_mod, "get_vst3_search_paths", lambda: [])
+        monkeypatch.setattr(reg_mod, "get_au_search_paths", lambda: [])
+        out = reg.scan(extra_paths=[str(extra)], refresh=True)
+        assert "extra-plugin" in reg._plugins
+
+    def test_scan_au_skips_vst3_duplicate(self, tmp_path, monkeypatch):
+        from audioman.core import registry as reg_mod
+        reg = self._registry()
+        au_root = tmp_path / "au"
+        au_root.mkdir()
+        au = au_root / "Dup.component" / "Contents"
+        au.mkdir(parents=True)
+        with open(au / "Info.plist", "wb") as f:
+            plistlib.dump({"CFBundleName": "Dup"}, f)
+
+        monkeypatch.setattr(reg_mod, "get_settings", lambda: self._settings(tmp_path))
+        monkeypatch.setattr(reg_mod, "get_vst3_search_paths", lambda: [])
+        monkeypatch.setattr(reg_mod, "get_au_search_paths", lambda: [au_root])
+        # scan() clears the registry first, so stage the VST3 copy in the cache
+        reg._cache_path = tmp_path / "cache" / "plugins.json"
+        vst3_dir = tmp_path / "dup.vst3"
+        vst3_dir.mkdir()
+        reg._register(PluginMeta(name="Dup", short_name="dup", path=str(vst3_dir), format="vst3"))
+        reg._save_cache()
+
+        reg.scan(refresh=False)  # loads the VST3 copy from cache, then scans AU
+        assert reg._plugins["dup"].format == "vst3"
+
+    def test_scan_refresh_clears_and_rescans(self, tmp_path, monkeypatch):
+        from audioman.core import registry as reg_mod
+        reg = self._registry()
+        reg._register(PluginMeta(name="Stale", short_name="stale",
+                                 path="/tmp/stale.vst3", format="vst3"))
+        monkeypatch.setattr(reg_mod, "get_settings", lambda: self._settings(tmp_path))
+        monkeypatch.setattr(reg_mod, "get_vst3_search_paths", lambda: [])
+        monkeypatch.setattr(reg_mod, "get_au_search_paths", lambda: [])
+        reg.scan(refresh=True)
+        assert "stale" not in reg._plugins
+
+    def test_scan_nonexistent_search_dir_skipped(self, tmp_path, monkeypatch):
+        from audioman.core import registry as reg_mod
+        reg = self._registry()
+        missing = tmp_path / "missing"
+        au_missing = tmp_path / "au_missing"
+        monkeypatch.setattr(reg_mod, "get_settings", lambda: self._settings(tmp_path))
+        monkeypatch.setattr(reg_mod, "get_vst3_search_paths", lambda: [missing])
+        monkeypatch.setattr(reg_mod, "get_au_search_paths", lambda: [au_missing])
+        out = reg.scan(refresh=True)
+        assert out == []
+
+    def test_parse_au_bad_plist_returns_none(self, tmp_path):
+        au = tmp_path / "Bad.component" / "Contents"
+        au.mkdir(parents=True)
+        (au / "Info.plist").write_text("not a plist")
+        assert _parse_au_info(tmp_path / "Bad.component") is None
+
+    def test_parse_au_missing_plist_returns_none(self, tmp_path):
+        au = tmp_path / "NoInfo.component"
+        au.mkdir()
+        assert _parse_au_info(au) is None
+
+    def test_cache_path_defaults_from_settings(self, tmp_path, monkeypatch):
+        from audioman.core import registry as reg_mod
+        reg = self._registry()
+        monkeypatch.setattr(reg_mod, "get_settings", lambda: self._settings(tmp_path))
+        reg._cache_path = None
+        reg._save_cache()  # derives cache path from settings
+        assert reg._cache_path == tmp_path / "cache" / "plugins.json"
+
+    def test_try_load_cache_derives_path(self, tmp_path, monkeypatch):
+        from audioman.core import registry as reg_mod
+        reg = self._registry()
+        monkeypatch.setattr(reg_mod, "get_settings", lambda: self._settings(tmp_path))
+        reg._cache_path = None
+        assert reg._try_load_cache() is False  # file does not exist yet
+        assert reg._cache_path is not None
+
+
+class TestRegistrySingletonAndAutoScan:
+    def test_get_registry_returns_singleton(self, monkeypatch):
+        from audioman.core import registry as reg_mod
+        monkeypatch.setattr(reg_mod, "_registry", None)
+        first = reg_mod.get_registry()
+        second = reg_mod.get_registry()
+        assert first is second
+        assert isinstance(first, PluginRegistry)
+
+    def test_list_triggers_scan_when_empty(self, monkeypatch, tmp_path):
+        from audioman.core import registry as reg_mod
+        reg = PluginRegistry.__new__(PluginRegistry)
+        reg._plugins = {}
+        reg._alias_map = {}
+        reg._cache_path = None
+        calls = {"n": 0}
+
+        def _fake_scan(*a, **k):
+            calls["n"] += 1
+            return []
+
+        monkeypatch.setattr(reg, "scan", _fake_scan)
+        assert reg.list() == []
+        assert calls["n"] == 1
+
+
+class TestRegistryAuScanRegistration:
+    def test_au_scanned_and_vst3_duplicate_preferred(self, tmp_path, monkeypatch):
+        from audioman.core import registry as reg_mod
+        from types import SimpleNamespace
+
+        vst3_root = tmp_path / "vst3"
+        vst3_root.mkdir()
+        vst3_bundle = vst3_root / "Dup.vst3" / "Contents"
+        vst3_bundle.mkdir(parents=True)
+        with open(vst3_bundle / "Info.plist", "wb") as f:
+            plistlib.dump({"CFBundleName": "Dup"}, f)
+
+        au_root = tmp_path / "au"
+        au_root.mkdir()
+        au_bundle = au_root / "Dup.component" / "Contents"
+        au_bundle.mkdir(parents=True)
+        with open(au_bundle / "Info.plist", "wb") as f:
+            plistlib.dump({"CFBundleName": "Dup"}, f)
+        # a second, AU-only plugin must still be registered
+        au_only = au_root / "Solo.component" / "Contents"
+        au_only.mkdir(parents=True)
+        with open(au_only / "Info.plist", "wb") as f:
+            plistlib.dump({"CFBundleName": "Solo"}, f)
+
+        reg = PluginRegistry.__new__(PluginRegistry)
+        reg._plugins, reg._alias_map, reg._cache_path = {}, {}, tmp_path / "cache" / "plugins.json"
+        monkeypatch.setattr(reg_mod, "get_settings", lambda: SimpleNamespace(
+            cache_dir=str(tmp_path / "cache"), extra_vst3_paths=[], extra_au_paths=[]))
+        monkeypatch.setattr(reg_mod, "get_vst3_search_paths", lambda: [vst3_root])
+        monkeypatch.setattr(reg_mod, "get_au_search_paths", lambda: [au_root])
+
+        reg.scan(refresh=True)
+        assert reg._plugins["dup"].format == "vst3"   # VST3 wins the collision
+        assert reg._plugins["solo"].format == "au"    # AU-only plugin registered
+
+    def test_extra_au_paths_from_settings(self, tmp_path, monkeypatch):
+        from audioman.core import registry as reg_mod
+        from types import SimpleNamespace
+
+        au_root = tmp_path / "extra_au"
+        au_root.mkdir()
+        bundle = au_root / "Extra.component" / "Contents"
+        bundle.mkdir(parents=True)
+        with open(bundle / "Info.plist", "wb") as f:
+            plistlib.dump({"CFBundleName": "Extra AU"}, f)
+
+        reg = PluginRegistry.__new__(PluginRegistry)
+        reg._plugins, reg._alias_map, reg._cache_path = {}, {}, tmp_path / "cache" / "plugins.json"
+        monkeypatch.setattr(reg_mod, "get_settings", lambda: SimpleNamespace(
+            cache_dir=str(tmp_path / "cache"), extra_vst3_paths=[], extra_au_paths=[str(au_root)]))
+        monkeypatch.setattr(reg_mod, "get_vst3_search_paths", lambda: [])
+        monkeypatch.setattr(reg_mod, "get_au_search_paths", lambda: [])
+        reg.scan(refresh=True)
+        assert reg._plugins["extra-au"].format == "au"

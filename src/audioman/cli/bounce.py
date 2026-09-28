@@ -63,6 +63,7 @@ def run(args: argparse.Namespace) -> None:
             pans = _parse_float_list(args.pan)
         except ValueError as e:
             print_error(f"--gain 및 --pan은 쉼표로 구분된 숫자여야 합니다: {e}")
+            return
 
         # 트랙별 체인 파싱 ('|'로 구분)
         chains = []

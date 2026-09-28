@@ -103,3 +103,55 @@ tracks:
         config = load_session(session)
         assert Path(config.tracks[0].path) == subdir / "vocal.wav"
         assert Path(config.output) == subdir / "result.wav"
+
+
+class TestUnknownExtensionFallback:
+    """Extension-less session files try YAML then fall back to JSON."""
+
+    def test_yaml_parseable_extensionless(self, tmp_path):
+        from audioman.core.session import load_session
+        track = tmp_path / "a.wav"
+        track.write_bytes(b"x")
+        f = tmp_path / "session.conf"
+        f.write_text("output: out.wav\ntracks:\n  - path: a.wav\n")
+        session = load_session(f)
+        assert session.output.endswith("out.wav")  # resolved against the session dir
+        assert len(session.tracks) == 1
+
+    def test_json_fallback_when_yaml_fails(self, tmp_path, monkeypatch):
+        import builtins
+        from audioman.core import session as session_mod
+
+        real_import = builtins.__import__
+
+        def _fake_import(name, *args, **kwargs):
+            if name == "yaml":
+                raise ImportError("yaml disabled for the test")
+            return real_import(name, *args, **kwargs)
+
+        track = tmp_path / "a.wav"
+        track.write_bytes(b"x")
+        f = tmp_path / "session.conf"
+        f.write_text(json.dumps({"output": "out.wav", "tracks": [{"path": "a.wav"}]}))
+
+        monkeypatch.setattr(builtins, "__import__", _fake_import)
+        session = session_mod.load_session(f)
+        assert session.output.endswith("out.wav")
+        assert len(session.tracks) == 1
+
+    def test_yaml_extension_without_pyyaml_raises(self, tmp_path, monkeypatch):
+        import builtins
+        from audioman.core import session as session_mod
+
+        real_import = builtins.__import__
+
+        def _fake_import(name, *args, **kwargs):
+            if name == "yaml":
+                raise ImportError("yaml disabled for the test")
+            return real_import(name, *args, **kwargs)
+
+        f = tmp_path / "session.yaml"
+        f.write_text("output: out.wav\ntracks: []\n")
+        monkeypatch.setattr(builtins, "__import__", _fake_import)
+        with pytest.raises(ImportError, match="pyyaml"):
+            session_mod.load_session(f)

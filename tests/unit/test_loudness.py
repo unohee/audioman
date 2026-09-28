@@ -155,3 +155,253 @@ class TestLoudnessNormalize:
         out, meta = loudness.loudness_normalize(audio, SR)
         assert "skipped" in meta
         np.testing.assert_array_equal(out, audio)
+
+
+# ---------------------------------------------------------------------------
+# Additional numeric / boundary coverage
+# ---------------------------------------------------------------------------
+
+
+class TestConversionHelpers:
+    def test_mono_roundtrip(self):
+        mono = np.ones(10, dtype=np.float32)
+        assert loudness._to_pyln(mono).ndim == 1
+        assert loudness._to_audioman(mono, original_ndim=1).ndim == 1
+
+    def test_stereo_roundtrip_transposes(self):
+        stereo = np.ones((2, 10), dtype=np.float32)
+        pyln = loudness._to_pyln(stereo)
+        assert pyln.shape == (10, 2)
+        back = loudness._to_audioman(pyln, original_ndim=2)
+        assert back.shape == (2, 10)
+
+    def test_to_audioman_2d_output_from_non_2d_input_kept(self):
+        # original 1D → output passed through even if it came back 2D
+        arr = np.ones((5, 2), dtype=np.float32)
+        assert loudness._to_audioman(arr, original_ndim=1).shape == (5, 2)
+
+
+class TestShortTermLufs:
+    def test_too_short_returns_empty(self):
+        audio = np.zeros(SR, dtype=np.float32)  # 1s < 3s window
+        out = loudness.short_term_lufs(audio, SR)
+        assert out.shape == (0,)
+
+    def test_window_slides_over_long_signal(self):
+        audio = _stereo_sine(0.5, duration=5.0)
+        out = loudness.short_term_lufs(audio, SR, window_sec=3.0, hop_sec=0.5)
+        assert len(out) > 0
+        finite = out[np.isfinite(out)]
+        assert len(finite) > 0
+        # 0.5 amplitude stereo 1kHz sine sits in the expected LUFS band
+        assert -12.0 < float(finite.mean()) < -5.0
+
+    def test_silent_windows_are_minus_inf(self):
+        audio = np.zeros((2, SR * 6), dtype=np.float32)
+        out = loudness.short_term_lufs(audio, SR)
+        assert len(out) > 0
+        assert not np.any(np.isfinite(out))
+
+    def test_mono_input(self):
+        out = loudness.short_term_lufs(_sine(0.5, duration=5.0), SR)
+        assert len(out) > 0
+
+
+class TestLoudnessRangeEdges:
+    def test_all_neg_inf_returns_zero(self):
+        st = np.full(10, float("-inf"), dtype=np.float32)
+        assert loudness.loudness_range(st) == 0.0
+
+    def test_single_finite_sample_returns_zero(self):
+        st = np.array([-16.0], dtype=np.float32)
+        assert loudness.loudness_range(st) == 0.0
+
+    def test_inf_entries_are_ignored(self):
+        st = np.concatenate([
+            np.array([float("-inf")] * 20, dtype=np.float32),
+            np.full(50, -20.0, dtype=np.float32),
+            np.full(50, -10.0, dtype=np.float32),
+        ])
+        lra = loudness.loudness_range(st)
+        assert 8.0 < lra < 11.0
+
+
+class TestTruePeakOversample:
+    def test_oversample_one_uses_raw_samples(self):
+        audio = _sine(0.5)
+        tp_raw = loudness.true_peak_dbtp(audio, SR, oversample=1)
+        assert tp_raw == pytest.approx(loudness.sample_peak_dbfs(audio), abs=1e-6)
+
+    def test_higher_oversample_never_lower(self):
+        audio = _sine(0.5)
+        tp1 = loudness.true_peak_dbtp(audio, SR, oversample=1)
+        tp4 = loudness.true_peak_dbtp(audio, SR, oversample=4)
+        assert tp4 >= tp1 - 1e-6
+
+    def test_silent_returns_minus_inf(self):
+        assert loudness.true_peak_dbtp(np.zeros(1000, dtype=np.float32), SR) == float("-inf")
+
+    def test_sample_peak_silent_returns_minus_inf(self):
+        assert loudness.sample_peak_dbfs(np.zeros(100, dtype=np.float32)) == float("-inf")
+
+    def test_true_peak_exceeds_sample_peak_for_nyquist_adjacent_tone(self):
+        # two tones straddling Nyquist/2 create inter-sample overshoot
+        sr = 48000
+        t = np.arange(int(0.25 * sr)) / sr
+        audio = (0.45 * (np.sin(2 * np.pi * 11500 * t) + np.sin(2 * np.pi * 12500 * t))).astype(np.float32)
+        sp = loudness.sample_peak_dbfs(audio)
+        tp = loudness.true_peak_dbtp(audio, sr, oversample=4)
+        assert tp > sp
+
+
+class TestLoudnessNormalizeTpAttenuation:
+    def test_tp_attenuation_recorded_when_ceiling_exceeded(self):
+        # tiny signal pushed hard to a loud target → TP ceiling must attenuate
+        audio = _stereo_sine(0.08, duration=5.0)
+        out, meta = loudness.loudness_normalize(
+            audio, SR, target_lufs=-2.0, max_true_peak_dbtp=-3.0
+        )
+        assert meta["tp_limit_attenuation_db"] < 0.0
+        assert loudness.true_peak_dbtp(out, SR) <= -3.0 + 0.05
+
+    def test_no_attenuation_when_under_ceiling(self):
+        audio = _stereo_sine(0.05, duration=5.0)
+        _out, meta = loudness.loudness_normalize(
+            audio, SR, target_lufs=-30.0, max_true_peak_dbtp=-1.0
+        )
+        assert meta["tp_limit_attenuation_db"] == 0.0
+
+    def test_metadata_reports_targets(self):
+        _out, meta = loudness.loudness_normalize(_stereo_sine(0.3, duration=5.0), SR,
+                                                 target_lufs=-18.0, max_true_peak_dbtp=-2.0)
+        assert meta["target_lufs"] == -18.0
+        assert meta["max_true_peak_dbtp"] == -2.0
+        assert "measured_in" in meta and "measured_out" in meta
+
+
+class TestLevelUtterances:
+    class _Seg:
+        def __init__(self, start, end):
+            self.start = start
+            self.end = end
+
+    def _audio(self, sr=SR, duration=4.0):
+        # loud first half, quiet second half — leveling should bring both toward target
+        n = int(sr * duration)
+        t = np.arange(n) / sr
+        sig = np.zeros(n, dtype=np.float32)
+        sig[: n // 2] = 0.6 * np.sin(2 * np.pi * 300 * t[: n // 2])
+        sig[n // 2:] = 0.05 * np.sin(2 * np.pi * 300 * t[n // 2:])
+        return np.stack([sig, sig])
+
+    def test_length_preserved_and_segments_gained(self):
+        audio = self._audio()
+        segs = [self._Seg(0, SR * 2), self._Seg(SR * 2, SR * 4)]
+        out, meta = loudness.level_utterances(audio, SR, speech_segments=segs, target_lufs=-20.0)
+        assert out.shape == audio.shape
+        assert meta["n_speech_segments"] == 2
+        assert len(meta["per_segment"]) == 2
+
+    def test_quiet_segment_gains_more_than_loud_segment(self):
+        audio = self._audio()
+        segs = [self._Seg(0, SR * 2), self._Seg(SR * 2, SR * 4)]
+        _out, meta = loudness.level_utterances(audio, SR, speech_segments=segs, target_lufs=-20.0)
+        loud_gain = meta["per_segment"][0]["applied_gain_db"]
+        quiet_gain = meta["per_segment"][1]["applied_gain_db"]
+        assert quiet_gain > loud_gain  # quieter source needs more boost
+
+    def test_short_segment_skipped(self):
+        audio = self._audio()
+        segs = [self._Seg(0, 100), self._Seg(SR * 2, SR * 4)]  # 100 samples < min
+        _out, meta = loudness.level_utterances(audio, SR, speech_segments=segs, min_segment_ms=200.0)
+        assert meta["per_segment"][0]["skipped"] == "too_short_or_silent"
+        assert meta["per_segment"][0]["applied_gain_db"] == 0.0
+
+    def test_noise_gap_attenuated(self):
+        audio = self._audio()
+        # speech only in the middle; gaps are noise and get attenuated
+        segs = [self._Seg(SR, SR * 2)]
+        out, meta = loudness.level_utterances(
+            audio, SR, speech_segments=segs, noise_attenuation_db=-20.0
+        )
+        assert meta["noise_attenuation_db"] == -20.0
+        # head region (noise) quieter after attenuation
+        head_rms = float(np.sqrt(np.mean(out[:, : SR // 2] ** 2)))
+        orig_head_rms = float(np.sqrt(np.mean(audio[:, : SR // 2] ** 2)))
+        assert head_rms < orig_head_rms
+
+    def test_trailing_noise_after_last_segment(self):
+        audio = self._audio()
+        segs = [self._Seg(0, SR)]  # trailing 3s is noise
+        _out, meta = loudness.level_utterances(audio, SR, speech_segments=segs)
+        assert meta["n_speech_segments"] == 1
+
+    def test_empty_segments_all_noise(self):
+        audio = self._audio()
+        out, meta = loudness.level_utterances(audio, SR, speech_segments=[])
+        assert meta["n_speech_segments"] == 0
+        assert out.shape == audio.shape
+
+    def test_mono_segment_slicing(self):
+        audio = self._audio()[0]
+        out, _meta = loudness.level_utterances(audio, SR, speech_segments=[self._Seg(0, SR * 2)])
+        assert out.shape == audio.shape
+
+    def test_tp_ceiling_applied(self):
+        # boost to a very loud target so the true-peak ceiling forces attenuation
+        t = np.arange(int(2.0 * SR)) / SR
+        audio = np.stack([0.5 * np.sin(2 * np.pi * 300 * t)] * 2).astype(np.float32)
+        segs = [self._Seg(0, SR * 2)]
+        _out, meta = loudness.level_utterances(
+            audio, SR, speech_segments=segs, target_lufs=0.0, max_true_peak_dbtp=-1.0
+        )
+        assert meta["tp_limit_attenuation_db"] < 0.0
+
+    def test_silent_segment_skipped_not_gained(self):
+        t = np.arange(int(4.0 * SR)) / SR
+        audio = np.stack([0.5 * np.sin(2 * np.pi * 300 * t)] * 2).astype(np.float32)
+        audio[:, SR * 2:SR * 3] = 0.0  # silent, long enough segment
+        _out, meta = loudness.level_utterances(
+            audio, SR, speech_segments=[self._Seg(SR * 2, SR * 3)]
+        )
+        assert meta["per_segment"][0]["skipped"] == "too_short_or_silent"
+        assert meta["per_segment"][0]["input_lufs"] is None
+
+    def test_segments_sorted_by_start(self):
+        audio = self._audio()
+        segs = [self._Seg(SR * 2, SR * 4), self._Seg(0, SR * 2)]  # reversed order
+        _out, meta = loudness.level_utterances(audio, SR, speech_segments=segs)
+        starts = [s["start"] for s in meta["per_segment"]]
+        assert starts == sorted(starts)
+
+
+class TestShortTermErrorHandling:
+    def test_short_block_value_error_becomes_minus_inf(self, monkeypatch):
+        """pyloudnorm raises ValueError for blocks below its gating size."""
+        class _RaisingMeter:
+            def __init__(self, *a, **k):
+                pass
+
+            def integrated_loudness(self, block):
+                raise ValueError("block too short")
+
+        monkeypatch.setattr(loudness.pyloudnorm, "Meter", _RaisingMeter)
+        out = loudness.short_term_lufs(_stereo_sine(0.5, duration=5.0), SR)
+        assert len(out) > 0
+        assert not np.any(np.isfinite(out))
+
+
+class TestLevelUtterancesZeroLength:
+    class _Seg:
+        def __init__(self, start, end):
+            self.start = start
+            self.end = end
+
+    def test_zero_length_segment_is_ignored(self):
+        t = np.arange(int(2.0 * SR)) / SR
+        audio = np.stack([0.4 * np.sin(2 * np.pi * 300 * t)] * 2).astype(np.float32)
+        # start == end → gain ramp helper must short-circuit
+        segs = [self._Seg(SR, SR), self._Seg(SR, SR * 2)]
+        out, meta = loudness.level_utterances(audio, SR, speech_segments=segs)
+        assert out.shape == audio.shape
+        assert len(meta["per_segment"]) == 2
