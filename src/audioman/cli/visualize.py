@@ -3,11 +3,13 @@
 # Dependencies: core.svl, core.vamp_host, core.analysis
 
 import argparse
+import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
 
-from audioman.cli.output import console, print_error, print_success, print_info, output_console
+from audioman.cli.output import print_error, print_info, print_markup, print_success, print_warning, output_console
 from audioman.core.audio_file import read_audio
 from audioman.core.svl import (
     write_time_instants,
@@ -16,6 +18,9 @@ from audioman.core.svl import (
     write_dense3d,
 )
 
+
+# 열 수 있는 런처가 없을 때의 안내 (traceback 대신 이 메시지를 낸다)
+_NO_SV_LAUNCHER = "Sonic Visualiser를 찾을 수 없습니다. 수동으로 열어주세요."
 
 # 내장 분석 타입과 설명
 BUILTIN_TYPES = {
@@ -101,7 +106,7 @@ def _list_plugins() -> None:
     if not plugins:
         print_error("설치된 Vamp 플러그인이 없습니다.")
 
-    output_console.print(f"\n[bold]설치된 Vamp 플러그인 ({len(plugins)}개)[/bold]\n")
+    print_markup(f"\n[bold]설치된 Vamp 플러그인 ({len(plugins)}개)[/bold]\n")
     for p in plugins:
         output_console.print(f"  {p}")
     output_console.print()
@@ -111,7 +116,7 @@ def _plugin_info(plugin_id: str) -> None:
     from audioman.core.vamp_host import get_plugin_outputs
 
     outputs = get_plugin_outputs(plugin_id)
-    output_console.print(f"\n[bold]{plugin_id}[/bold]\n")
+    print_markup(f"\n[bold]{plugin_id}[/bold]\n")
     for name, info in outputs.items():
         output_console.print(f"  {name}: {info}")
     output_console.print()
@@ -134,7 +139,7 @@ def _run_vamp(args: argparse.Namespace, input_path: Path) -> None:
     )
 
     audio, sr = read_audio(input_path)
-    console.print(f"[dim]Vamp 플러그인 실행: {args.plugin}[/dim]")
+    print_info(f"Vamp 플러그인 실행: {args.plugin}")
 
     result = run_plugin(
         audio, sr, args.plugin,
@@ -143,7 +148,7 @@ def _run_vamp(args: argparse.Namespace, input_path: Path) -> None:
         block_size=args.frame_size,
     )
 
-    console.print(f"[dim]결과 형태: {result.shape}[/dim]")
+    print_info(f"결과 형태: {result.shape}")
 
     # 플러그인 이름에서 suffix 생성
     plugin_suffix = args.plugin.replace(":", "_").replace("-", "")
@@ -227,7 +232,7 @@ def _run_builtin(args: argparse.Namespace, input_path: Path) -> None:
     frame_size = args.frame_size
     hop = args.hop
 
-    console.print(f"[dim]내장 분석: {builtin} (frame={frame_size}, hop={hop})[/dim]")
+    print_info(f"내장 분석: {builtin} (frame={frame_size}, hop={hop})")
 
     if builtin == "spectrogram":
         if audio.shape[-1] < frame_size:
@@ -406,11 +411,30 @@ def _guess_units(plugin_id: str) -> str:
     return ""
 
 
+def _sv_launcher(path: Path) -> list[str] | None:
+    """플랫폼에 맞는 Sonic Visualiser 런처 인자를 돌려준다.
+
+    macOS는 `open -a`, Linux는 `xdg-open`을 쓴다. 그 밖의 플랫폼은 열 방법이
+    없으므로 None을 돌려준다 (Windows용 런처는 이 CLI가 지원하지 않는다).
+    """
+    if sys.platform == "darwin":
+        return ["open", "-a", "Sonic Visualiser", str(path)]
+    if sys.platform.startswith("linux"):
+        return ["xdg-open", str(path)]
+    return None
+
+
 def _open_in_sv(path: Path) -> None:
-    """Sonic Visualiser로 SVL 파일 열기 (macOS)"""
-    import subprocess
+    """Sonic Visualiser로 SVL 파일 열기 (플랫폼별 런처)."""
+    command = _sv_launcher(path)
+    if command is None:
+        print_warning(_NO_SV_LAUNCHER)
+        return
+
     try:
-        subprocess.Popen(["open", "-a", "Sonic Visualiser", str(path)])
-        console.print("[dim]Sonic Visualiser로 열기 시도...[/dim]")
-    except FileNotFoundError:
-        console.print("[yellow]Sonic Visualiser를 찾을 수 없습니다. 수동으로 열어주세요.[/yellow]")
+        subprocess.Popen(command)
+    except OSError:
+        # 런처 자체가 없거나 실행할 수 없는 경우 (FileNotFoundError 포함)
+        print_warning(_NO_SV_LAUNCHER)
+    else:
+        print_info("Sonic Visualiser로 열기 시도...")

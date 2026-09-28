@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -260,6 +261,71 @@ class TestBuiltinSpectrogram:
         assert loud_db.max() - quiet_db.max() == pytest.approx(6.02, abs=0.05)
 
 
+class TestPlainModeHasNoMarkupTokens:
+    """--plain 출력에 rich 태그 텍스트가 새어 나가면 안 된다.
+
+    `--plain` 콘솔은 `markup=False`라, 태그가 붙은 문자열을 `console.print`에
+    그대로 넘기면 `[dim]...[/dim]`이 글자 그대로 찍힌다 (AUD-1853). 출력 헬퍼를
+    거치면 plain 경로에서 태그가 제거되고, 태그가 아닌 대괄호 텍스트는 남는다.
+
+    `real_cli_console_binding`이 필요한 이유는 그 픽스처의 docstring 참고:
+    in-process 테스트는 기본적으로 rich 콘솔이 묶여 있어 누수를 탐지하지 못한다.
+    """
+
+    TAG_RE = re.compile(r"\[/?(?:dim|bold|red|green|yellow|cyan)[^\]]*\]")
+
+    @pytest.fixture(autouse=True)
+    def plain_console(self, real_cli_console_binding):
+        from audioman.cli import visualize
+
+        real_cli_console_binding(visualize)
+
+    def test_builtin_run_has_no_tag_text(self, run_cli, tone):
+        result = run_cli(["visualize", str(tone), "--builtin", "rms"])
+        assert result.code == 0, result.stderr
+        combined = result.stdout + result.stderr
+        assert self.TAG_RE.search(combined) is None, combined
+        # 정보 줄은 여전히 나온다 (태그만 사라져야 한다).
+        assert "내장 분석: rms" in result.stderr
+
+    def test_failure_path_has_no_tag_text(self, run_cli, tmp_path):
+        short = write_wav(tmp_path / "short.wav", sample_rate=8000, duration=0.2)
+        result = run_cli(
+            ["visualize", str(short), "--builtin", "spectrogram", "--frame-size", "4096"]
+        )
+        assert result.code == 1
+        combined = result.stdout + result.stderr
+        assert self.TAG_RE.search(combined) is None, combined
+        assert "내장 분석: spectrogram (frame=4096, hop=512)" in result.stderr
+
+    def test_plugin_listing_header_has_no_tag_text(self, run_cli, monkeypatch):
+        monkeypatch.setattr("audioman.core.vamp_host.list_plugins", lambda: ["a:plug"])
+        result = run_cli(["visualize", "ignored.wav", "--list-plugins"])
+        assert result.code == 0, result.stderr
+        assert self.TAG_RE.search(result.stdout) is None, result.stdout
+        assert "설치된 Vamp 플러그인 (1개)" in result.stdout
+
+    def test_plugin_info_header_has_no_tag_text(self, run_cli, monkeypatch):
+        monkeypatch.setattr(
+            "audioman.core.vamp_host.get_plugin_outputs",
+            lambda plugin_id: {"curve": {"binCount": 3}},
+        )
+        result = run_cli(["visualize", "ignored.wav", "--plugin-info", "lib:plug"])
+        assert result.code == 0, result.stderr
+        assert self.TAG_RE.search(result.stdout) is None, result.stdout
+        assert "lib:plug" in result.stdout
+
+    def test_vamp_run_has_no_tag_text(self, run_cli, tone, monkeypatch):
+        """Vamp 경로의 `[dim]Vamp 플러그인 실행: …[/dim]`, `[dim]결과 형태: …[/dim]`."""
+        _FakeVampCollect(monkeypatch, {"vector": (0.0625, [1.0])})
+        result = run_cli(["visualize", str(tone), "--plugin", "lib:plug"])
+        assert result.code == 0, result.stderr
+        combined = result.stdout + result.stderr
+        assert self.TAG_RE.search(combined) is None, combined
+        assert "Vamp 플러그인 실행: lib:plug" in result.stderr
+        assert "결과 형태: vector" in result.stderr
+
+
 class TestPngOutput:
     def test_png_only_skips_the_svl(self, run_cli, tone, tmp_path):
         png = tmp_path / "spec.png"
@@ -354,8 +420,8 @@ class TestPngOutput:
              "--png", str(png), "--open"]
         )
         assert result.code == 0, result.stderr
-        assert calls and calls[0][0] == "open"
-        # `console` in cli/output.py is the stderr console.
+        assert calls and calls[0][0] == "xdg-open"
+        # `print_info` in cli/output.py writes to the stderr console.
         assert "Sonic Visualiser로 열기 시도" in result.stderr
 
 
@@ -377,14 +443,38 @@ class TestOpenInSonicVisualiser:
         visualize._open_in_sv(Path("/tmp/does-not-matter.svl"))
         assert "Sonic Visualiser를 찾을 수 없습니다" in capsys.readouterr().err
 
+    def test_darwin_uses_open_with_the_app_name(self, monkeypatch):
+        from audioman.cli import visualize
+
+        monkeypatch.setattr(sys, "platform", "darwin")
+        assert visualize._sv_launcher(Path("/tmp/a.svl")) == [
+            "open", "-a", "Sonic Visualiser", "/tmp/a.svl",
+        ]
+
+    def test_linux_uses_xdg_open(self, monkeypatch):
+        from audioman.cli import visualize
+
+        monkeypatch.setattr(sys, "platform", "linux")
+        assert visualize._sv_launcher(Path("/tmp/a.svl")) == ["xdg-open", "/tmp/a.svl"]
+
+    def test_unsupported_platform_reports_instead_of_launching(self, monkeypatch, capsys):
+        """런처가 없는 플랫폼은 traceback 없이 안내만 낸다."""
+        from audioman.cli import visualize
+
+        calls = []
+        monkeypatch.setattr(sys, "platform", "win32")
+        monkeypatch.setattr("subprocess.Popen", lambda args: calls.append(args))
+        visualize._open_in_sv(Path("/tmp/a.svl"))
+        assert calls == []
+        assert "Sonic Visualiser를 찾을 수 없습니다" in capsys.readouterr().err
+
     def test_svl_output_with_open_flag_attempts_launch(self, run_cli, tone, monkeypatch):
         calls = []
         monkeypatch.setattr("subprocess.Popen", lambda args: calls.append(args))
         result = run_cli(["visualize", str(tone), "--builtin", "rms", "--open"])
         assert result.code == 0, result.stderr
-        assert calls and calls[0][0] == "open"
-        assert calls[0][1:3] == ["-a", "Sonic Visualiser"]
-        assert calls[0][3].endswith("tone_rms.svl")
+        assert calls and calls[0][0] == "xdg-open"
+        assert calls[0][1].endswith("tone_rms.svl")
 
 
 class TestGuessUnits:
@@ -574,8 +664,8 @@ class TestVampPaths:
         _FakeVampCollect(monkeypatch, {"vector": (0.0625, [1.0, 2.0])})
         result = run_cli(["visualize", str(tone), "--plugin", "lib:plug", "--open"])
         assert result.code == 0, result.stderr
-        assert calls and calls[0][0] == "open"
-        assert calls[0][3].endswith("tone_lib_plug.svl")
+        assert calls and calls[0][0] == "xdg-open"
+        assert calls[0][1].endswith("tone_lib_plug.svl")
 
     def test_plugin_suffix_keeps_the_colon_as_an_underscore(self):
         plugin_id = "qm-vamp-plugins:qm-chromagram"

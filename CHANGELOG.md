@@ -34,9 +34,14 @@ All notable changes to this project will be documented in this file.
 - **`VST3PluginWrapper.set_parameters`**: 플러그인이 보고한 min/max를 벗어난 값과 NaN/Inf를 조용히 클램프하지 않고, 파라미터 이름과 경계를 명시한 `ValueError`로 거부한다(플러그인은 건드리지 않음). `process()`도 빈 블록과 NaN/Inf 입력을 플러그인 로드 전에 `ValueError`로 거부한다.
 - **`audioman observe` 실패 처리**: 존재하지 않거나 디코드할 수 없는 입력이 traceback으로 죽던 것을 `print_error` + exit 1로 바꾸고, 배치 모드에서는 파일 단위 실패를 집계해 나머지 파일을 계속 처리한 뒤 `배치 완료: N 성공, M 실패 / T 전체`와 함께 exit 1을 반환한다 (기존에는 배치 전체가 중단됐다).
 - **`audioman fader-compare` ground truth 검증**: 깨진 JSON, 객체가 아닌 최상위, 문자열이 아닌 `source_dir`, `gains` 누락/비매핑, 숫자가 아닌 gain 값이 각각 traceback(`JSONDecodeError`/`TypeError`/`ZeroDivisionError`) 대신 명확한 오류와 exit 1로 처리된다.
+- **`--plain` 마크업 누수 (AUD-1853)**: `audioman --plain visualize`가 `[dim]...[/dim]` 태그를 글자 그대로 찍던 것을 `print_info`/`print_markup` 경로로 돌려 태그만 제거하고 텍스트는 남긴다. `--plain` 콘솔은 `markup=False`이므로 태그가 붙은 문자열을 `console.print`에 직접 넘기면 안 된다.
+- **dry-run 계획의 대괄호 토큰 소실 (AUD-1853)**: `process --dry-run`/`chain --dry-run`의 `[dry-run]`·`[plugin]` 토큰이 rich markup으로 해석돼 통째로 사라졌다(계획에서 플러그인 이름이 사라져 `→`만 남음). 계획 줄은 새 `print_literal`(=`markup=False`, `soft_wrap=True`)로 출력해 두 모드 모두에서 원문이 보인다.
+- **`_strip_markup` 과잉 제거 (AUD-1853)**: 정규식이 rich 태그가 아닌 대괄호 그룹까지 지워 `info`의 파라미터 범위 `[0, 1]`, 진행 표시 `[1/2]`가 plain 모드에서 사라졌다. 이제 rich가 실제로 태그로 해석하는 형태(스타일/`link=`/`@handler`)만 제거하고 나머지 대괄호 텍스트는 보존한다.
+- **`audioman visualize --open` 크로스 플랫폼 (AUD-1853)**: `open -a 'Sonic Visualiser'`(macOS 전용)만 호출해 리눅스에서 실패했다. darwin은 `open -a`, linux는 `xdg-open`을 쓰고, 런처가 없거나 미지원 플랫폼이면 traceback 대신 안내 메시지를 낸다.
 
 ### Tests
 - `tests/unit/test_plain_mode.py` (3), `test_findings.py` (18), `test_observe.py` (5), `test_changelog_cmd.py` (5) — 31 new tests.
+- `tests/unit/cli_commands/test_plain_tag_leaks.py` (12) — AUD-1853: `--plain` 출력에 rich 태그 텍스트가 새지 않고(`[dry-run]`/`[1/2]` 같은 대괄호 근거는 유지) `[0, 1]` 파라미터 범위가 살아남는지 명령 단위로 확인한다.
 - `tests/unit/test_streaming.py` (14) — streaming null test, block-boundary click detection, RT factor monotonicity/block-size dependence. Uses only pedalboard built-ins (no VST3 required).
 - `tests/unit/test_session_security.py` (28), `test_vst3_validation.py` (42) — session path-escape/subtype guards and VST3 parameter/block validation.
 

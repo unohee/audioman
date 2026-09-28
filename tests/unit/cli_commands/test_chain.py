@@ -211,13 +211,12 @@ class TestBatchDryRun:
         assert "배치: 1개 파일" in result.out
         assert str(tmp_path / "out") in result.out
 
-    def test_step_names_are_dropped_by_rich_markup_in_plan_lines(self, tmp_path, stub_pipeline):
-        """현재 동작 고정: `[dehum]` / `[dehum (…)]` 대괄호 토큰이 사라진다.
+    def test_step_names_survive_in_the_plan_lines(self, tmp_path, stub_pipeline):
+        """`[dehum (…)]` 대괄호 토큰은 계획 줄에서 그대로 보여야 한다.
 
-        chain.py는 `output_console`을 import하고 rich가 대괄호를 markup으로
-        해석한다. 그 결과 dry-run 계획에서 플러그인 이름이 통째로 지워지고
-        화살표만 남는다 (`  → `, `  → `). AUD-1853 계열의 조용한 정보 손실.
-        수정되면 이 테스트가 깨지도록 남겨둔다.
+        예전에는 `output_console.print`로 문장을 그대로 넘겨 rich가 대괄호를
+        markup으로 해석했고, 플러그인 이름이 통째로 지워져 화살표만 남았다
+        (`  → `, `  → `). AUD-1853 계열의 조용한 정보 손실.
         """
         src = write_wav(tmp_path / "in.wav")
         result = run_command([
@@ -225,9 +224,35 @@ class TestBatchDryRun:
             "-o", str(tmp_path / "out.wav"), "--dry-run",
         ])
         assert result.code == 0
-        assert "[dehum" not in result.out
-        assert "dehum" not in result.out
-        assert "{'freq': 60.0}" not in result.out
+        assert f"[dry-run] {src}" in result.out
+        assert "  → [dehum ({'freq': 60.0})]" in result.out
+        assert "  → [declick]" in result.out
+
+    def test_plain_plan_lines_keep_the_bracket_tokens(self, tmp_path, stub_pipeline):
+        """plain 모드도 같은 계획 줄을 낸다."""
+        src = write_wav(tmp_path / "in.wav")
+        result = run_command([
+            "--plain", "chain", str(src), "-s", "dehum:freq=60,declick",
+            "-o", str(tmp_path / "out.wav"), "--dry-run",
+        ])
+        assert result.code == 0
+        assert f"[dry-run] {src}" in result.out
+        assert "  → [dehum ({'freq': 60.0})]" in result.out
+        assert "  → [declick]" in result.out
+        assert "[" not in result.err
+
+    def test_batch_plan_line_keeps_the_step_names(self, tmp_path, stub_pipeline):
+        """배치 계획의 `[step → step]` 토큰도 살아 있어야 한다."""
+        in_dir = tmp_path / "in"
+        in_dir.mkdir()
+        write_wav(in_dir / "a.wav")
+        out_dir = tmp_path / "out"
+
+        result = run_command([
+            "chain", str(in_dir), "-s", "dehum,declick", "-o", str(out_dir), "--dry-run",
+        ])
+        assert result.code == 0
+        assert f"[dry-run] 배치: 1개 파일 → [dehum → declick] → {out_dir}" in result.out
 
 
 class TestBatchRun:

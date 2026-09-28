@@ -80,6 +80,29 @@ def run_cli(cli_env):
     return _run
 
 
+@pytest.fixture
+def real_cli_console_binding(monkeypatch):
+    """`--plain` 실행 시 실제 CLI가 갖는 콘솔 바인딩을 재현한다.
+
+    `cli/*.py`는 `from audioman.cli.output import output_console`으로 이름을
+    import 시점에 값으로 묶는다. 실제 프로세스에서는 `AUDIOMAN_PLAIN`이 import
+    전에 `_early_plain_detect`로 설정되므로 그 이름이 **plain 콘솔**을 가리키고,
+    태그가 붙은 문자열을 `console.print`에 직접 넘기면 태그가 그대로 찍힌다.
+
+    in-process 테스트는 이미 rich 콘솔이 묶인 뒤 `app.main(["--plain", ...])`을
+    부르므로 그 상태가 되지 않는다 — 즉 이 픽스처 없이는 plain 마크업 누수를
+    탐지할 수 없다 (실제 버그를 통과시킨다).
+    """
+    from audioman.cli import output as output_module
+
+    def _bind_plain(*modules):
+        output_module.set_plain(True)
+        for module in modules:
+            monkeypatch.setattr(module, "output_console", output_module.output_console)
+
+    return _bind_plain
+
+
 def write_wav(
     path: Path,
     *,

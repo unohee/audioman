@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 import sys
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -23,6 +24,21 @@ import soundfile as sf
 
 from audioman.cli import app
 from audioman.plugins.parameter import ParameterInfo, PluginMeta
+
+# rich 태그처럼 보이는 텍스트 (예: `[dim]`, `[/bold cyan]`).
+# --plain 경로는 태그를 벗겨 내므로 출력에 남아 있으면 누수다.
+RICH_TAG_TEXT_RE = re.compile(r"\[/?(?:dim|bold|red|green|yellow|cyan|magenta|blue|white|black)[^\]]*\]")
+
+
+def find_leaked_tag_text(text: str) -> list[str]:
+    """출력에서 rich 태그 텍스트를 찾아 돌려준다 (없으면 빈 리스트)."""
+    return RICH_TAG_TEXT_RE.findall(text)
+
+
+def assert_no_leaked_tag_text(result) -> None:
+    """CLI 결과의 stdout/stderr 어디에도 태그 텍스트가 없어야 한다."""
+    leaked = find_leaked_tag_text(result.out + result.err)
+    assert not leaked, f"rich tag text leaked into the output: {leaked}"
 
 
 @dataclass

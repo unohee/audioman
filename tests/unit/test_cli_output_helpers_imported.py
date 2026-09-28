@@ -31,6 +31,8 @@ OUTPUT_HELPERS = frozenset(
         "print_error",
         "print_info",
         "print_json",
+        "print_literal",
+        "print_markup",
         "print_success",
         "print_table",
         "print_warning",

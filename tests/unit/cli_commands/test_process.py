@@ -75,29 +75,35 @@ class TestSingleDryRun:
         assert str(tmp_path / "out.wav") in result.out
         assert "params: {'x': 1.0}" in result.out
 
-    def test_dry_run_brackets_are_eaten_by_rich_markup(self, tmp_path, stub_engine):
-        """현재 동작 고정: `[dry-run]`/`[denoise]` 토큰은 출력에서 사라진다.
+    def test_dry_run_tokens_survive_in_rich_mode(self, tmp_path, stub_engine):
+        """`[dry-run]`/`[denoise]` 토큰은 rich 모드에서도 그대로 보여야 한다.
 
-        process.py는 `output_console`을 import 시점에 값으로 바인딩하고, 그
-        문장을 rich에 그대로 넘긴다. rich는 대괄호를 markup으로 해석하므로
-        태그가 통째로 지워져 `[dry-run] /in.wav → [denoise] → /out.wav`가
-        ` /in.wav →  → /out.wav`가 된다 (AUD-1853 계열: 조용한 정보 손실).
-        수정되면 이 테스트가 깨지도록 남겨둔다.
+        예전에는 `output_console.print`로 문장을 그대로 넘겨 rich가 대괄호를
+        markup으로 해석했고, 태그가 통째로 지워져
+        `[dry-run] /in.wav → [denoise] → /out.wav`가 ` /in.wav →  → /out.wav`가
+        됐다 (AUD-1853: 조용한 정보 손실).
         """
         src = write_wav(tmp_path / "in.wav")
+        out = tmp_path / "out.wav"
         result = run_command([
-            "process", str(src), "-p", "denoise", "-o", str(tmp_path / "out.wav"), "--dry-run",
+            "process", str(src), "-p", "denoise", "-o", str(out), "--dry-run",
         ])
         assert result.code == 0
-        assert "[dry-run]" not in result.out
-        assert "[denoise]" not in result.out
+        assert f"[dry-run] {src} → [denoise] → {out}" in result.out
+
+    def test_plain_dry_run_keeps_the_tokens_and_the_plan(self, tmp_path, stub_engine):
+        """plain 모드도 같은 정보를 낸다 (마크업 제거는 태그에만 적용)."""
+        src = write_wav(tmp_path / "in.wav")
+        out = tmp_path / "out.wav"
+        result = run_command([
+            "--plain", "process", str(src), "-p", "denoise", "-o", str(out), "--dry-run",
+        ])
+        assert result.code == 0
+        assert f"[dry-run] {src} → [denoise] → {out}" in result.out
+        assert "[" not in result.err
 
     def test_rich_dry_run_reaches_the_same_facts(self, tmp_path, stub_engine):
-        """rich 경로에서도 입력/출력/플러그인 정보가 나온다.
-
-        `[dry-run]` / `[plugin]` 같은 대괄호 토큰은 rich가 markup으로 해석해
-        사라진다(별도 이슈 AUD-1853 소관). 여기서는 사라지지 않는 부분만 단정한다.
-        """
+        """rich 경로에서도 입력/출력/플러그인 정보가 나온다."""
         src = write_wav(tmp_path / "in.wav")
         result = run_command([
             "process", str(src), "-p", "denoise", "-o", str(tmp_path / "out.wav"), "--dry-run",

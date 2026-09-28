@@ -72,14 +72,35 @@ class TestMarkupStripping:
         ("[red]error:[/red] boom", "error: boom"),
         ("plain text", "plain text"),
         ("[dim]a[/dim][green]b[/green]", "ab"),
+        ("[bold cyan]mode[/bold cyan] 분석", "mode 분석"),
+        ("[not bold]plain", "plain"),
+        ("[/]", ""),
+        ("[link=https://example.com]docs[/link]", "docs"),
+        ("[#ff0000]red[/#ff0000]", "red"),
+        ("[@click=app.bell]bell[/@click]", "bell"),
     ])
     def test_strip_markup_removes_rich_tokens(self, raw, expected):
         assert output._strip_markup(raw) == expected
 
-    def test_strip_markup_also_swallows_numeric_bracket_groups(self):
-        # 알려진 한계를 고정한다: 정규식이 태그가 아닌 "[0, 1]" 형태도 함께 지운다.
-        # info/analyze의 파라미터 range 컬럼이 plain 모드에서 대괄호를 잃는다.
-        assert output._strip_markup("range [0, 1]") == "range "
+    def test_real_tag_is_stripped_while_numeric_range_survives(self):
+        """`[0, 1]`은 rich 태그가 아니므로 plain 모드에서도 남아야 한다.
+
+        예전 정규식은 `[a-zA-Z0-9 _#=,.\\-]+`로 대괄호 그룹을 통째로 지워
+        info/analyze의 파라미터 range 컬럼에서 `[0, 1]`이 사라졌다.
+        """
+        assert output._strip_markup("[bold]range [0, 1][/bold]") == "range [0, 1]"
+
+    @pytest.mark.parametrize("text", [
+        "[0, 1]",
+        "[-60.0, 0.0]",
+        "[1/2] a.wav: ERROR boom",
+        "[dry-run] in.wav → [denoise] → out.wav",
+        "[dehum ({'freq': 60.0})]",
+        "[BOLD]upper[/BOLD]",
+    ])
+    def test_bracket_groups_rich_would_not_style_are_preserved(self, text):
+        """rich가 태그로 보지 않는 대괄호 텍스트는 plain에서도 지우지 않는다."""
+        assert output._strip_markup(text) == text
 
 
 class TestPrintJson:
@@ -168,3 +189,63 @@ class TestMessagePrinters:
                 output.print_error("[red]bad thing[/red]")
         assert excinfo.value.code == 1
         assert err.getvalue().strip() == "error: bad thing"
+
+    def test_plain_mode_preserves_bracket_evidence_in_messages(self):
+        """`[1/2]` 같은 진행 표시는 실패 메시지의 근거이므로 남아야 한다."""
+        output.set_plain(True)
+        with capture_streams() as (_out, err):
+            output.print_warning("  [1/2] a.wav: boom")
+        assert "  [1/2] a.wav: boom" in err.getvalue()
+
+
+class TestPrintLiteral:
+    """`[dry-run]`/`[plugin]` 같은 토큰은 두 모드 모두 그대로 보여야 한다."""
+
+    @pytest.mark.parametrize("plain", [False, True])
+    def test_literal_tokens_survive_in_both_modes(self, plain):
+        output.set_plain(plain)
+        with capture_streams() as (out, err):
+            output.print_literal("[dry-run] in.wav → [denoise] → out.wav")
+        assert out.getvalue() == "[dry-run] in.wav → [denoise] → out.wav\n"
+        assert err.getvalue() == ""
+
+    def test_rich_mode_does_not_swallow_the_tokens(self):
+        """console.print에 그대로 넘겼다면 rich가 태그로 지웠을 입력이다."""
+        output.set_plain(False)
+        with capture_streams() as (out, _err):
+            output.print_literal("[plugin]")
+        assert "[plugin]" in out.getvalue()
+
+    def test_long_plan_lines_are_not_wrapped(self):
+        """계획 한 줄은 soft_wrap으로 유지된다 (경로 중간 줄바꿈 없음)."""
+        output.set_plain(False)
+        line = "[dry-run] " + "/tmp/" + "x" * 200 + "/in.wav → [denoise]"
+        with capture_streams() as (out, _err):
+            output.print_literal(line)
+        assert out.getvalue() == line + "\n"
+
+
+class TestPrintMarkup:
+    """마크업이 섞인 stdout 텍스트: rich는 스타일, plain은 태그 제거."""
+
+    def test_plain_mode_strips_tags_but_keeps_the_text(self):
+        output.set_plain(True)
+        with capture_streams() as (out, err):
+            output.print_markup("\n[bold]설치된 플러그인 (2개)[/bold]\n")
+        assert "설치된 플러그인 (2개)" in out.getvalue()
+        assert "[bold]" not in out.getvalue()
+        assert "[/bold]" not in out.getvalue()
+        assert err.getvalue() == ""
+
+    def test_plain_mode_keeps_untagged_bracket_text(self):
+        output.set_plain(True)
+        with capture_streams() as (out, _err):
+            output.print_markup("[dim]Speech segments:[/dim] [1/2]")
+        assert out.getvalue() == "Speech segments: [1/2]\n"
+
+    def test_rich_mode_renders_the_text_without_tags(self):
+        output.set_plain(False)
+        with capture_streams() as (out, _err):
+            output.print_markup("\n[bold]Header[/bold]\n")
+        assert "Header" in out.getvalue()
+        assert "[bold]" not in out.getvalue()

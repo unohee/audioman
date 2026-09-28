@@ -5,7 +5,7 @@ import argparse
 import json
 import sys
 
-from audioman.cli.output import print_error, print_json, print_success, print_warning, output_console
+from audioman.cli.output import print_error, print_json, print_literal, print_success, print_warning, output_console
 from audioman.core.findings import json_envelope, schema_uri
 from audioman.core.pipeline import PipelineStep, parse_chain_string, run_pipeline
 from audioman.core.batch import collect_audio_files, resolve_output_path
@@ -59,11 +59,11 @@ def _run_single(args: argparse.Namespace, steps) -> None:
         if args.json:
             print_json(json_envelope("chain", plan, schema=schema_uri("chain")))
         else:
-            output_console.print(f"[dry-run] {args.input}")
+            print_literal(f"[dry-run] {args.input}")
             for i, s in enumerate(steps, 1):
                 params_str = f" ({s.params})" if s.params else ""
-                output_console.print(f"  → [{s.plugin_name}{params_str}]")
-            output_console.print(f"  → {args.output}")
+                print_literal(f"  → [{s.plugin_name}{params_str}]")
+            print_literal(f"  → {args.output}")
         return
 
     try:
@@ -114,7 +114,7 @@ def _run_batch(args: argparse.Namespace, steps, input_dir: Path) -> None:
         if args.json:
             print_json(json_envelope("chain", plan, schema=schema_uri("chain")))
         else:
-            output_console.print(f"[dry-run] 배치: {len(files)}개 파일 → [{step_names}] → {output_dir}")
+            print_literal(f"[dry-run] 배치: {len(files)}개 파일 → [{step_names}] → {output_dir}")
         return
 
     jobs = []

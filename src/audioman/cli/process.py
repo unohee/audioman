@@ -5,7 +5,7 @@ import argparse
 import json
 import sys
 
-from audioman.cli.output import print_error, print_json, print_success, print_warning, output_console
+from audioman.cli.output import print_error, print_json, print_literal, print_success, print_warning, output_console
 from audioman.core.findings import json_envelope, schema_uri
 from audioman.core.engine import parse_params, process_file
 from audioman.core.batch import collect_audio_files, resolve_output_path
@@ -58,7 +58,7 @@ def _run_single(args: argparse.Namespace, params: dict) -> None:
         if args.json:
             print_json(json_envelope("process", plan, schema=schema_uri("process")))
         else:
-            output_console.print(f"[dry-run] {args.input} → [{args.plugin}] → {args.output}")
+            print_literal(f"[dry-run] {args.input} → [{args.plugin}] → {args.output}")
             if params:
                 output_console.print(f"  params: {params}")
         return
@@ -114,7 +114,7 @@ def _run_batch(args: argparse.Namespace, params: dict, input_dir: Path) -> None:
         if args.json:
             print_json(json_envelope("process", plan, schema=schema_uri("process")))
         else:
-            output_console.print(f"[dry-run] 배치: {len(files)}개 파일 → [{args.plugin}] → {output_dir}")
+            print_literal(f"[dry-run] 배치: {len(files)}개 파일 → [{args.plugin}] → {output_dir}")
         return
 
     jobs = []
