@@ -175,8 +175,12 @@ def probe_topology(
         cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration",
                "-of", "csv=p=0", str(video)]
         duration_sec = float(subprocess.check_output(cmd, text=True).strip() or 0.0)
-    except Exception:
-        pass
+    except (subprocess.SubprocessError, ValueError) as exc:
+        # Best-effort probe: ffprobe failing on this container (or reporting no
+        # duration at all, e.g. "N/A") leaves 0.0, which callers read as "unknown".
+        # Narrowed from a blanket catch so a broken ffprobe surfaces instead of
+        # silently shortening the analysis window.
+        logger.warning(f"container duration probe failed ({exc}); duration_sec=0.0")
 
     probes: list[TrackProbe] = []
     with tempfile.TemporaryDirectory() as tmp:

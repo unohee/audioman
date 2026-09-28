@@ -6,6 +6,7 @@ import argparse
 from audioman.cli.output import print_error, print_json, print_success, print_table, output_console
 from audioman.config.paths import ensure_app_dirs
 from audioman.core.engine import parse_params
+from audioman.core.findings import json_envelope, schema_uri
 from audioman.core.preset_manager import PresetManager
 
 
@@ -54,7 +55,11 @@ def run_save(args: argparse.Namespace) -> None:
     )
 
     if args.json:
-        print_json({"command": "preset save", "name": args.name, "path": str(path)})
+        print_json(json_envelope(
+            "preset save",
+            {"name": args.name, "path": str(path)},
+            schema=schema_uri("preset"),
+        ))
     else:
         print_success(f"프리셋 저장: {path}")
 
@@ -67,7 +72,11 @@ def run_load(args: argparse.Namespace) -> None:
         print_error(str(e))
 
     if args.json:
-        print_json({"command": "preset load", **preset.to_dict()})
+        print_json(json_envelope(
+            "preset load",
+            preset.to_dict(),
+            schema=schema_uri("preset"),
+        ))
     else:
         output_console.print(f"\n[bold]{preset.name}[/bold] ({preset.plugin})")
         if preset.description:
@@ -82,11 +91,14 @@ def run_list(args: argparse.Namespace) -> None:
     presets = manager.list(plugin=args.plugin)
 
     if args.json:
-        print_json({
-            "command": "preset list",
-            "count": len(presets),
-            "presets": [p.to_dict() for p in presets],
-        })
+        print_json(json_envelope(
+            "preset list",
+            {
+                "count": len(presets),
+                "presets": [p.to_dict() for p in presets],
+            },
+            schema=schema_uri("preset"),
+        ))
         return
 
     if not presets:
@@ -109,6 +121,10 @@ def run_delete(args: argparse.Namespace) -> None:
         print_error(str(e))
 
     if args.json:
-        print_json({"command": "preset delete", "name": args.name})
+        print_json(json_envelope(
+            "preset delete",
+            {"name": args.name},
+            schema=schema_uri("preset"),
+        ))
     else:
         print_success(f"프리셋 삭제: {args.name}")

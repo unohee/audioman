@@ -14,6 +14,7 @@ from audioman.cli.output import (
     print_json,
     print_table,
 )
+from audioman.core.findings import json_envelope, schema_uri
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -100,27 +101,30 @@ def run(args: argparse.Namespace) -> None:
 
     # JSON output
     if args.json:
-        print_json({
-            "command": "fader-compare",
-            "ground_truth": str(gt_path),
-            "automix_target": args.target,
-            "n_tracks_matched": n,
-            "summary": {
-                "mean_abs_error_db": round(mean_abs_err, 2),
-                "max_abs_error_db": round(max_abs_err, 2),
-                "within_3dB_pct": round(within_3, 1),
-                "within_6dB_pct": round(within_6, 1),
+        print_json(json_envelope(
+            "fader-compare",
+            {
+                "ground_truth": str(gt_path),
+                "automix_target": args.target,
+                "n_tracks_matched": n,
+                "summary": {
+                    "mean_abs_error_db": round(mean_abs_err, 2),
+                    "max_abs_error_db": round(max_abs_err, 2),
+                    "within_3dB_pct": round(within_3, 1),
+                    "within_6dB_pct": round(within_6, 1),
+                },
+                "tracks": [
+                    {
+                        "track": r["track"],
+                        "ground_truth_db": round(r["ground_truth_db"], 2),
+                        "automix_db": round(r["automix_db"], 2),
+                        "diff_db": round(r["diff_db"], 2),
+                    }
+                    for r in rows
+                ],
             },
-            "tracks": [
-                {
-                    "track": r["track"],
-                    "ground_truth_db": round(r["ground_truth_db"], 2),
-                    "automix_db": round(r["automix_db"], 2),
-                    "diff_db": round(r["diff_db"], 2),
-                }
-                for r in rows
-            ],
-        })
+            schema=schema_uri("fader-compare"),
+        ))
         return
 
     # Human-readable

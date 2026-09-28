@@ -10,7 +10,6 @@ from typing import Optional
 
 from audioman.config.paths import (
     get_au_search_paths,
-    get_cache_dir,
     get_vst3_search_paths,
 )
 from audioman.config.settings import get_settings

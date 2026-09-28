@@ -34,6 +34,10 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
 essentia = [
     { name = "essentia" },
 ]
@@ -57,6 +61,8 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.0" },
     { name = "pyloudnorm", specifier = ">=0.2.0" },
     { name = "pyqt6", specifier = ">=6.11.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rich", specifier = ">=13.0" },
     { name = "scipy", specifier = ">=1.13" },
@@ -67,7 +73,7 @@ requires-dist = [
     { name = "torch", specifier = ">=2.2" },
     { name = "vamp", marker = "extra == 'vamp'", specifier = ">=1.1.0" },
 ]
-provides-extras = ["vamp", "essentia"]
+provides-extras = ["vamp", "essentia", "dev"]
 
 [package.metadata.requires-dev]
 dev = [

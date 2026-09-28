@@ -8,7 +8,6 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from audioman import __version__
 from audioman.cli.output import (
     output_console,
     print_error,
@@ -25,9 +24,11 @@ from audioman.core.detectors import (
 )
 from audioman.core.findings import (
     Category,
-    SCHEMA_URI,
     Severity,
     filter_findings,
+    findings_summary,
+    json_envelope,
+    schema_uri,
 )
 
 
@@ -122,33 +123,23 @@ def _observe_file(
         min_severity=min_severity,
     )
 
-    payload = {
-        "$schema": SCHEMA_URI,
-        "audioman_version": __version__,
-        "command": "observe",
-        "file": str(path),
-        "sample_rate": sr,
-        "channels": stats.channels,
-        "duration_sec": round(stats.duration, 6),
-        "total_samples": int(stats.frames),
-        "filter": {
-            "categories": sorted(categories),
-            "min_severity": min_severity.value,
-        },
-        "findings": [f.to_dict() for f in filtered],
-        "summary": {
-            "total": len(filtered),
-            "by_severity": {
-                "info": sum(1 for f in filtered if f.severity is Severity.INFO),
-                "warn": sum(1 for f in filtered if f.severity is Severity.WARN),
-                "critical": sum(1 for f in filtered if f.severity is Severity.CRITICAL),
+    payload = json_envelope(
+        "observe",
+        {
+            "file": str(path),
+            "sample_rate": sr,
+            "channels": stats.channels,
+            "duration_sec": round(stats.duration, 6),
+            "total_samples": int(stats.frames),
+            "filter": {
+                "categories": sorted(categories),
+                "min_severity": min_severity.value,
             },
-            "by_category": {
-                cat: sum(1 for f in filtered if f.category.value == cat)
-                for cat in _CATEGORY_CHOICES
-            },
+            "findings": [f.to_dict() for f in filtered],
+            "summary": findings_summary(filtered),
         },
-    }
+        schema=schema_uri("observe"),
+    )
     return payload
 
 

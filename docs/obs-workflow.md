@@ -197,7 +197,7 @@ dry-run JSON을 받아 트랙별로 다음 흐름:
 | `core.obs.dry_run_video(video, ...)` | 영상 1개에 대한 위 단계 통합 실행 |
 
 CLI: `cli/obs.py` (`probe`, `dry-run`).
-테스트: `tests/unit/test_obs.py` (15 테스트).
+테스트: `tests/unit/test_obs.py` (17 테스트).
 
 ## 의존성
 

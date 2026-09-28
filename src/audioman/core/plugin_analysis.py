@@ -12,7 +12,7 @@
 import logging
 import time
 from dataclasses import dataclass, asdict
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 
@@ -97,6 +97,30 @@ def _load_plugin(plugin_path: str, params: Optional[dict] = None) -> VST3PluginW
     if params:
         wrapper.set_parameters(params)
     return wrapper
+
+
+# Performance stimulus level, ~-20 dBFS: hot enough to load a plugin's dynamics path,
+# quiet enough to stay clear of clipping in the measurement.
+_PERFORMANCE_STIMULUS_LEVEL_DB = -20.0
+
+
+def _set_plugin_parameter(plugin: Any, name: str, value: Any) -> bool:
+    """Set one pedalboard parameter, returning False when the plugin rejected it.
+
+    Absorbs only the two ways `setattr` on a pedalboard plugin signals "no such
+    parameter or unusable value" — verified against pedalboard 0.9.22: AttributeError
+    for an unknown name (VST3Plugin delegates to object.__setattr__, Reverb raises
+    directly) and TypeError/ValueError from a parameter's own coercion (a pybind
+    signature mismatch on built-ins, a range or type message on external plugins).
+    Callers turn False into a warning; a plugin that cannot take the parameter runs
+    with its own default, which is a fact worth reporting rather than dropping.
+    """
+    try:
+        setattr(plugin, name, value)
+        return True
+    except (AttributeError, TypeError, ValueError) as exc:
+        logger.debug(f"parameter {name}={value!r} rejected: {exc}")
+        return False
 
 
 # =============================================================================
@@ -674,7 +698,18 @@ def measure_performance(
     rt_ratios = []
 
     for bs in buffer_sizes:
-        test = np.random.randn(2, bs).astype(np.float32) * 0.1
+        # Deterministic seeded white noise as the timing stimulus: the same signal on
+        # every run keeps block-size timings comparable, and the full band exercises
+        # more of the plugin than a single tone would. One extra sample is requested
+        # because generate_white_noise sizes itself by duration and
+        # int(sample_rate * duration) can land a sample short at an arbitrary sample
+        # rate; the trim to the block size is then exact.
+        duration_sec = (bs + 1) / sample_rate
+        test = generate_white_noise(
+            sample_rate,
+            duration_sec=duration_sec,
+            level_db=_PERFORMANCE_STIMULUS_LEVEL_DB,
+        )[:, :bs]
         times = []
 
         for _ in range(n_iterations):
@@ -782,10 +817,8 @@ def measure_clap_profile(
     plugin = pb_load(plugin_path)
     if base_params:
         for k, v in base_params.items():
-            try:
-                setattr(plugin, k, v)
-            except Exception:
-                pass
+            if not _set_plugin_parameter(plugin, k, v):
+                logger.warning(f"base parameter {k}={v!r} rejected by {plugin_path}")
 
     tmpdir = tempfile.mkdtemp()
     wav_paths = []
@@ -796,13 +829,13 @@ def measure_clap_profile(
         # 파라미터 적용 (같은 인스턴스 재사용)
         param_dict = dict(zip(param_names, combo))
         for k, v in param_dict.items():
-            try:
-                setattr(plugin, k, v)
-            except Exception:
-                try:
-                    setattr(plugin, k.replace(' ', '_'), v)
-                except Exception:
-                    pass
+            fallback = k.replace(" ", "_")
+            if not (_set_plugin_parameter(plugin, k, v)
+                    or _set_plugin_parameter(plugin, fallback, v)):
+                logger.warning(
+                    f"parameter {k}={v!r} (and {fallback!r}) rejected by {plugin_path}; "
+                    f"this combination runs with the plugin default for it"
+                )
 
         output = plugin.process(test, sample_rate)
 

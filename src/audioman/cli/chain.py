@@ -3,9 +3,11 @@
 
 import argparse
 import json
+import sys
 
 from audioman.cli.output import print_error, print_json, print_success, print_warning, output_console
-from audioman.core.pipeline import parse_chain_string, run_pipeline
+from audioman.core.findings import json_envelope, schema_uri
+from audioman.core.pipeline import PipelineStep, parse_chain_string, run_pipeline
 from audioman.core.batch import collect_audio_files, resolve_output_path
 from pathlib import Path
 
@@ -55,7 +57,7 @@ def _run_single(args: argparse.Namespace, steps) -> None:
             "steps": [s.to_dict() for s in steps],
         }
         if args.json:
-            print_json(plan)
+            print_json(json_envelope("chain", plan, schema=schema_uri("chain")))
         else:
             output_console.print(f"[dry-run] {args.input}")
             for i, s in enumerate(steps, 1):
@@ -76,7 +78,7 @@ def _run_single(args: argparse.Namespace, steps) -> None:
         print_error(f"체인 처리 실패: {e}")
 
     if args.json:
-        print_json({"command": "chain", **result.to_dict()})
+        print_json(json_envelope("chain", result.to_dict(), schema=schema_uri("chain")))
         return
 
     output_console.print(f"\n[bold]체인 처리 완료[/bold]")
@@ -110,7 +112,7 @@ def _run_batch(args: argparse.Namespace, steps, input_dir: Path) -> None:
             "files": [str(f) for f in files],
         }
         if args.json:
-            print_json(plan)
+            print_json(json_envelope("chain", plan, schema=schema_uri("chain")))
         else:
             output_console.print(f"[dry-run] 배치: {len(files)}개 파일 → [{step_names}] → {output_dir}")
         return
@@ -128,12 +130,36 @@ def _run_batch(args: argparse.Namespace, steps, input_dir: Path) -> None:
         _run_chain_sequential(args, jobs, steps, len(files))
 
 
+def _steps_from_dicts(steps_dicts: list[dict]) -> list[PipelineStep]:
+    """Rebuild ``PipelineStep`` objects from serialized step dicts.
+
+    ``PipelineStep.to_dict()`` emits the plugin name under the ``plugin`` key,
+    but the constructor argument is ``plugin_name`` — passing the dict straight
+    through as ``PipelineStep(**d)`` raises ``TypeError``.
+
+    Any exception raised here is turned into a per-file failure result by the
+    caller; letting it escape would make ``Pool.imap_unordered`` re-raise in the
+    main process and kill the whole batch.
+    """
+    return [
+        PipelineStep(
+            plugin_name=d.get("plugin_name", d.get("plugin", "")),
+            params=dict(d.get("params") or {}),
+        )
+        for d in steps_dicts
+    ]
+
+
 def _chain_one(job_args):
-    """체인 멀티프로세싱 워커"""
-    from audioman.core.pipeline import parse_chain_string, run_pipeline, ChainStep
+    """체인 멀티프로세싱 워커.
+
+    워커에서 발생한 모든 예외는 파일 단위 실패 결과로 변환한다. 예외가 밖으로
+    새면 `Pool.imap_unordered`가 메인 프로세스에서 re-raise해 배치 전체가
+    죽는다.
+    """
     fpath, out_path, steps_dicts = job_args
-    steps = [ChainStep(**d) for d in steps_dicts]
     try:
+        steps = _steps_from_dicts(steps_dicts)
         result = run_pipeline(input_path=fpath, output_path=out_path, steps=steps)
         return {"ok": True, "result": result.to_dict(), "input": fpath}
     except Exception as e:
@@ -157,16 +183,18 @@ def _run_chain_sequential(args, jobs, steps, total):
                 result = run_pipeline(input_path=fpath, output_path=out_path, steps=steps)
                 ok += 1
                 if args.json:
-                    print(json.dumps({"command": "chain", **result.to_dict()}, ensure_ascii=False, default=str))
+                    print(json.dumps(json_envelope("chain", result.to_dict(), schema=schema_uri("chain")), ensure_ascii=False, default=str))
             except Exception as e:
                 fail += 1
                 if args.json:
-                    print(json.dumps({"command": "chain", "input": fpath, "error": str(e)}, ensure_ascii=False))
+                    print(json.dumps(json_envelope("chain", {"input": fpath, "error": str(e)}, schema=schema_uri("chain")), ensure_ascii=False))
                 elif not args.json:
                     print_warning(f"  {Path(fpath).name}: {e}")
             progress.update(task_id, advance=1, description=f"{Path(fpath).name}")
     if not args.json:
         print_success(f"배치 완료: {ok} 성공, {fail} 실패 / {total} 전체")
+    if fail:
+        sys.exit(1)
 
 
 def _run_chain_parallel(args, jobs, total):
@@ -178,7 +206,7 @@ def _run_chain_parallel(args, jobs, total):
         SpinnerColumn(), TextColumn("[bold blue]{task.description}"),
         BarColumn(), TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
         TextColumn("{task.completed}/{task.total}"), TimeElapsedColumn(),
-        console=output_console,
+        console=output_console, disable=args.json,
     ) as progress:
         task_id = progress.add_task(f"체인 ({args.workers} workers)", total=total)
         with Pool(processes=args.workers) as pool:
@@ -186,11 +214,13 @@ def _run_chain_parallel(args, jobs, total):
                 if r["ok"]:
                     ok += 1
                     if args.json:
-                        print(json.dumps({"command": "chain", **r["result"]}, ensure_ascii=False, default=str))
+                        print(json.dumps(json_envelope("chain", r["result"], schema=schema_uri("chain")), ensure_ascii=False, default=str))
                 else:
                     fail += 1
                     if args.json:
-                        print(json.dumps({"command": "chain", "input": r["input"], "error": r["error"]}, ensure_ascii=False))
+                        print(json.dumps(json_envelope("chain", {"input": r["input"], "error": r["error"]}, schema=schema_uri("chain")), ensure_ascii=False))
                 progress.update(task_id, advance=1, description=f"[{ok+fail}/{total}] {Path(r['input']).name}")
     if not args.json:
         print_success(f"배치 완료: {ok} 성공, {fail} 실패 / {total} 전체 ({args.workers} workers)")
+    if fail:
+        sys.exit(1)

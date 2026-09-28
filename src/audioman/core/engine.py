@@ -7,9 +7,8 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Optional
 
-import numpy as np
-
-from audioman.core.audio_file import AudioStats, get_audio_stats, get_file_info, read_audio, stream_process, write_audio
+from audioman.config.settings import get_settings
+from audioman.core.audio_file import get_audio_stats, get_file_info, read_audio, stream_process, write_audio
 from audioman.core.registry import get_registry
 from audioman.plugins.vst3 import VST3PluginWrapper
 
@@ -66,7 +65,35 @@ def parse_params(param_strings: list[str]) -> dict[str, Any]:
     return params
 
 
-STREAM_THRESHOLD_MB = 500  # 이 크기 이상이면 자동 스트리밍
+def _stream_threshold_mb() -> int:
+    """Auto-streaming threshold in MB (settings.large_file_threshold_mb)."""
+    try:
+        return get_settings().large_file_threshold_mb
+    except Exception:
+        return 500
+
+
+def _auto_stream_enabled() -> bool:
+    """Whether large files may switch to streaming automatically (settings.auto_stream)."""
+    try:
+        return get_settings().auto_stream
+    except Exception:
+        return True
+
+
+def _stream_chunk_seconds(sample_rate: int) -> float:
+    """Streaming chunk length in seconds, from settings.default_chunk_size.
+
+    ``default_chunk_size`` is a frame count (441000 ≈ 10 s at 44.1 kHz), so the
+    chunk length depends on the file's sample rate.
+    """
+    try:
+        chunk_frames = get_settings().default_chunk_size
+    except Exception:
+        return 10.0
+    if sample_rate <= 0 or chunk_frames <= 0:
+        return 10.0
+    return chunk_frames / sample_rate
 
 
 def process_file(
@@ -93,10 +120,13 @@ def process_file(
 
     # 대용량 파일 → 자동 스트리밍
     if stream is None:
-        try:
-            info = get_file_info(input_path)
-            stream = info["file_size_mb"] > STREAM_THRESHOLD_MB
-        except Exception:
+        if _auto_stream_enabled():
+            try:
+                info = get_file_info(input_path)
+                stream = info["file_size_mb"] > _stream_threshold_mb()
+            except Exception:
+                stream = False
+        else:
             stream = False
 
     if stream:
@@ -147,7 +177,10 @@ def _process_file_streaming(input_path, output_path, meta, params, start) -> Pro
         return wrapper.process(chunk, sr)
 
     info = get_file_info(input_path)
-    result = stream_process(input_path, output_path, process_chunk)
+    result = stream_process(
+        input_path, output_path, process_chunk,
+        chunk_seconds=_stream_chunk_seconds(info["sample_rate"]),
+    )
 
     elapsed = time.monotonic() - start
     logger.info(f"스트리밍 처리 완료: {result['chunks']} chunks, {elapsed:.1f}s")

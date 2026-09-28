@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audioman://schema/eq-profile.v1.json",
+  "title": "Audioman EQ Profile Result",
+  "description": "Output envelope for `audioman eq-profile --json`. Reports one entry per executed analysis mode (response, sweep, nonlinear); a mode that fails stores {\"error\": \"...\"} instead of its measurement result. Mode keys are modelled via additionalProperties.",
+  "type": "object",
+  "required": [
+    "$schema",
+    "audioman_version",
+    "command",
+    "plugin",
+    "plugin_type",
+    "mode"
+  ],
+  "properties": {
+    "$schema": {"const": "audioman://schema/eq-profile.v1.json"},
+    "audioman_version": {"type": "string"},
+    "command": {"const": "eq-profile"},
+    "plugin": {"type": "string"},
+    "plugin_type": {"type": "string"},
+    "mode": {"type": "string"}
+  },
+  "additionalProperties": {
+    "description": "One executed analysis mode: response ({params, magnitude_range_db, is_minimum_phase, thd_at_1k, fft_size}), sweep ({n_settings, measurements}) or nonlinear ({n_levels, levels_db, thd_per_level, is_level_dependent, max_response_deviation_db}); {\"error\": ...} on failure.",
+    "anyOf": [
+      {
+        "type": "object",
+        "required": ["error"],
+        "properties": {"error": {"type": "string"}},
+        "additionalProperties": true
+      },
+      {
+        "type": "object",
+        "additionalProperties": true
+      }
+    ]
+  }
+}

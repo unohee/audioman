@@ -10,7 +10,7 @@ import re
 import sys
 from pathlib import Path
 
-from audioman import __version__
+from audioman.core.findings import json_envelope, schema_uri
 
 
 def _schemas_dir() -> Path:
@@ -62,12 +62,10 @@ def _run_default(args: argparse.Namespace) -> None:
 def _run_list(args: argparse.Namespace) -> None:
     schemas = _list_schemas()
     if getattr(args, "json", False):
-        print(json.dumps({
-            "$schema": "audioman://schema/schemas.v1.json",
-            "audioman_version": __version__,
-            "command": "schemas",
-            "schemas": schemas,
-        }, indent=2, ensure_ascii=False))
+        print(json.dumps(
+            json_envelope("schemas", {"schemas": schemas}, schema=schema_uri("schemas")),
+            indent=2, ensure_ascii=False,
+        ))
         return
     for s in schemas:
         print(f"{s['name']}\t{s['id']}\t{s['title']}")

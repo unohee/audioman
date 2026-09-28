@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audioman://schema/edl.v1.json",
+  "title": "Audioman EDL Result",
+  "description": "Output envelope for `audioman edl init|add|list|undo|redo|render|status|clear --json`. Only the envelope keys are common to every subcommand; the remaining properties are emitted per subcommand (`edl render`, for instance, emits no `source`).",
+  "type": "object",
+  "required": ["$schema", "audioman_version", "command"],
+  "properties": {
+    "$schema": {"const": "audioman://schema/edl.v1.json"},
+    "audioman_version": {"type": "string"},
+    "command": {
+      "enum": [
+        "edl init",
+        "edl add",
+        "edl list",
+        "edl undo",
+        "edl redo",
+        "edl render",
+        "edl status",
+        "edl clear"
+      ]
+    },
+    "source": {"type": "string"},
+    "edl_path": {"type": ["string", "null"]},
+    "workspace": {"type": "string"},
+    "duration_sec": {"type": "number"},
+    "sample_rate": {"type": "integer"},
+    "channels": {"type": "integer"},
+    "source_sha256": {"type": "string"},
+    "op": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "enum": [
+            "cut_region",
+            "trim",
+            "trim_silence",
+            "splice",
+            "fade_in",
+            "fade_out",
+            "pad",
+            "remove_dc",
+            "loudness_normalize",
+            "normalize",
+            "gain",
+            "gate",
+            "process",
+            "chain"
+          ]
+        },
+        "start_sec": {"type": "number"},
+        "end_sec": {"type": "number"},
+        "clip": {"type": "string"},
+        "position_sec": {"type": "number"},
+        "mode": {"type": "string"},
+        "duration_sec": {"type": "number"},
+        "curve": {"type": "string"},
+        "head_ms": {"type": ["number", "null"]},
+        "tail_ms": {"type": ["number", "null"]},
+        "head_sec": {"type": ["number", "null"]},
+        "tail_sec": {"type": ["number", "null"]},
+        "db": {"type": "number"},
+        "peak_db": {"type": ["number", "null"]},
+        "target_rms_db": {"type": ["number", "null"]},
+        "target_lufs": {"type": ["number", "null"]},
+        "max_true_peak_dbtp": {"type": ["number", "null"]},
+        "threshold_db": {"type": "number"},
+        "plugin": {"type": "string"},
+        "steps": {"type": "array"}
+      },
+      "additionalProperties": true
+    },
+    "ops": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": {
+            "enum": [
+              "cut_region",
+              "trim",
+              "trim_silence",
+              "splice",
+              "fade_in",
+              "fade_out",
+              "pad",
+              "remove_dc",
+              "loudness_normalize",
+              "normalize",
+              "gain",
+              "gate",
+              "process",
+              "chain"
+            ]
+          },
+          "start_sec": {"type": "number"},
+          "end_sec": {"type": "number"},
+          "clip": {"type": "string"},
+          "position_sec": {"type": "number"},
+          "mode": {"type": "string"},
+          "duration_sec": {"type": "number"},
+          "curve": {"type": "string"},
+          "head_ms": {"type": ["number", "null"]},
+          "tail_ms": {"type": ["number", "null"]},
+          "head_sec": {"type": ["number", "null"]},
+          "tail_sec": {"type": ["number", "null"]},
+          "db": {"type": "number"},
+          "peak_db": {"type": ["number", "null"]},
+          "target_rms_db": {"type": ["number", "null"]},
+          "target_lufs": {"type": ["number", "null"]},
+          "max_true_peak_dbtp": {"type": ["number", "null"]},
+          "threshold_db": {"type": "number"},
+          "plugin": {"type": "string"},
+          "steps": {"type": "array"}
+        },
+        "additionalProperties": true
+      }
+    },
+    "n_ops": {"type": "integer"},
+    "undone": {"type": "boolean"},
+    "redone": {"type": "boolean"},
+    "reason": {"type": "string"},
+    "initialized": {"type": "boolean"},
+    "history_depth": {"type": "integer"},
+    "redo_depth": {"type": "integer"},
+    "modified_at": {"type": "string"},
+    "output_path": {"type": "string"},
+    "input_duration_sec": {"type": "number"},
+    "output_duration_sec": {"type": "number"},
+    "elapsed_sec": {"type": "number"}
+  },
+  "additionalProperties": true
+}

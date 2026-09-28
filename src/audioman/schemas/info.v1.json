@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audioman://schema/info.v1.json",
+  "title": "Audioman Info Result",
+  "description": "Output envelope for `audioman info --json`. Plugin metadata plus the parameter list exposed by the loaded plugin.",
+  "type": "object",
+  "required": [
+    "$schema",
+    "audioman_version",
+    "command",
+    "plugin",
+    "parameters"
+  ],
+  "properties": {
+    "$schema": {"const": "audioman://schema/info.v1.json"},
+    "audioman_version": {"type": "string"},
+    "command": {"const": "info"},
+    "plugin": {
+      "type": "object",
+      "required": [
+        "name",
+        "short_name",
+        "path",
+        "format",
+        "vendor",
+        "version",
+        "aliases",
+        "param_count"
+      ],
+      "properties": {
+        "name": {"type": "string"},
+        "short_name": {"type": "string"},
+        "path": {"type": "string"},
+        "format": {"type": "string"},
+        "vendor": {"type": "string"},
+        "version": {"type": "string"},
+        "aliases": {"type": "array", "items": {"type": "string"}},
+        "param_count": {"type": "integer"}
+      },
+      "additionalProperties": true
+    },
+    "parameters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "label", "type", "current_value"],
+        "properties": {
+          "name": {"type": "string"},
+          "label": {"type": "string"},
+          "type": {"type": "string"},
+          "current_value": {"type": ["string", "number", "boolean", "null"]},
+          "min": {"type": ["number", "null"]},
+          "max": {"type": ["number", "null"]},
+          "default": {"type": ["number", "null"]},
+          "values": {"type": "array", "items": {"type": "string"}}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

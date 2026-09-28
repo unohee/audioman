@@ -19,6 +19,13 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
         "fader-test",
         help="Open a multitrack mixer GUI to set per-track gain balance (export as ground truth JSON)",
+        description=(
+            "Interactive PyQt6 mixer GUI: play the stems and set per-track gain "
+            "balance by ear, then export the result as ground-truth JSON for "
+            "`audioman fader-compare`. The session is interactive, so this command "
+            "emits no machine-readable payload of its own (no JSON output mode); "
+            "the exported JSON file is the machine-readable artifact."
+        ),
     )
     parser.add_argument("input", help="Stem directory (folder of .wav files)")
     parser.add_argument("--load", help="Load gains JSON at startup")

@@ -11,6 +11,7 @@ import numpy as np
 from audioman.cli.output import print_error, print_json, print_success, print_warning, output_console
 from audioman.core.audio_file import read_audio, write_audio, get_audio_stats
 from audioman.core.batch import collect_audio_files, resolve_output_path
+from audioman.core.findings import json_envelope, schema_uri
 from audioman.core import dsp
 
 
@@ -243,17 +244,20 @@ def _run_single(args: argparse.Namespace, input_path: Path) -> None:
     elapsed = round(time.monotonic() - start_time, 3)
 
     if args.json:
-        print_json({
-            "command": "fx",
-            "effect": args.effect,
-            "input": str(input_path),
-            "output": args.output,
-            "input_stats": {"rms": round(input_stats.rms, 6), "peak": round(input_stats.peak, 6),
-                           "duration": round(input_stats.duration, 4), "frames": input_stats.frames},
-            "output_stats": {"rms": round(output_stats.rms, 6), "peak": round(output_stats.peak, 6),
-                            "duration": round(output_stats.duration, 4), "frames": output_stats.frames},
-            "time_seconds": elapsed,
-        })
+        print_json(json_envelope(
+            "fx",
+            {
+                "effect": args.effect,
+                "input": str(input_path),
+                "output": args.output,
+                "input_stats": {"rms": round(input_stats.rms, 6), "peak": round(input_stats.peak, 6),
+                               "duration": round(input_stats.duration, 4), "frames": input_stats.frames},
+                "output_stats": {"rms": round(output_stats.rms, 6), "peak": round(output_stats.peak, 6),
+                                "duration": round(output_stats.duration, 4), "frames": output_stats.frames},
+                "time_seconds": elapsed,
+            },
+            schema=schema_uri("fx"),
+        ))
         return
 
     output_console.print(f"\n[bold]{args.effect}[/bold] 완료")
@@ -283,19 +287,27 @@ def _run_batch(args: argparse.Namespace, input_dir: Path) -> None:
 
             if args.json:
                 output_stats = get_audio_stats(result, sr)
-                print(json.dumps({
-                    "command": "fx", "effect": args.effect,
-                    "input": str(fpath), "output": str(out_path),
-                    "output_rms": round(output_stats.rms, 6),
-                    "output_peak": round(output_stats.peak, 6),
-                }, ensure_ascii=False))
+                print(json.dumps(json_envelope(
+                    "fx",
+                    {
+                        "effect": args.effect,
+                        "input": str(fpath), "output": str(out_path),
+                        "output_rms": round(output_stats.rms, 6),
+                        "output_peak": round(output_stats.peak, 6),
+                    },
+                    schema=schema_uri("fx"),
+                ), ensure_ascii=False, default=str))
             else:
                 output_console.print(f"  [{i+1}/{len(files)}] {fpath.name} → {out_path.name}")
 
         except Exception as e:
             fail += 1
             if args.json:
-                print(json.dumps({"command": "fx", "input": str(fpath), "error": str(e)}, ensure_ascii=False))
+                print(json.dumps(json_envelope(
+                    "fx",
+                    {"input": str(fpath), "error": str(e)},
+                    schema=schema_uri("fx"),
+                ), ensure_ascii=False, default=str))
             else:
                 print_warning(f"  [{i+1}/{len(files)}] {fpath.name}: {e}")
 

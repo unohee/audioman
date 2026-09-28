@@ -28,14 +28,23 @@ class LatencyMeasurement:
 
 
 def _get_reported_latency(wrapper: VST3PluginWrapper) -> int:
-    """pedalboard 플러그인의 보고된 레이턴시 읽기"""
+    """Reported plugin latency in samples, 0 when the plugin does not report one.
+
+    Only the two failures the introspection itself can produce are absorbed:
+    AttributeError when this plugin class has no `latency_samples` (pedalboard exposes
+    it on some types only — verified against VST3Plugin, which raises
+    "'super' object has no attribute 'latency_samples'") and TypeError when the
+    attribute exists but is not int-convertible. Anything else is a real error: an
+    unknown error silently returning 0 here would zero the delay compensation the host
+    relies on, with no signal that it happened.
+    """
     try:
         # pedalboard의 내부 속성 접근
         plugin = wrapper._plugin
         if hasattr(plugin, "latency_samples"):
             return int(plugin.latency_samples)
-    except Exception:
-        pass
+    except (AttributeError, TypeError) as exc:
+        logger.debug(f"{wrapper.name}: reported latency unavailable ({exc}); using 0")
     return 0
 
 

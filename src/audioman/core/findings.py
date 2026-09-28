@@ -15,10 +15,11 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 import hashlib
 import json
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 
 SCHEMA_URI = "audioman://schema/finding.v1.json"
+SCHEMA_URI_PREFIX = "audioman://schema/"
 
 
 class Category(str, Enum):
@@ -135,6 +136,15 @@ class Finding:
         return f"{slug}-{digest}"
 
 
+def schema_uri(name: str) -> str:
+    """Published schema URI for a command: `audioman://schema/<name>.v1.json`.
+
+    The matching file MUST exist under `src/audioman/schemas/`; the JSON contract
+    test asserts that for every URI any command can emit.
+    """
+    return f"{SCHEMA_URI_PREFIX}{name}.v1.json"
+
+
 def filter_findings(
     findings: list[Finding],
     *,
@@ -152,35 +162,80 @@ def filter_findings(
     return result
 
 
+def json_envelope(
+    command: str,
+    body: Optional[Mapping[str, Any]] = None,
+    *,
+    schema: str,
+    audioman_version: Optional[str] = None,
+) -> dict[str, Any]:
+    """Build the standard `--json` envelope shared by every CLI command.
+
+    The first three keys are always `$schema`, `audioman_version` and `command`;
+    `body` keys follow in insertion order. Body keys named `$schema`,
+    `audioman_version` or `command` are ignored: envelope metadata always wins,
+    so a caller may pass a legacy payload dict unchanged.
+
+    `schema` must be a published URI (a matching file under
+    `src/audioman/schemas/`); `tests/unit/test_json_contract.py` enforces that.
+    """
+    from audioman import __version__
+
+    out: dict[str, Any] = {
+        "$schema": schema,
+        "audioman_version": audioman_version or __version__,
+        "command": command,
+    }
+    if body:
+        for key, value in body.items():
+            if key in out:
+                continue
+            out[key] = value
+    return out
+
+
+def findings_summary(findings: list[Finding]) -> dict[str, Any]:
+    """The ``summary`` block for a findings list (totals + severity/category split)."""
+    return {
+        "total": len(findings),
+        "by_severity": {
+            "info": sum(1 for f in findings if f.severity is Severity.INFO),
+            "warn": sum(1 for f in findings if f.severity is Severity.WARN),
+            "critical": sum(1 for f in findings if f.severity is Severity.CRITICAL),
+        },
+        "by_category": {
+            "signal": sum(1 for f in findings if f.category is Category.SIGNAL),
+            "spectral": sum(1 for f in findings if f.category is Category.SPECTRAL),
+            "plugin": sum(1 for f in findings if f.category is Category.PLUGIN),
+            "container": sum(1 for f in findings if f.category is Category.CONTAINER),
+        },
+    }
+
+
 def envelope(
     findings: list[Finding],
     *,
+    schema: str = SCHEMA_URI,
+    command: str = "observe",
     file: Optional[str] = None,
     audioman_version: Optional[str] = None,
     extra: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
-    """findings[]를 LLM-friendly JSON envelope으로 감싼다."""
-    from audioman import __version__
+    """Wrap a findings list in the LLM-friendly JSON envelope.
 
-    out: dict[str, Any] = {
-        "$schema": SCHEMA_URI,
-        "audioman_version": audioman_version or __version__,
-        "findings": [f.to_dict() for f in findings],
-        "summary": {
-            "total": len(findings),
-            "by_severity": {
-                "info": sum(1 for f in findings if f.severity is Severity.INFO),
-                "warn": sum(1 for f in findings if f.severity is Severity.WARN),
-                "critical": sum(1 for f in findings if f.severity is Severity.CRITICAL),
-            },
-            "by_category": {
-                "signal": sum(1 for f in findings if f.category is Category.SIGNAL),
-                "spectral": sum(1 for f in findings if f.category is Category.SPECTRAL),
-                "plugin": sum(1 for f in findings if f.category is Category.PLUGIN),
-                "container": sum(1 for f in findings if f.category is Category.CONTAINER),
-            },
+    Callers own the published `schema` URI and the `command` name, since the same
+    findings container backs several commands (`observe`, `stream triage`). Both
+    default to the historical observe/findings values for existing callers.
+    """
+    out = json_envelope(
+        command,
+        {
+            "findings": [f.to_dict() for f in findings],
+            "summary": findings_summary(findings),
         },
-    }
+        schema=schema,
+        audioman_version=audioman_version,
+    )
     if file is not None:
         out["file"] = file
     if extra:

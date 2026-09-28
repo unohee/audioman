@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audioman://schema/obs.v1.json",
+  "title": "Audioman OBS Result",
+  "description": "Output envelope for `audioman obs probe --json` and `audioman obs dry-run --json`. Both emit a uniform `input`/`count`/`files` body; a single-file input yields a one-element `files` array.",
+  "type": "object",
+  "required": ["$schema", "audioman_version", "command", "input", "count", "files"],
+  "properties": {
+    "$schema": {"const": "audioman://schema/obs.v1.json"},
+    "audioman_version": {"type": "string"},
+    "command": {"enum": ["obs probe", "obs dry-run"]},
+    "input": {"type": "string"},
+    "count": {"type": "integer"},
+    "files": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "description": "obs probe report (TopologyReport.to_dict plus `video`).",
+            "type": "object",
+            "required": [
+              "video",
+              "topology",
+              "n_streams",
+              "active_indices",
+              "unique_signal_groups",
+              "sample_rate",
+              "duration_sec",
+              "tracks"
+            ],
+            "properties": {
+              "video": {"type": "string"},
+              "topology": {
+                "enum": ["multitrack", "single", "duplicated", "silent", "unknown"]
+              },
+              "n_streams": {"type": "integer"},
+              "active_indices": {"type": "array", "items": {"type": "integer"}},
+              "unique_signal_groups": {
+                "type": "array",
+                "items": {"type": "array", "items": {"type": "integer"}}
+              },
+              "sample_rate": {"type": "integer"},
+              "duration_sec": {"type": "number"},
+              "tracks": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["index", "rms", "is_silent", "is_stereo"],
+                  "properties": {
+                    "index": {"type": "integer"},
+                    "rms": {"type": "number"},
+                    "is_silent": {"type": "boolean"},
+                    "is_stereo": {"type": "boolean"}
+                  }
+                }
+              }
+            }
+          },
+          {
+            "description": "obs dry-run report (VideoDryRunReport.to_dict).",
+            "type": "object",
+            "required": ["video", "topology", "tracks", "treatments", "notes"],
+            "properties": {
+              "video": {"type": "string"},
+              "topology": {"type": "object"},
+              "tracks": {"type": "array", "items": {"type": "object"}},
+              "treatments": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["track_index", "kind", "plan", "mirrors"],
+                  "properties": {
+                    "track_index": {"type": "integer"},
+                    "kind": {
+                      "enum": ["voice", "music", "fullmix", "silent", "unknown"]
+                    },
+                    "plan": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["action", "plugin", "params", "rationale", "severity"],
+                        "properties": {
+                          "action": {"type": "string"},
+                          "plugin": {"type": ["string", "null"]},
+                          "params": {"type": "object"},
+                          "rationale": {"type": "string"},
+                          "severity": {"type": "string"}
+                        }
+                      }
+                    },
+                    "mirrors": {"type": "array", "items": {"type": "integer"}}
+                  }
+                }
+              },
+              "notes": {"type": "array", "items": {"type": "string"}}
+            }
+          }
+        ]
+      }
+    }
+  }
+}

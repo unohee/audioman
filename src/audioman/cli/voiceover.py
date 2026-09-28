@@ -13,6 +13,7 @@ from audioman.cli.output import (
 )
 from audioman.core import voiceover
 from audioman.core.engine import parse_params
+from audioman.core.findings import json_envelope, schema_uri
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -97,7 +98,7 @@ def _run_analyze(args: argparse.Namespace) -> None:
         if not args.segments:
             result.pop("speech_segments", None)
             result.pop("noise_segments", None)
-        print_json(result)
+        print_json(json_envelope("vo analyze", result, schema=schema_uri("voiceover")))
         return
 
     output_console.print(f"\n[bold]보이스오버 분석[/bold]: {result['input']}")
@@ -161,7 +162,7 @@ def _run_process(args: argparse.Namespace) -> None:
         if "per_segment" in leveling:
             leveling["per_segment_count"] = len(leveling["per_segment"])
             leveling.pop("per_segment", None)
-        print_json(data)
+        print_json(json_envelope("vo process", data, schema=schema_uri("voiceover")))
         return
 
     output_console.print(f"\n[bold green]Voiceover 처리 완료[/bold green]")

@@ -4,6 +4,7 @@
 import argparse
 
 from audioman.cli.output import print_error, print_json, print_success, print_warning, output_console
+from audioman.core.findings import json_envelope, schema_uri
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -89,14 +90,13 @@ def run(args: argparse.Namespace) -> None:
     # Dry-run
     if args.dry_run:
         plan = {
-            "command": "bounce",
             "dry_run": True,
             "output": output_path,
             "track_count": len(tracks),
             "tracks": [t.to_dict() for t in tracks],
         }
         if args.json:
-            print_json(plan)
+            print_json(json_envelope("bounce", plan, schema=schema_uri("bounce")))
         else:
             output_console.print(f"\n[bold]Bounce Plan[/bold] — {len(tracks)} tracks → {output_path}")
             for i, t in enumerate(tracks, 1):
@@ -119,7 +119,7 @@ def run(args: argparse.Namespace) -> None:
         return
 
     if args.json:
-        print_json({"command": "bounce", **result.to_dict()})
+        print_json(json_envelope("bounce", result.to_dict(), schema=schema_uri("bounce")))
         return
 
     output_console.print(f"\n[bold]바운스 완료[/bold]")

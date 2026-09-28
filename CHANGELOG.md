@@ -27,9 +27,16 @@ All notable changes to this project will be documented in this file.
 ### Removed
 - **i18n 인프라 전면 삭제**: `src/audioman/i18n.py` 및 한국어 카탈로그 제거. 282개 `_("...")` 호출을 모두 평문 영어 문자열로 변환. `AUDIOMAN_LANG` 환경변수 미지원. CLI 출력 언어는 항상 영어로 통일 (`--plain` 플래그의 역할은 ANSI/Rich 끄기로 축소).
 
+### Changed
+- **세션 파일 경로/서브타입 검증**: `core.session`의 `tracks[].path`와 `output`은 이제 세션 디렉터리 기준으로 resolve되어 **반드시 그 안에 있어야** 한다. `../` 탈출이나 세션 디렉터리 밖의 절대 경로는 `SessionPathError`(`ValueError` 하위)로 거부된다 — 조용한 경로 재작성은 제거. 세션 디렉터리 안의 절대 경로는 그대로 동작하며, `format`/`subtype`은 `ALLOWED_SUBTYPES`(`PCM_16`/`PCM_24`/`PCM_32`/`FLOAT`/`DOUBLE`)로 제한되고 대소문자는 정규화된다(`pcm_16` → `PCM_16`). CLI 영향: `audioman bounce`/`mixdown --session <file>`이 탈출 경로나 잘못된 서브타입에 대해 진행하지 않고 exit 1과 명확한 오류를 낸다.
+
+### Fixed
+- **`VST3PluginWrapper.set_parameters`**: 플러그인이 보고한 min/max를 벗어난 값과 NaN/Inf를 조용히 클램프하지 않고, 파라미터 이름과 경계를 명시한 `ValueError`로 거부한다(플러그인은 건드리지 않음). `process()`도 빈 블록과 NaN/Inf 입력을 플러그인 로드 전에 `ValueError`로 거부한다.
+
 ### Tests
-- `tests/unit/test_plain_mode.py` (3), `test_findings.py` (16), `test_observe.py` (5), `test_changelog_cmd.py` (5) — 신규 29개 추가.
-- `tests/unit/test_streaming.py` (14) — streaming null test, 블록 경계 클릭 검출, RT factor 단조성/블록 크기 의존성. pedalboard 빌트인만 사용(VST3 불필요).
+- `tests/unit/test_plain_mode.py` (3), `test_findings.py` (18), `test_observe.py` (5), `test_changelog_cmd.py` (5) — 31 new tests.
+- `tests/unit/test_streaming.py` (14) — streaming null test, block-boundary click detection, RT factor monotonicity/block-size dependence. Uses only pedalboard built-ins (no VST3 required).
+- `tests/unit/test_session_security.py` (28), `test_vst3_validation.py` (42) — session path-escape/subtype guards and VST3 parameter/block validation.
 
 ## [0.2.0] - 2026-05-10
 
@@ -44,6 +51,17 @@ All notable changes to this project will be documented in this file.
   - core 모듈: `audioman.core.obs` (probe_topology, classify_track, diagnose_track, recommend_treatment, dry_run_video)
   - 단위 테스트 17개 (`tests/unit/test_obs.py`)
   - 워크플로우 문서: `docs/obs-workflow.md`
+- **eq-profile**: EQ 플러그인 프로파일링 명령 — 주파수 응답 / 위상 / group delay / 비선형성 측정. `--mode {response,sweep,nonlinear,all}`, `--sweep-param NAME=v1,v2,...`, `--levels`, `--save-npy` 지원. core 모듈: `audioman.core.plugin_analysis`.
+- **bounce**: 여러 트랙을 단일 스테레오 파일로 바운스. 트랙별 `--gain`/`--pan`, `|` 구분 `--chain`, YAML/JSON `--session`. core 모듈: `audioman.core.mixer`.
+- **commit**: 플러그인 체인을 오디오에 destructive 적용 + 자동 delay compensation. `--no-compensation`, `--no-tail-trim`, `--dry-run`(레이턴시 측정만). core 모듈: `audioman.core.commit`.
+- **mixdown**: 트랙 bounce + 마스터 버스 체인 처리. `--master` 체인, 자동 딜레이 보상, `--automix` 스펙트럼 기반 트랙 게인 자동 밸런싱(`--target` 프로파일).
+- **edl**: 비파괴 편집(EDL) 워크플로우 — `init` / `add` / `list` / `undo` / `redo` / `render` / `status` / `clear`. core 모듈: `audioman.core.edl`.
+- **master**: 마스터링 납품 워크플로우 — `prep`(DC 제거·패딩·페이드·라우드니스 노멀), `qc`(target profile별 PASS/WARN/FAIL 리포트), `verify`, `list-profiles`. core 모듈: `audioman.core.qc`.
+- **fader-test**: 멀티트랙 stem을 PyQt 믹서 GUI로 재생하며 트랙별 게인 밸런스를 잡고 ground truth JSON으로 export. core 모듈: `audioman.core.multitrack_player`.
+- **fader-compare**: `fader-test` ground truth와 automix 추천 게인을 비교. `--target` / `--reference` 지원.
+- **vo**: 보이스오버 워크플로우 (`analyze`, `process`) — VAD → denoise → utterance별 LUFS 레벨링. core 모듈: `audioman.core.voiceover`.
+- **screen**: 클릭·험·mouth click·치찰음·숨소리·배경 노이즈·RF 노이즈 등 aesthetic 이슈 스크리닝 (`--issues`, `--backend {auto,essentia,fallback}`). core 모듈: `audioman.core.aesthetic`.
+- **core 모듈**: `audioman.core.automix` (계층적 게인 스테이징, K-20 보정), `audioman.core.loudness` (ITU-R BS.1770-4 LUFS / True Peak / LRA + loudness normalization), `audioman.core.session` (YAML/JSON 멀티트랙 세션 로더), `audioman.core.test_signal` (플러그인 분석용 테스트 신호 생성 — impulse/sine/two-tone/noise/sweep/multitone/log-sweep deconvolution).
 
 ### Changed
 - **obs probe**: 기본 동작이 트랙 앞 15초만 보던 것에서 **영상 전체 스캔**으로 변경.

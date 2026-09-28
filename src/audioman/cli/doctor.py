@@ -5,6 +5,7 @@ import argparse
 import json
 
 from audioman.cli.output import print_error, print_json, print_success, print_info, output_console
+from audioman.core.findings import json_envelope, schema_uri
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -77,7 +78,7 @@ def run(args: argparse.Namespace) -> None:
     plugin_path = _resolve_plugin(args.plugin)
     params = parse_params(args.param) if args.param else None
 
-    results = {"command": "doctor", "plugin": plugin_path, "mode": args.mode}
+    results = {"plugin": plugin_path, "mode": args.mode}
     modes = [args.mode] if args.mode != "all" else [
         "linear", "thd", "imd", "sweep", "dynamics", "attack-release",
         "waveshaper", "performance",
@@ -312,11 +313,12 @@ def run(args: argparse.Namespace) -> None:
 
     # 출력
     if args.json:
-        print_json(results)
+        print_json(json_envelope("doctor", results, schema=schema_uri("doctor")))
 
     if args.output:
         with open(args.output, "w") as f:
-            json.dump(results, f, indent=2, ensure_ascii=False, default=str)
+            json.dump(json_envelope("doctor", results, schema=schema_uri("doctor")),
+                      f, indent=2, ensure_ascii=False, default=str)
         if not args.json:
             print_success(f"결과 저장: {args.output}")
 

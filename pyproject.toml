@@ -26,6 +26,13 @@ dependencies = [
 [project.optional-dependencies]
 vamp = ["vamp>=1.1.0"]
 essentia = ["essentia>=2.1b6.dev1177"]
+# Test tooling under the name CI installs (`pip install -e ".[dev]"`, the shared
+# python-ci template). `dependency-groups.dev` below is uv's equivalent and stays
+# the source for local `uv sync`; the two must be kept in step.
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=6.0.0",
+]
 
 [project.scripts]
 audioman = "audioman.cli.app:main"

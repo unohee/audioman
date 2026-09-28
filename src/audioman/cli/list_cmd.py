@@ -4,6 +4,7 @@
 import argparse
 
 from audioman.cli.output import print_json, print_table
+from audioman.core.findings import json_envelope, schema_uri
 from audioman.core.registry import get_registry
 
 
@@ -19,11 +20,14 @@ def run(args: argparse.Namespace) -> None:
     plugins = registry.list(fmt=args.format, vendor=args.vendor)
 
     if args.json:
-        print_json({
-            "command": "list",
-            "count": len(plugins),
-            "plugins": [p.to_dict() for p in plugins],
-        })
+        print_json(json_envelope(
+            "list",
+            {
+                "count": len(plugins),
+                "plugins": [p.to_dict() for p in plugins],
+            },
+            schema=schema_uri("list"),
+        ))
         return
 
     rows = []

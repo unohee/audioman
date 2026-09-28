@@ -5,8 +5,11 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 from audioman.cli.changelog_cmd import filter_since, parse_changelog
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 SAMPLE = """\
@@ -67,7 +70,7 @@ class TestChangelogCommand:
             env=env,
             capture_output=True,
             text=True,
-            cwd="/Users/unohee/dev/audioman",
+            cwd=REPO_ROOT,
         )
         assert result.returncode == 0, result.stderr
         payload = json.loads(result.stdout)

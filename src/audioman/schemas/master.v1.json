@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audioman://schema/master.v1.json",
+  "title": "Audioman Master Result",
+  "description": "Output envelope for `audioman master prep|qc|verify|list-profiles --json`. Only the envelope keys are common to all four subcommands; the remaining properties are emitted per subcommand.",
+  "type": "object",
+  "required": ["$schema", "audioman_version", "command"],
+  "properties": {
+    "$schema": {"const": "audioman://schema/master.v1.json"},
+    "audioman_version": {"type": "string"},
+    "command": {
+      "enum": [
+        "master prep",
+        "master qc",
+        "master verify",
+        "master list-profiles"
+      ]
+    },
+    "profile": {"type": "string"},
+    "params": {
+      "type": "object",
+      "properties": {
+        "head_pad_ms": {"type": ["number", "null"]},
+        "tail_pad_sec": {"type": ["number", "null"]},
+        "fade_in_ms": {"type": ["number", "null"]},
+        "fade_out_ms": {"type": ["number", "null"]},
+        "fade_curve": {"type": ["string", "null"]},
+        "target_lufs": {"type": ["number", "null"]},
+        "max_true_peak_dbtp": {"type": ["number", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "input": {"type": "string"},
+    "output": {"type": "string"},
+    "input_duration_sec": {"type": "number"},
+    "output_duration_sec": {"type": "number"},
+    "ops_applied": {"type": "array", "items": {"type": "string"}},
+    "elapsed_sec": {"type": "number"},
+    "qc_target": {"type": "string"},
+    "prep": {"type": "object"},
+    "qc": {"type": "object"},
+    "target": {"type": "string"},
+    "target_profile": {
+      "type": "object",
+      "required": ["name", "integrated_lufs", "max_true_peak_dbtp"],
+      "properties": {
+        "name": {"type": "string"},
+        "integrated_lufs": {"type": "array", "items": {"type": "number"}},
+        "max_true_peak_dbtp": {"type": "number"}
+      },
+      "additionalProperties": true
+    },
+    "verdict": {"enum": ["PASS", "WARN", "FAIL"]},
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["category", "name", "value", "target", "status"],
+        "properties": {
+          "category": {"type": "string"},
+          "name": {"type": "string"},
+          "value": {"type": ["number", "string", "null"]},
+          "target": {"type": ["string", "number", "integer", "array", "null"]},
+          "status": {"enum": ["PASS", "WARN", "FAIL"]},
+          "detail": {"type": "object"},
+          "per_channel": {"type": "array", "items": {"type": "number"}}
+        },
+        "additionalProperties": true
+      }
+    },
+    "loudness": {
+      "type": "object",
+      "properties": {
+        "integrated_lufs": {"type": ["number", "null"]},
+        "short_term_max_lufs": {"type": ["number", "null"]},
+        "short_term_min_lufs": {"type": ["number", "null"]},
+        "loudness_range_lu": {"type": ["number", "null"]},
+        "true_peak_dbtp": {"type": ["number", "null"]},
+        "sample_peak_dbfs": {"type": ["number", "null"]},
+        "duration_sec": {"type": "number"},
+        "sample_rate": {"type": "integer"},
+        "channels": {"type": "integer"}
+      },
+      "additionalProperties": true
+    },
+    "format": {
+      "type": ["object", "null"],
+      "properties": {
+        "sample_rate": {"type": "integer"},
+        "channels": {"type": "integer"},
+        "duration_sec": {"type": "number"},
+        "frames": {"type": "integer"},
+        "format": {"type": "string"},
+        "subtype": {"type": ["string", "null"]},
+        "bit_depth": {"type": ["integer", "null"]},
+        "file_size_mb": {"type": "number"}
+      },
+      "additionalProperties": true
+    },
+    "summary": {
+      "type": "object",
+      "required": ["n_pass", "n_warn", "n_fail"],
+      "properties": {
+        "n_pass": {"type": "integer"},
+        "n_warn": {"type": "integer"},
+        "n_fail": {"type": "integer"}
+      },
+      "additionalProperties": true
+    },
+    "prep_profiles": {
+      "type": "object",
+      "additionalProperties": {"type": "object"}
+    },
+    "qc_targets": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": true
+}

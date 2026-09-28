@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audioman://schema/list.v1.json",
+  "title": "Audioman List Result",
+  "description": "Output envelope for `audioman list --json`. Lists registered plugins, optionally filtered by format or vendor.",
+  "type": "object",
+  "required": [
+    "$schema",
+    "audioman_version",
+    "command",
+    "count",
+    "plugins"
+  ],
+  "properties": {
+    "$schema": {"const": "audioman://schema/list.v1.json"},
+    "audioman_version": {"type": "string"},
+    "command": {"const": "list"},
+    "count": {"type": "integer"},
+    "plugins": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "short_name",
+          "path",
+          "format",
+          "vendor",
+          "version",
+          "aliases",
+          "param_count"
+        ],
+        "properties": {
+          "name": {"type": "string"},
+          "short_name": {"type": "string"},
+          "path": {"type": "string"},
+          "format": {"type": "string"},
+          "vendor": {"type": "string"},
+          "version": {"type": "string"},
+          "aliases": {"type": "array", "items": {"type": "string"}},
+          "param_count": {"type": "integer"}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

@@ -17,6 +17,7 @@ from audioman.cli.output import (
     print_table,
 )
 from audioman.core import obs as obs_core
+from audioman.core.findings import json_envelope, schema_uri
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -98,7 +99,11 @@ def _run_probe(args: argparse.Namespace) -> None:
         results.append({"video": str(video), **r.to_dict()})
 
     if json_mode:
-        print_json(results if inp.is_dir() else results[0] if results else {})
+        print_json(json_envelope(
+            "obs probe",
+            {"input": str(inp), "count": len(results), "files": results},
+            schema=schema_uri("obs"),
+        ))
         return
 
     rows = []
@@ -178,7 +183,11 @@ def _run_dry_run(args: argparse.Namespace) -> None:
             summary_rows.append([video.name, topo, "-", "-", "skip", "—"])
 
     if json_mode:
-        print_json(all_reports if inp.is_dir() else (all_reports[0] if all_reports else {}))
+        print_json(json_envelope(
+            "obs dry-run",
+            {"input": str(inp), "count": len(all_reports), "files": all_reports},
+            schema=schema_uri("obs"),
+        ))
         return
 
     if not summary_rows:

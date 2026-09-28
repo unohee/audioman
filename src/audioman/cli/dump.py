@@ -6,6 +6,7 @@ import json
 import sys
 
 from audioman.cli.output import print_error, print_json, print_warning, output_console
+from audioman.core.findings import json_envelope, schema_uri
 from audioman.core.registry import get_registry
 from audioman.core.engine import parse_params
 from audioman.plugins.vst3 import VST3PluginWrapper
@@ -14,7 +15,12 @@ from audioman.plugins.vst3 import VST3PluginWrapper
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
         "dump",
-        help="Dump plugin parameter state to JSON/JSONL",
+        help="Dump plugin parameter state to JSON/JSONL (always machine-readable; --json is implied)",
+        description=(
+            "Dump plugin parameter state as JSON (single plugin) or JSONL (--all). "
+            "This command is always machine-readable, so --json is implied and not "
+            "needed; the flag is accepted only for CLI uniformity."
+        ),
     )
     # 단일 모드: 플러그인 이름 지정
     parser.add_argument("plugin", nargs="?", default=None, help="Plugin name (omit for --all)")
@@ -109,7 +115,7 @@ def _run_single(args: argparse.Namespace) -> None:
         )
         state["saved_as_preset"] = args.save_preset
 
-    print_json({"command": "dump", **state})
+    print_json(json_envelope("dump", state, schema=schema_uri("dump")))
 
 
 def _run_batch(args: argparse.Namespace) -> None:
@@ -138,7 +144,10 @@ def _run_batch(args: argparse.Namespace) -> None:
                 wrapper = VST3PluginWrapper(meta.path)
                 wrapper.load()
                 state = _dump_plugin_state(wrapper, meta)
-                line = json.dumps(state, ensure_ascii=False, default=str)
+                line = json.dumps(
+                    json_envelope("dump", {**state, "batch": True}, schema=schema_uri("dump")),
+                    ensure_ascii=False, default=str,
+                )
                 out_file.write(line + "\n")
                 ok += 1
 
@@ -148,12 +157,13 @@ def _run_batch(args: argparse.Namespace) -> None:
             except Exception as e:
                 fail += 1
                 # 실패해도 JSONL에 에러 레코드 기록
-                err_line = json.dumps({
+                err_line = json.dumps(json_envelope("dump", {
                     "plugin": meta.name,
                     "short_name": meta.short_name,
                     "path": meta.path,
                     "error": str(e),
-                }, ensure_ascii=False)
+                    "batch": True,
+                }, schema=schema_uri("dump")), ensure_ascii=False)
                 out_file.write(err_line + "\n")
 
                 if out_file is not sys.stdout:

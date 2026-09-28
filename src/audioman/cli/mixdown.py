@@ -4,6 +4,7 @@
 import argparse
 
 from audioman.cli.output import print_error, print_json, print_success, print_warning, output_console
+from audioman.core.findings import json_envelope, schema_uri
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -134,7 +135,6 @@ def run(args: argparse.Namespace) -> None:
     # Dry-run
     if args.dry_run:
         plan = {
-            "command": "mixdown",
             "dry_run": True,
             "output": output_path,
             "track_count": len(tracks),
@@ -145,7 +145,7 @@ def run(args: argparse.Namespace) -> None:
             plan["automix"] = automix_result.to_dict()
 
         if args.json:
-            print_json(plan)
+            print_json(json_envelope("mixdown", plan, schema=schema_uri("mixdown")))
         else:
             output_console.print(f"\n[bold]Mixdown Plan[/bold] — {len(tracks)} tracks → {output_path}")
             for i, t in enumerate(tracks, 1):
@@ -188,7 +188,7 @@ def run(args: argparse.Namespace) -> None:
         return
 
     if args.json:
-        print_json({"command": "mixdown", **result.to_dict()})
+        print_json(json_envelope("mixdown", result.to_dict(), schema=schema_uri("mixdown")))
         return
 
     output_console.print(f"\n[bold]믹스다운 완료[/bold]")

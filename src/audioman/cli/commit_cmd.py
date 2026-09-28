@@ -4,6 +4,7 @@
 import argparse
 
 from audioman.cli.output import print_error, print_json, print_success, print_warning, output_console
+from audioman.core.findings import json_envelope, schema_uri
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -45,13 +46,16 @@ def run(args: argparse.Namespace) -> None:
             return
 
         if args.json:
-            print_json({
-                "command": "commit",
-                "dry_run": True,
-                "chain": [s.to_dict() for s in steps],
-                "latency": [m.to_dict() for m in measurements],
-                "total_latency_samples": total,
-            })
+            print_json(json_envelope(
+                "commit",
+                {
+                    "dry_run": True,
+                    "chain": [s.to_dict() for s in steps],
+                    "latency": [m.to_dict() for m in measurements],
+                    "total_latency_samples": total,
+                },
+                schema=schema_uri("commit"),
+            ))
         else:
             output_console.print(f"\n[bold]Latency Measurement (dry-run)[/bold]")
             for m in measurements:
@@ -84,7 +88,7 @@ def run(args: argparse.Namespace) -> None:
         return
 
     if args.json:
-        print_json({"command": "commit", **result.to_dict()})
+        print_json(json_envelope("commit", result.to_dict(), schema=schema_uri("commit")))
         return
 
     output_console.print(f"\n[bold]커밋 완료[/bold]")

@@ -55,6 +55,7 @@ def analyze(
     vad_threshold: float = 0.5,
     min_speech_ms: int = 250,
     min_silence_ms: int = 200,
+    speech_pad_ms: int = 80,
 ) -> dict:
     """파일을 읽어 VAD만 실행, 통계와 segment 목록 반환 (편집 안 함)."""
     audio, sr = read_audio(input_path)
@@ -63,6 +64,7 @@ def analyze(
         threshold=vad_threshold,
         min_speech_ms=min_speech_ms,
         min_silence_ms=min_silence_ms,
+        speech_pad_ms=speech_pad_ms,
     )
     noise = invert_to_noise(speech, audio.shape[-1])
     speech_sec = sum(s.duration_samples for s in speech) / sr

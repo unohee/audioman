@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from audioman import __version__
+from audioman.core.findings import json_envelope, schema_uri
 
 
 _HEADER_RE = re.compile(r"^##\s*\[(?P<version>[^\]]+)\](?:\s*-\s*(?P<date>\S+))?\s*$")
@@ -121,13 +121,10 @@ def run(args: argparse.Namespace) -> None:
     if path is None or not path.is_file():
         msg = "CHANGELOG.md not found"
         if args.json:
-            print(json.dumps({
-                "$schema": "audioman://schema/changelog.v1.json",
-                "audioman_version": __version__,
-                "command": "changelog",
-                "error": msg,
-                "entries": [],
-            }))
+            print(json.dumps(json_envelope(
+                "changelog", {"error": msg, "entries": []},
+                schema=schema_uri("changelog"),
+            )))
             sys.exit(1)
         print(f"error: {msg}", file=sys.stderr)
         sys.exit(1)
@@ -138,13 +135,11 @@ def run(args: argparse.Namespace) -> None:
         entries = filter_since(entries, args.since)
 
     if args.json:
-        print(json.dumps({
-            "$schema": "audioman://schema/changelog.v1.json",
-            "audioman_version": __version__,
-            "command": "changelog",
-            "source": str(path),
-            "entries": entries,
-        }, indent=2, ensure_ascii=False))
+        print(json.dumps(
+            json_envelope("changelog", {"source": str(path), "entries": entries},
+                          schema=schema_uri("changelog")),
+            indent=2, ensure_ascii=False,
+        ))
         return
 
     # plain text 출력 (rich 미사용 — LLM grep 친화)

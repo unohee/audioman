@@ -7,6 +7,7 @@ import json
 import numpy as np
 
 from audioman.cli.output import print_error, print_json, print_success, output_console
+from audioman.core.findings import json_envelope, schema_uri
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -125,7 +126,6 @@ def run(args: argparse.Namespace) -> None:
     bypass_params = _parse_params(args.bypass_param)
 
     results = {
-        "command": "eq-profile",
         "plugin": plugin_path,
         "plugin_type": "eq",
         "mode": args.mode,
@@ -297,11 +297,12 @@ def run(args: argparse.Namespace) -> None:
 
     # JSON 출력
     if args.json:
-        print_json(results)
+        print_json(json_envelope("eq-profile", results, schema=schema_uri("eq-profile")))
 
     if args.output:
         with open(args.output, "w") as f:
-            json.dump(results, f, indent=2, ensure_ascii=False, default=str)
+            json.dump(json_envelope("eq-profile", results, schema=schema_uri("eq-profile")),
+                      f, indent=2, ensure_ascii=False, default=str)
         if not args.json:
             print_success(f"결과 저장: {args.output}")
 

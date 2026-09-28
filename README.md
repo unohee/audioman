@@ -2,7 +2,7 @@
 
 Cross-platform CLI wrapper for VST3/AU audio plugins. Control commercial audio software like iZotope RX from the command line.
 
-Built for AI agents and automated audio pipelines — every command supports `--json` output.
+Built for AI agents and automated audio pipelines — the root-level `--json` flag gives machine-readable output for every subcommand.
 
 ## Install
 
@@ -48,22 +48,38 @@ audioman process ./input_dir/ -p dereverb -o ./output_dir/ -r  # recursive
 
 ## Commands
 
+The 26 subcommands mirror `audioman --help`:
+
 | Command | Description |
 |---------|-------------|
-| `scan` | Discover VST3/AU plugins on the system |
-| `list` | List registered plugins with filters |
-| `info <plugin>` | Show plugin parameters and ranges |
+| `scan` | Scan system for VST3/AU plugins |
+| `list` | List registered plugins |
+| `info <plugin>` | Plugin details + parameter list |
 | `process <input>` | Process audio with a single plugin |
-| `chain <input>` | Sequential multi-plugin processing |
-| `preset` | Save/load/list/delete parameter presets |
-| `dump <plugin>` | Dump plugin parameter state as JSON |
-| `analyze <input>` | Audio analysis (RMS, spectral, silence detection) |
-| `fx <input>` | Built-in DSP effects (normalize, gate, trim, fade) |
-| `visualize <input>` | Export analysis to Sonic Visualiser SVL files |
-| `doctor -p <plugin>` | Plugin analysis (freq response, THD, dynamics, waveshaper) |
-| `vo {analyze,process}` | Voiceover workflow (VAD + RX denoise + utterance LUFS leveling) |
-| `obs {probe,dry-run}` | OBS multitrack 영상 자동 진단 — track topology + voice/music classification + 처치 계획 (dry-run only) |
-| `stream {bench,triage,compare,play}` | DAW 실시간 블록 처리 재현 — 플러그인 클릭/드롭아웃 triage + CPU 부하 벤치마크 |
+| `chain <input>` | Process audio through multiple plugins sequentially |
+| `preset` | Preset management (save/load/list/delete) |
+| `dump [plugin]` | Dump plugin parameter state to JSON/JSONL (always machine-readable; `--json` is implied) |
+| `analyze <input>` | Audio analysis (RMS, spectral entropy, silence detection, etc.) |
+| `fx <input>` | Built-in DSP effects (fade, trim, cut, splice, normalize, gate, gain) |
+| `visualize <input>` | Vamp plugin or built-in analysis -> Sonic Visualiser SVL file |
+| `doctor -p <plugin>` | Plugin analysis — frequency response, THD, dynamics, waveshaper, performance |
+| `eq-profile -p <plugin>` | EQ plugin profiling — frequency response, phase, group delay, nonlinearity |
+| `bounce` | Bounce multiple tracks into a single stereo file |
+| `commit <input>` | Commit plugin chain to audio with auto delay compensation |
+| `mixdown` | Mix tracks with master chain processing |
+| `edl` | Non-destructive edit workflow (EDL) |
+| `master` | Mastering delivery workflow (prep / qc / verify) |
+| `fader-test <input>` | Open a multitrack mixer GUI to set per-track gain balance (export as ground truth JSON) |
+| `fader-compare <gt>` | Compare automix recommendations against a fader-test ground truth |
+| `vo {analyze,process}` | Voiceover workflow (VAD + denoise + per-utterance LUFS leveling) |
+| `screen <input>` | Screen audio for aesthetic issues such as clicks, hum, breaths, sibilance, and noise |
+| `obs {probe,dry-run}` | OBS multitrack video auto-diagnosis (dry-run) — track topology + voice/music classification + treatment plan |
+| `observe <input>` | Observe audio faults across categories (signal, spectral, plugin, container) |
+| `changelog` | Show audioman changelog (LLM-friendly, parses CHANGELOG.md) |
+| `schemas {list,show}` | Show audioman JSONSchemas (machine-readable contract for `--json` output) |
+| `stream {bench,triage,compare,play}` | Reproduce DAW real-time block processing — benchmark & triage plugin clicks/dropouts |
+
+Global flags (`--json`, `--plain`, `--verbose`, `--version`) are defined at the root, so they must be placed **before** the subcommand (see [JSON Output](#json-output)).
 
 ## Plugin Click / Dropout Triage (DAW streaming)
 
@@ -74,7 +90,7 @@ audioman process ./input_dir/ -p dereverb -o ./output_dir/ -r  # recursive
 audioman stream bench mix.wav -p reverb --blocks 64,128,256,512,1024
 
 # 클릭/불연속 triage — 블록 경계 정렬 = 스트리밍 버그, 비정렬 = 소스 클릭
-audioman stream triage mix.wav -p denoise --block-size 512 --json
+audioman --json stream triage mix.wav -p denoise --block-size 512
 
 # 잘못된 호스트 동작(매 블록 reset) 시뮬레이션 — 클릭 강제 유발
 audioman stream triage mix.wav -p denoise --reset-per-block
@@ -125,15 +141,21 @@ audioman dump --all --filter "rx 10" -o rx10_defaults.jsonl
 
 ## JSON Output
 
-All commands support `--json` for machine-readable output:
+`--json`, `--plain`, `--verbose`, and `--version` are **root-level global flags**. They are parsed by the top-level parser, so they must appear **before** the subcommand. Placing them after the subcommand fails with `error: unrecognized arguments`:
 
 ```bash
+# Correct — global flags first
 audioman --json info denoise
 audioman --json process input.wav -p denoise -o out.wav
+
+# Wrong — rejected by argparse
+audioman info denoise --json   # error: unrecognized arguments: --json
 
 # Batch mode outputs JSONL (one JSON object per line)
 audioman --json process ./dir/ -p denoise -o ./out/
 ```
+
+`dump` is the one exception to the "flag is required" rule: it is always machine-readable (JSON for a single plugin, JSONL for `--all`), so `--json` is implied and accepted only for uniformity. Every other command needs the root-level flag to switch output modes.
 
 ## Presets
 
@@ -145,8 +167,8 @@ audioman preset save my_denoise --plugin denoise \
 # List presets
 audioman preset list
 
-# Use preset during processing
-audioman process input.wav -p denoise --preset my_denoise -o out.wav
+# Use a preset when dumping plugin state
+audioman dump denoise --preset my_denoise
 
 # Dump plugin state and save as preset in one step
 audioman dump denoise --param noise_reduction_db=25 --save-preset aggressive_denoise
@@ -161,8 +183,8 @@ audioman analyze input.wav
 # With ASCII waveform visualization
 audioman analyze input.wav -w
 
-# Frame-level metrics
-audioman analyze input.wav --frames --json
+# Frame-level metrics (global --json goes before the subcommand)
+audioman --json analyze input.wav --frames
 ```
 
 ## Built-in DSP Effects
@@ -280,21 +302,6 @@ Tested with iZotope RX 10 (15 VST3 plugins, all parameters accessible):
 | Repair Assistant | `repair-assistant` | `repair` | 15 |
 
 Any VST3 or AU plugin installed on the system can be used — not limited to iZotope.
-
-## Internationalization (i18n)
-
-CLI help text supports locale-based translation. Default is English; Korean is included.
-
-```bash
-# Force language via environment variable
-AUDIOMAN_LANG=ko audioman --help   # Korean
-AUDIOMAN_LANG=en audioman --help   # English
-
-# Auto-detects from system locale (LC_ALL, LANG)
-audioman --help
-```
-
-To add a new language, add a catalog dict to `src/audioman/i18n.py`.
 
 ## Requirements
 

@@ -21,6 +21,7 @@ from audioman.cli.output import (
     print_table,
 )
 from audioman.core import dsp, edl as edl_core, qc
+from audioman.core.findings import json_envelope, schema_uri
 
 
 # 마스터링 프로파일별 권장 prep 파라미터
@@ -184,17 +185,20 @@ def run_prep(args: argparse.Namespace) -> None:
     elapsed = time.monotonic() - start
 
     if args.json:
-        print_json({
-            "command": "master prep",
-            "profile": args.profile,
-            "params": params,
-            "input": str(src),
-            "output": args.output,
-            "input_duration_sec": result.input_duration_sec,
-            "output_duration_sec": result.output_duration_sec,
-            "ops_applied": [op["type"] for op in edl.ops],
-            "elapsed_sec": round(elapsed, 3),
-        })
+        print_json(json_envelope(
+            "master prep",
+            {
+                "profile": args.profile,
+                "params": params,
+                "input": str(src),
+                "output": args.output,
+                "input_duration_sec": result.input_duration_sec,
+                "output_duration_sec": result.output_duration_sec,
+                "ops_applied": [op["type"] for op in edl.ops],
+                "elapsed_sec": round(elapsed, 3),
+            },
+            schema=schema_uri("master"),
+        ))
         return
 
     print_success(f"master prep 완료 ({args.profile})")
@@ -254,7 +258,9 @@ def run_qc(args: argparse.Namespace) -> None:
         print_error(str(e))
 
     if args.json:
-        print_json({"command": "master qc", "input": str(src), **report})
+        print_json(json_envelope(
+            "master qc", {"input": str(src), **report}, schema=schema_uri("master")
+        ))
         return
 
     output_console.print(f"\n[bold]{src.name}[/bold]")
@@ -306,21 +312,24 @@ def run_verify(args: argparse.Namespace) -> None:
     qc_report = qc.evaluate_file(args.output, target=qc_target)
 
     if args.json:
-        print_json({
-            "command": "master verify",
-            "profile": args.profile,
-            "qc_target": qc_target,
-            "input": str(src),
-            "output": args.output,
-            "prep": {
-                "params": params,
-                "input_duration_sec": result.input_duration_sec,
-                "output_duration_sec": result.output_duration_sec,
-                "ops_applied": [op["type"] for op in edl.ops],
-                "elapsed_sec": round(prep_elapsed, 3),
+        print_json(json_envelope(
+            "master verify",
+            {
+                "profile": args.profile,
+                "qc_target": qc_target,
+                "input": str(src),
+                "output": args.output,
+                "prep": {
+                    "params": params,
+                    "input_duration_sec": result.input_duration_sec,
+                    "output_duration_sec": result.output_duration_sec,
+                    "ops_applied": [op["type"] for op in edl.ops],
+                    "elapsed_sec": round(prep_elapsed, 3),
+                },
+                "qc": qc_report,
             },
-            "qc": qc_report,
-        })
+            schema=schema_uri("master"),
+        ))
         return
 
     print_success(f"prep 완료 ({args.profile}) — {result.input_duration_sec:.2f}s → {result.output_duration_sec:.2f}s in {prep_elapsed:.2f}s")
@@ -340,11 +349,14 @@ def run_verify(args: argparse.Namespace) -> None:
 
 def run_list_profiles(args: argparse.Namespace) -> None:
     if args.json:
-        print_json({
-            "command": "master list-profiles",
-            "prep_profiles": PREP_PROFILES,
-            "qc_targets": qc.list_targets(),
-        })
+        print_json(json_envelope(
+            "master list-profiles",
+            {
+                "prep_profiles": PREP_PROFILES,
+                "qc_targets": qc.list_targets(),
+            },
+            schema=schema_uri("master"),
+        ))
         return
 
     rows = []

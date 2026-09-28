@@ -3,11 +3,13 @@
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from audioman import __version__
 from audioman.cli.output import print_error, print_json, print_table, print_success, output_console
 from audioman.core.audio_file import read_audio, get_audio_stats
+from audioman.core.findings import json_envelope, schema_uri
 from audioman.core.analysis import (
     compute_frame_metrics,
     compute_summary,
@@ -149,12 +151,7 @@ def _run_single(args: argparse.Namespace, path: Path) -> None:
         )
 
     if args.json:
-        out = {
-            "$schema": "audioman://schema/analyze.v1.json",
-            "audioman_version": __version__,
-            "command": "analyze",
-            **result,
-        }
+        out = json_envelope("analyze", result, schema=schema_uri("analyze"))
         if waveform_text:
             out["ascii_waveform"] = waveform_text
             out["ascii_envelope"] = envelope_text
@@ -228,6 +225,7 @@ def _run_batch(args: argparse.Namespace, input_dir: Path) -> None:
     if not files:
         print_error(f"오디오 파일이 없습니다: {input_dir}")
 
+    fail = 0
     for i, fpath in enumerate(files):
         try:
             result = _analyze_file(
@@ -236,12 +234,10 @@ def _run_batch(args: argparse.Namespace, input_dir: Path) -> None:
                 spectrum_min_rms=args.spectrum_min_rms,
             )
             if args.json:
-                print(json.dumps({
-                    "$schema": "audioman://schema/analyze.v1.json",
-                    "audioman_version": __version__,
-                    "command": "analyze",
-                    **result,
-                }, ensure_ascii=False, default=str))
+                print(json.dumps(
+                    json_envelope("analyze", result, schema=schema_uri("analyze")),
+                    ensure_ascii=False, default=str,
+                ))
             else:
                 output_console.print(
                     f"  [{i+1}/{len(files)}] {fpath.name}: "
@@ -250,10 +246,17 @@ def _run_batch(args: argparse.Namespace, input_dir: Path) -> None:
                     f"Centroid={result['summary']['spectral_centroid']['mean']:.0f}Hz"
                 )
         except Exception as e:
+            fail += 1
             if args.json:
-                print(json.dumps({"command": "analyze", "file": str(fpath), "error": str(e)}, ensure_ascii=False))
+                print(json.dumps(
+                    json_envelope("analyze", {"file": str(fpath), "error": str(e)},
+                                  schema=schema_uri("analyze")),
+                    ensure_ascii=False,
+                ))
             else:
                 output_console.print(f"  [{i+1}/{len(files)}] {fpath.name}: ERROR {e}")
 
     if not args.json:
         print_success(f"분석 완료: {len(files)}개 파일")
+    if fail:
+        sys.exit(1)

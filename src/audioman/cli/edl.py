@@ -16,6 +16,7 @@ from audioman.cli.output import (
     print_table,
 )
 from audioman.core import edl as edl_core
+from audioman.core.findings import json_envelope, schema_uri
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -137,16 +138,19 @@ def run_init(args: argparse.Namespace) -> None:
     edl_core.snapshot_history(edl, src)
 
     if args.json:
-        print_json({
-            "command": "edl init",
-            "source": str(src),
-            "edl_path": str(edl_path),
-            "workspace": str(edl_core.workspace_dir(src)),
-            "duration_sec": edl.duration_sec,
-            "sample_rate": edl.sample_rate,
-            "channels": edl.channels,
-            "source_sha256": edl.source_sha256,
-        })
+        print_json(json_envelope(
+            "edl init",
+            {
+                "source": str(src),
+                "edl_path": str(edl_path),
+                "workspace": str(edl_core.workspace_dir(src)),
+                "duration_sec": edl.duration_sec,
+                "sample_rate": edl.sample_rate,
+                "channels": edl.channels,
+                "source_sha256": edl.source_sha256,
+            },
+            schema=schema_uri("edl"),
+        ))
         return
 
     print_success(f"EDL 초기화: {edl_path}")
@@ -175,12 +179,15 @@ def run_add(args: argparse.Namespace) -> None:
     edl_core.snapshot_history(edl, src)  # clear_redo=True
 
     if args.json:
-        print_json({
-            "command": "edl add",
-            "source": str(src),
-            "op": op,
-            "n_ops": len(edl.ops),
-        })
+        print_json(json_envelope(
+            "edl add",
+            {
+                "source": str(src),
+                "op": op,
+                "n_ops": len(edl.ops),
+            },
+            schema=schema_uri("edl"),
+        ))
         return
 
     print_success(f"op 추가: {op['type']} (총 {len(edl.ops)}개)")
@@ -197,8 +204,11 @@ def run_list(args: argparse.Namespace) -> None:
     edl = edl_core.load_edl(edl_path)
 
     if args.json:
-        print_json({"command": "edl list", "source": str(src), "ops": edl.ops,
-                    "n_ops": len(edl.ops)})
+        print_json(json_envelope(
+            "edl list",
+            {"source": str(src), "ops": edl.ops, "n_ops": len(edl.ops)},
+            schema=schema_uri("edl"),
+        ))
         return
 
     if not edl.ops:
@@ -219,14 +229,20 @@ def run_undo(args: argparse.Namespace) -> None:
     new_edl = edl_core.undo(src)
     if new_edl is None:
         if args.json:
-            print_json({"command": "edl undo", "source": str(src), "undone": False,
-                        "reason": "history empty"})
+            print_json(json_envelope(
+                "edl undo",
+                {"source": str(src), "undone": False, "reason": "history empty"},
+                schema=schema_uri("edl"),
+            ))
             return
         print_warning("되돌릴 op이 없습니다.")
         return
     if args.json:
-        print_json({"command": "edl undo", "source": str(src), "undone": True,
-                    "n_ops": len(new_edl.ops)})
+        print_json(json_envelope(
+            "edl undo",
+            {"source": str(src), "undone": True, "n_ops": len(new_edl.ops)},
+            schema=schema_uri("edl"),
+        ))
         return
     print_success(f"undo 완료. 현재 op 수: {len(new_edl.ops)}")
 
@@ -236,13 +252,20 @@ def run_redo(args: argparse.Namespace) -> None:
     new_edl = edl_core.redo(src)
     if new_edl is None:
         if args.json:
-            print_json({"command": "edl redo", "source": str(src), "redone": False})
+            print_json(json_envelope(
+                "edl redo",
+                {"source": str(src), "redone": False},
+                schema=schema_uri("edl"),
+            ))
             return
         print_warning("redo할 op이 없습니다.")
         return
     if args.json:
-        print_json({"command": "edl redo", "source": str(src), "redone": True,
-                    "n_ops": len(new_edl.ops)})
+        print_json(json_envelope(
+            "edl redo",
+            {"source": str(src), "redone": True, "n_ops": len(new_edl.ops)},
+            schema=schema_uri("edl"),
+        ))
         return
     print_success(f"redo 완료. 현재 op 수: {len(new_edl.ops)}")
 
@@ -264,7 +287,9 @@ def run_render(args: argparse.Namespace) -> None:
         print_error(str(e))
 
     if args.json:
-        print_json({"command": "edl render", **result.to_dict()})
+        print_json(json_envelope(
+            "edl render", result.to_dict(), schema=schema_uri("edl")
+        ))
         return
 
     print_success(f"render 완료: {args.output}")
@@ -282,7 +307,11 @@ def run_status(args: argparse.Namespace) -> None:
 
     if not edl_path.exists():
         if args.json:
-            print_json({"command": "edl status", "source": str(src), "initialized": False})
+            print_json(json_envelope(
+                "edl status",
+                {"source": str(src), "initialized": False},
+                schema=schema_uri("edl"),
+            ))
             return
         output_console.print(f"  (초기화되지 않음. 'audioman edl init {src}')")
         return
@@ -300,7 +329,7 @@ def run_status(args: argparse.Namespace) -> None:
         "modified_at": edl.modified_at,
     }
     if args.json:
-        print_json({"command": "edl status", **info})
+        print_json(json_envelope("edl status", info, schema=schema_uri("edl")))
         return
     output_console.print(f"  Source:        {src}")
     output_console.print(f"  Workspace:     {ws}")
@@ -320,6 +349,10 @@ def run_clear(args: argparse.Namespace) -> None:
     edl_core.save_edl(edl, edl_path)
     edl_core.snapshot_history(edl, src)
     if args.json:
-        print_json({"command": "edl clear", "source": str(src), "n_ops": 0})
+        print_json(json_envelope(
+            "edl clear",
+            {"source": str(src), "n_ops": 0},
+            schema=schema_uri("edl"),
+        ))
         return
     print_success("모든 op 삭제 (history는 유지)")

@@ -4,6 +4,7 @@
 import argparse
 
 from audioman.cli.output import print_error, print_json, print_table, output_console
+from audioman.core.findings import json_envelope, schema_uri
 from audioman.core.registry import get_registry
 from audioman.plugins.vst3 import VST3PluginWrapper
 
@@ -27,11 +28,14 @@ def run(args: argparse.Namespace) -> None:
     meta.param_count = len(params)
 
     if args.json:
-        print_json({
-            "command": "info",
-            "plugin": meta.to_dict(),
-            "parameters": [p.to_dict() for p in params],
-        })
+        print_json(json_envelope(
+            "info",
+            {
+                "plugin": meta.to_dict(),
+                "parameters": [p.to_dict() for p in params],
+            },
+            schema=schema_uri("info"),
+        ))
         return
 
     # 기본 정보

@@ -6,6 +6,7 @@ import json
 import sys
 
 from audioman.cli.output import print_error, print_json, print_success, print_warning, output_console
+from audioman.core.findings import json_envelope, schema_uri
 from audioman.core.engine import parse_params, process_file
 from audioman.core.batch import collect_audio_files, resolve_output_path
 from pathlib import Path
@@ -55,7 +56,7 @@ def _run_single(args: argparse.Namespace, params: dict) -> None:
             "params": params,
         }
         if args.json:
-            print_json(plan)
+            print_json(json_envelope("process", plan, schema=schema_uri("process")))
         else:
             output_console.print(f"[dry-run] {args.input} → [{args.plugin}] → {args.output}")
             if params:
@@ -76,7 +77,7 @@ def _run_single(args: argparse.Namespace, params: dict) -> None:
         print_error(f"처리 실패: {e}")
 
     if args.json:
-        print_json({"command": "process", **result.to_dict()})
+        print_json(json_envelope("process", result.to_dict(), schema=schema_uri("process")))
         return
 
     output_console.print(f"\n[bold]처리 완료[/bold]")
@@ -111,7 +112,7 @@ def _run_batch(args: argparse.Namespace, params: dict, input_dir: Path) -> None:
             "files": [str(f) for f in files],
         }
         if args.json:
-            print_json(plan)
+            print_json(json_envelope("process", plan, schema=schema_uri("process")))
         else:
             output_console.print(f"[dry-run] 배치: {len(files)}개 파일 → [{args.plugin}] → {output_dir}")
         return
@@ -169,11 +170,11 @@ def _run_batch_sequential(args, jobs, total):
             if r["ok"]:
                 ok += 1
                 if args.json:
-                    print(json.dumps({"command": "process", **r["result"]}, ensure_ascii=False, default=str))
+                    print(json.dumps(json_envelope("process", r["result"], schema=schema_uri("process")), ensure_ascii=False, default=str))
             else:
                 fail += 1
                 if args.json:
-                    print(json.dumps({"command": "process", "input": r["input"], "error": r["error"]}, ensure_ascii=False))
+                    print(json.dumps(json_envelope("process", {"input": r["input"], "error": r["error"]}, schema=schema_uri("process")), ensure_ascii=False))
                 elif not args.json:
                     print_warning(f"  {fpath.name}: {r['error']}")
 
@@ -181,6 +182,8 @@ def _run_batch_sequential(args, jobs, total):
 
     if not args.json:
         print_success(f"배치 완료: {ok} 성공, {fail} 실패 / {total} 전체")
+    if fail:
+        sys.exit(1)
 
 
 def _run_batch_parallel(args, jobs, total):
@@ -196,7 +199,7 @@ def _run_batch_parallel(args, jobs, total):
         TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
         TextColumn("{task.completed}/{task.total}"),
         TimeElapsedColumn(),
-        console=output_console,
+        console=output_console, disable=args.json,
     ) as progress:
         task_id = progress.add_task(f"처리 ({args.workers} workers)", total=total)
 
@@ -205,14 +208,16 @@ def _run_batch_parallel(args, jobs, total):
                 if r["ok"]:
                     ok += 1
                     if args.json:
-                        print(json.dumps({"command": "process", **r["result"]}, ensure_ascii=False, default=str))
+                        print(json.dumps(json_envelope("process", r["result"], schema=schema_uri("process")), ensure_ascii=False, default=str))
                 else:
                     fail += 1
                     if args.json:
-                        print(json.dumps({"command": "process", "input": r["input"], "error": r["error"]}, ensure_ascii=False))
+                        print(json.dumps(json_envelope("process", {"input": r["input"], "error": r["error"]}, schema=schema_uri("process")), ensure_ascii=False))
 
                 progress.update(task_id, advance=1,
                     description=f"[{ok+fail}/{total}] {Path(r['input']).name}")
 
     if not args.json:
         print_success(f"배치 완료: {ok} 성공, {fail} 실패 / {total} 전체 ({args.workers} workers)")
+    if fail:
+        sys.exit(1)

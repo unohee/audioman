@@ -12,6 +12,56 @@ from audioman.core.pipeline import PipelineStep, parse_chain_string
 
 logger = logging.getLogger(__name__)
 
+#: Output subtypes a session file is allowed to request. Anything else is rejected
+#: before it reaches soundfile — these are the subtypes this project actually
+#: writes (``core/audio_file.py`` default, ``core/qc.py`` bit-depth mapping,
+#: ``core/plugin_analysis.py`` analysis dumps, ``core/mixer.py`` docstring).
+ALLOWED_SUBTYPES = frozenset({"PCM_16", "PCM_24", "PCM_32", "FLOAT", "DOUBLE"})
+
+
+class SessionPathError(ValueError):
+    """A session file referenced a path outside the session directory."""
+
+
+def _resolve_within_base(raw_path: str, base_dir: Path, field_name: str) -> Path:
+    """Resolve ``raw_path`` and require it to stay inside ``base_dir``.
+
+    Relative paths are resolved against the session directory; absolute paths are
+    accepted only when they already point inside it. ``..`` traversal and absolute
+    paths that land elsewhere are rejected instead of being silently rewritten, so
+    a session file cannot read or overwrite files it does not own.
+
+    Raises:
+        SessionPathError: the resolved path escapes ``base_dir``.
+    """
+    base = base_dir.resolve()
+    candidate = Path(raw_path)
+    if not candidate.is_absolute():
+        candidate = base / candidate
+    resolved = candidate.resolve()
+    if not resolved.is_relative_to(base):
+        raise SessionPathError(
+            f"{field_name} path escapes the session directory: {raw_path!r} "
+            f"(session directory: {base})"
+        )
+    return resolved
+
+
+def validate_subtype(value: Any) -> str:
+    """Return the canonical subtype for ``value`` or raise ``ValueError``.
+
+    The subtype from a session file reaches soundfile's encoder, so only the
+    allowlisted values in ``ALLOWED_SUBTYPES`` are passed through. Case is
+    normalized (soundfile is case-insensitive) but nothing else is rewritten.
+    """
+    allowed = ", ".join(sorted(ALLOWED_SUBTYPES))
+    if not isinstance(value, str):
+        raise ValueError(f"Invalid audio subtype: {value!r} (expected one of: {allowed})")
+    canonical = value.strip().upper()
+    if canonical not in ALLOWED_SUBTYPES:
+        raise ValueError(f"Invalid audio subtype: {value!r} (expected one of: {allowed})")
+    return canonical
+
 
 @dataclass
 class SessionConfig:
@@ -41,10 +91,8 @@ def _parse_track(raw: dict, base_dir: Path) -> TrackConfig:
     if not path:
         raise ValueError("트랙에 'path' 필드가 없습니다")
 
-    # 상대 경로 → 세션 파일 기준 절대 경로로 변환
-    track_path = Path(path)
-    if not track_path.is_absolute():
-        track_path = base_dir / track_path
+    # Relative path -> absolute path under the session directory (never escaping it)
+    track_path = _resolve_within_base(path, base_dir, "track")
 
     chain = None
     chain_raw = raw.get("chain")
@@ -151,14 +199,12 @@ def load_session(path: str | Path) -> SessionConfig:
     if not output:
         raise ValueError("세션 파일에 'output' 항목이 없습니다")
 
-    output_path = Path(output)
-    if not output_path.is_absolute():
-        output_path = base_dir / output_path
+    output_path = _resolve_within_base(output, base_dir, "output")
 
     return SessionConfig(
         tracks=tracks,
         output=str(output_path),
         sample_rate=data.get("sample_rate"),
-        subtype=data.get("format", data.get("subtype", "PCM_24")),
+        subtype=validate_subtype(data.get("format", data.get("subtype", "PCM_24"))),
         master_chain=master_chain,
     )

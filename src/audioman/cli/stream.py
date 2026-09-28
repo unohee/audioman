@@ -11,6 +11,7 @@ import argparse
 from pathlib import Path
 
 from audioman.cli.output import print_error, print_json, print_info, print_table, print_success
+from audioman.core.findings import json_envelope, schema_uri
 
 
 DEFAULT_BLOCK_SIZES = [64, 128, 256, 512, 1024]
@@ -59,7 +60,16 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     p_cmp.set_defaults(func=run_compare)
 
     # --- play ---
-    p_play = sub.add_parser("play", help="Play plugin-processed signal through audio device")
+    p_play = sub.add_parser(
+        "play",
+        help="Play plugin-processed signal through audio device",
+        description=(
+            "Plays the plugin-processed signal through a real audio device for "
+            "listening. The result is audible, not a document, so this subcommand "
+            "deliberately emits no machine-readable payload (no --json flag); use "
+            "`stream bench` or `stream triage` for machine-readable results."
+        ),
+    )
     p_play.add_argument("input", help="Audio file (or 'sine'/'impulse')")
     p_play.add_argument("--plugin", "-p", required=True, help="Plugin name/path, or 'chain:...'")
     p_play.add_argument("--param", action="append", default=[], help="Parameter key=value")
@@ -177,12 +187,16 @@ def run_bench(args: argparse.Namespace) -> None:
         result = render_streamed(audio, sr, fn, block_size=bs, reset_per_block=False)
         reports.append(benchmark(result))
 
-    payload = {
-        "input": args.input,
-        "plugin": args.plugin,
-        "sample_rate": sr,
-        "reports": [r.to_dict() for r in reports],
-    }
+    payload = json_envelope(
+        "stream bench",
+        {
+            "input": args.input,
+            "plugin": args.plugin,
+            "sample_rate": sr,
+            "reports": [r.to_dict() for r in reports],
+        },
+        schema=schema_uri("stream"),
+    )
 
     if getattr(args, "json", False):
         print_json(payload)
@@ -246,7 +260,8 @@ def run_triage(args: argparse.Namespace) -> None:
         from audioman.core.audio_file import write_audio
         write_audio(args.output, streamed.audio, sr)
 
-    env = envelope(findings, file=args.input, extra={
+    env = envelope(findings, file=args.input, schema=schema_uri("stream"),
+                   command="stream triage", extra={
         "stream": {
             "block_size": bs,
             "reset_per_block": args.reset_per_block,
@@ -318,13 +333,17 @@ def run_compare(args: argparse.Namespace) -> None:
         a, b = blocks[i], blocks[i + 1]
         cross.append([f"{a} vs {b}", f"{diff_db(streamed_mono[a], streamed_mono[b]):.2f}"])
 
-    payload = {
-        "input": args.input, "plugin": args.plugin, "sample_rate": sr,
-        "vs_offline_db": {str(b): round(diff_db(ref, streamed_mono[b]), 2) for b in blocks},
-        "cross_block_db": {f"{blocks[i]}_vs_{blocks[i+1]}":
-                           round(diff_db(streamed_mono[blocks[i]], streamed_mono[blocks[i+1]]), 2)
-                           for i in range(len(blocks) - 1)},
-    }
+    payload = json_envelope(
+        "stream compare",
+        {
+            "input": args.input, "plugin": args.plugin, "sample_rate": sr,
+            "vs_offline_db": {str(b): round(diff_db(ref, streamed_mono[b]), 2) for b in blocks},
+            "cross_block_db": {f"{blocks[i]}_vs_{blocks[i+1]}":
+                               round(diff_db(streamed_mono[blocks[i]], streamed_mono[blocks[i+1]]), 2)
+                               for i in range(len(blocks) - 1)},
+        },
+        schema=schema_uri("stream"),
+    )
     if getattr(args, "json", False):
         print_json(payload)
         return
@@ -394,7 +413,7 @@ def run_play(args: argparse.Namespace) -> None:
     try:
         with stream:
             done.wait(timeout=args.duration + audio.shape[1] / sr + 1.0)
-    except KeyboardInterrupt:
+    except KeyboardInterrupt:  # cxt-ignore: exception_hiding - Ctrl-C is how playback is stopped; the prompt above says so
         pass
     if underflows["n"]:
         print_info(f"{underflows['n']} PortAudio underflow(s) — real xruns at block={bs}")
