@@ -1,5 +1,5 @@
 # Created: 2026-03-21
-# Purpose: audioman fx 서브커맨드 — 내장 DSP 이펙트
+# Purpose: audioman fx subcommand — built-in DSP effects
 
 import argparse
 import json
@@ -41,7 +41,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     fo.add_argument("--recursive", "-r", action="store_true")
     fo.add_argument("--suffix", default="")
 
-    # pad (헤드/테일 무음 추가)
+    # pad (add head/tail silence)
     pd = fx_sub.add_parser("pad", help="Prepend/append silence (mastering delivery prep)")
     pd.add_argument("--head-ms", type=float, default=0.0, help="Head silence (ms)")
     pd.add_argument("--head-sec", type=float, default=None, help="Head silence (seconds, overrides --head-ms)")
@@ -67,7 +67,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     tr.add_argument("--recursive", "-r", action="store_true")
     tr.add_argument("--suffix", default="")
 
-    # cut-region (중간 구간 삭제)
+    # cut-region (delete a middle region)
     cr = fx_sub.add_parser("cut-region", help="Delete a middle region and join the remainder")
     cr.add_argument("--start", type=int, default=None, help="Region start sample")
     cr.add_argument("--end", type=int, default=None, help="Region end sample")
@@ -79,7 +79,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     cr.add_argument("--recursive", "-r", action="store_true")
     cr.add_argument("--suffix", default="")
 
-    # splice (다른 클립을 삽입/덮어쓰기/믹스)
+    # splice (insert/overwrite/mix another clip into the input)
     sp = fx_sub.add_parser("splice", help="Insert/overwrite/mix another clip into the input")
     sp.add_argument("--clip", required=True, help="Clip audio file to splice in")
     sp.add_argument("--position", type=int, default=None, help="Splice position sample")
@@ -126,7 +126,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _apply_effect(audio: np.ndarray, sr: int, args: argparse.Namespace) -> np.ndarray:
-    """이펙트 적용"""
+    """Apply the effect"""
     effect = args.effect
 
     if effect == "fade-in":
@@ -174,9 +174,9 @@ def _apply_effect(audio: np.ndarray, sr: int, args: argparse.Namespace) -> np.nd
         clip_audio, clip_sr = read_audio(args.clip)
         if clip_sr != sr:
             raise ValueError(
-                f"Sample rate 불일치: input={sr}Hz, clip={clip_sr}Hz. 클립을 먼저 리샘플링하세요."
+                f"Sample rate mismatch: input={sr}Hz, clip={clip_sr}Hz. Resample the clip first."
             )
-        # 채널 수 자동 정렬: 모노 → 스테레오 broadcast, 스테레오 → 모노 다운믹스
+        # Automatic channel alignment: mono → stereo broadcast, stereo → mono downmix
         in_ch = 1 if audio.ndim == 1 else audio.shape[0]
         clip_ch = 1 if clip_audio.ndim == 1 else clip_audio.shape[0]
         if in_ch != clip_ch:
@@ -186,7 +186,7 @@ def _apply_effect(audio: np.ndarray, sr: int, args: argparse.Namespace) -> np.nd
             elif in_ch == 1 and clip_ch == 2:
                 clip_audio = clip_audio.mean(axis=0)
             else:
-                raise ValueError(f"채널 변환 불가: input={in_ch}ch, clip={clip_ch}ch")
+                raise ValueError(f"Cannot convert channels: input={in_ch}ch, clip={clip_ch}ch")
         position = args.position or 0
         if args.position_sec is not None:
             position = int(args.position_sec * sr)
@@ -200,7 +200,7 @@ def _apply_effect(audio: np.ndarray, sr: int, args: argparse.Namespace) -> np.nd
 
     elif effect == "normalize":
         if args.peak is None and args.target_rms is None:
-            # 기본: peak -1dB
+            # Default: peak -1dB
             return dsp.normalize(audio, peak_db=-1.0)
         return dsp.normalize(audio, peak_db=args.peak, target_rms_db=args.target_rms)
 
@@ -211,18 +211,18 @@ def _apply_effect(audio: np.ndarray, sr: int, args: argparse.Namespace) -> np.nd
         return dsp.gain(audio, args.db)
 
     else:
-        raise ValueError(f"알 수 없는 이펙트: {effect}")
+        raise ValueError(f"Unknown effect: {effect}")
 
 
 def run(args: argparse.Namespace) -> None:
     if not args.effect:
-        print_error("이펙트를 지정해주세요. (fade-in, fade-out, pad, remove-dc, trim, trim-silence, cut-region, splice, normalize, gate, gain)")
+        print_error("Specify an effect. (fade-in, fade-out, pad, remove-dc, trim, trim-silence, cut-region, splice, normalize, gate, gain)")
 
     input_path = Path(args.input)
 
     if input_path.is_dir():
         if args.effect == "splice":
-            print_error("splice는 단일 파일에만 적용 가능합니다 (디렉터리 batch 미지원).")
+            print_error("splice can only be applied to a single file (no directory batch support).")
         _run_batch(args, input_path)
     else:
         _run_single(args, input_path)
@@ -273,7 +273,7 @@ def _run_batch(args: argparse.Namespace, input_dir: Path) -> None:
     files = collect_audio_files(input_dir, recursive=getattr(args, "recursive", False))
 
     if not files:
-        print_error(f"오디오 파일이 없습니다: {input_dir}")
+        print_error(f"No audio files found: {input_dir}")
 
     ok, fail = 0, 0
     for i, fpath in enumerate(files):
@@ -312,4 +312,4 @@ def _run_batch(args: argparse.Namespace, input_dir: Path) -> None:
                 print_warning(f"  [{i+1}/{len(files)}] {fpath.name}: {e}")
 
     if not args.json:
-        print_success(f"배치 완료: {ok} 성공, {fail} 실패 / {len(files)} 전체")
+        print_success(f"Batch complete: {ok} succeeded, {fail} failed / {len(files)} total")

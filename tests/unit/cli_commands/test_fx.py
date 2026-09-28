@@ -1,9 +1,10 @@
 # Created: 2026-09-28
-# Purpose: cli/fx.py 커버리지 — 11개 이펙트 + 배치/디렉토리 모드 (AUD-1851).
+# Purpose: cli/fx.py coverage — the 11 effects + batch/directory mode (AUD-1851).
 #
-# fx는 플러그인을 쓰지 않는 순수 내장 DSP라 이 호스트에서 그대로 돈다. 각
-# 이펙트는 (a) JSON 페이로드와 (b) 실제로 디스크에 쓰인 출력 파일의 샘플
-# 수/진폭을 단정한다. 값이 아니라 "효과가 실제로 적용됐는지"를 본다.
+# fx is pure built-in DSP with no plugins, so it runs as-is on this host. For each
+# effect the test asserts on (a) the JSON payload and (b) the sample count/amplitude
+# of the output file actually written to disk. It checks that the effect really took
+# hold, not just the values.
 
 from __future__ import annotations
 
@@ -28,7 +29,7 @@ def _json(result) -> dict:
 
 
 def _write_silence_tone_silence(path, *, sample_rate=44100, seg_sec=0.2):
-    """무음-톤-무음 3구간 WAV. trim-silence의 앞뒤 pad 경로를 모두 태운다."""
+    """A silence-tone-silence 3-segment WAV. Exercises both pad paths of trim-silence."""
     n = int(sample_rate * seg_sec)
     tone = 0.5 * np.sin(2 * np.pi * 440 * np.arange(n, dtype=np.float32) / sample_rate)
     mono = np.concatenate([np.zeros(n, dtype=np.float32), tone,
@@ -60,13 +61,13 @@ class TestFadeIn:
         audio, sr = read_wav(out)
         assert sr == 44100
         assert np.abs(audio[0, 0]) == pytest.approx(0.0, abs=1e-6)
-        # 440Hz 사인은 개별 샘플이 영점을 지나므로 윈도우 envelope으로 비교한다.
+        # A 440Hz sine crosses zero sample by sample, so compare a window envelope.
         faded = float(np.abs(audio[0, :100]).max())
         mid = float(np.abs(audio[0, 2000:3000]).max())
         after = float(np.abs(audio[0, 5000:6000]).max())
         assert faded < 0.1
         assert faded < mid < after
-        assert after == pytest.approx(0.5, abs=0.01)  # 원음 진폭 회복
+        assert after == pytest.approx(0.5, abs=0.01)  # amplitude back to the original
 
     def test_duration_path_converts_seconds_to_samples(self, tmp_path):
         result, out = _run_effect(tmp_path, "fade-in", "--duration", "0.1")
@@ -80,7 +81,7 @@ class TestFadeIn:
         result = run_command(["--json", "fx", str(src), "fade-in", "-o", str(out)])
         assert result.code == 0
         audio, _ = read_wav(out)
-        # 기본 길이는 sr//10 = 4410 샘플: 그 앞은 눌리고 뒤는 원음이 살아 있다.
+        # Default length is sr//10 = 4410 samples: attenuated before, original after.
         assert float(np.abs(audio[0, :100]).max()) < 0.1
         assert float(np.abs(audio[0, 4410:]).max()) == pytest.approx(0.5, abs=0.01)
 
@@ -102,7 +103,7 @@ class TestFadeIn:
         src = write_wav(tmp_path / "t.wav")
         result = run_command(["--json", "fx", str(src), "fade-in", "--curve", "nope",
                                   "-o", str(tmp_path / "x.wav")])
-        assert result.code == 2       # argparse가 choices 위반을 거부
+        assert result.code == 2       # argparse rejects the choices violation
         assert "invalid choice" in result.err
         assert not (tmp_path / "x.wav").exists()
 
@@ -162,7 +163,7 @@ class TestRemoveDc:
         assert _json(result)["effect"] == "remove-dc"
         audio, _ = read_wav(out)
         assert abs(float(audio.mean())) < 1e-3
-        # 입력은 DC가 있으므로 RMS가 줄어든다.
+        # The input carries DC, so its RMS drops.
         assert _json(result)["output_stats"]["rms"] < _json(result)["input_stats"]["rms"]
 
 
@@ -202,7 +203,7 @@ class TestCutRegion:
             tmp_path, "cut-region", "--start-sec", "0.1", "--end-sec", "0.2",
             "--crossfade-ms", "5",
         )
-        # crossfade는 좌/우 꼬리 길이만큼을 추가로 소비한다 (cf=220 samples).
+        # The crossfade consumes an extra left/right tail (cf=220 samples).
         assert _json(result)["output_stats"]["frames"] == 44100 - 4410 - 220
 
     def test_crossfade_samples_argument(self, tmp_path):
@@ -235,7 +236,7 @@ class TestSplice:
             "--position-sec", "0.5", "--crossfade-ms", "5", "-o", str(out),
         ])
         assert result.code == 0
-        # insert mode: base + clip, 그리고 crossfade가 좌/우 양쪽에서 겹친다.
+        # insert mode: base + clip, and the crossfade overlaps on both the left and right.
         assert _json(result)["output_stats"]["frames"] == 44100 + 11025 - 2 * 220
 
     @pytest.mark.parametrize("mode", ["overwrite", "mix"])
@@ -277,11 +278,11 @@ class TestSplice:
         assert np.allclose(audio[0], audio[1])
 
     def test_stereo_clip_against_mono_input_is_refused_by_dsp(self, tmp_path):
-        """모노 입력 + 스테레오 클립은 CLI에서 다운믹스되지만 dsp가 거부한다.
+        """A mono input with a stereo clip is downmixed by the CLI but refused by dsp.
 
-        `read_audio`가 모노 파일도 (1, n) 2-D로 읽는 반면, 다운믹스 결과는
-        1-D가 되어 shape이 어긋난다. 크래시를 계약으로 고정한다 (조용한
-        오작동이 아니라 명시적 ValueError).
+        `read_audio` reads even a mono file as a (1, n) 2-D array, while the downmix
+        result is 1-D, so the shapes disagree. Pin this crash as the contract (an
+        explicit ValueError, not a silent misbehaviour).
         """
         src = write_wav(tmp_path / "base.wav", channels=1)
         clip = write_wav(tmp_path / "clip.wav", duration=0.1, channels=2)
@@ -294,7 +295,7 @@ class TestSplice:
     def test_unsupported_channel_conversion_raises(self, tmp_path):
         src = write_wav(tmp_path / "base.wav", channels=2)
         clip = write_wav(tmp_path / "clip.wav", duration=0.1, channels=3)
-        with pytest.raises(ValueError, match="채널 변환 불가"):
+        with pytest.raises(ValueError, match="Cannot convert channels"):
             run_command([
                 "--json", "fx", str(src), "splice", "--clip", str(clip),
                 "--position", "0", "-o", str(tmp_path / "x.wav"),
@@ -303,7 +304,7 @@ class TestSplice:
     def test_sample_rate_mismatch_raises(self, tmp_path):
         src = write_wav(tmp_path / "base.wav", sample_rate=44100)
         clip = write_wav(tmp_path / "clip.wav", sample_rate=22050, duration=0.1)
-        with pytest.raises(ValueError, match="Sample rate 불일치"):
+        with pytest.raises(ValueError, match="Sample rate mismatch"):
             run_command([
                 "--json", "fx", str(src), "splice", "--clip", str(clip),
                 "--position", "0", "-o", str(tmp_path / "x.wav"),
@@ -316,7 +317,7 @@ class TestSplice:
             "--clip", str(tmp_path / "in" / "a.wav"), "-o", str(tmp_path / "out"),
         ])
         assert result.code == 1
-        assert "splice는 단일 파일에만 적용 가능" in result.err
+        assert "splice can only be applied to a single file" in result.err
 
 
 class TestTrimSilence:
@@ -332,7 +333,7 @@ class TestTrimSilence:
         assert payload["output_stats"]["frames"] < payload["input_stats"]["frames"]
 
     def test_pad_samples_keep_boundary_margin(self, tmp_path):
-        # 앞뒤 모두 무음이 있어야 pad가 양쪽에서 더해진다.
+        # Both ends must be silent for pad to be added on each side.
         src = _write_silence_tone_silence(tmp_path / "bracketed.wav")
         unpadded = tmp_path / "unpadded.wav"
         padded = tmp_path / "padded.wav"
@@ -341,11 +342,11 @@ class TestTrimSilence:
             "--json", "fx", str(src), "trim-silence", "--pad", "500", "-o", str(padded),
         ])
         assert first.code == 0 and second.code == 0
-        # pad는 앞뒤 경계에 각각 pad_samples를 남긴다.
+        # pad leaves pad_samples at each of the head and tail boundaries.
         assert _json(second)["output_stats"]["frames"] == _json(first)["output_stats"]["frames"] + 1000
 
     def test_pad_is_clamped_at_the_file_boundary(self, tmp_path):
-        # 앞쪽 무음만 있는 파일에서는 pad가 파일 시작(0)에서 잘린다.
+        # With only leading silence, pad is clipped at the start of the file (0).
         src = write_pattern_wav(tmp_path / "lead-only.wav", silence_segments=1)
         unpadded = tmp_path / "u.wav"
         padded = tmp_path / "p.wav"
@@ -394,11 +395,11 @@ class TestNormalize:
 
 class TestGate:
     def test_low_level_passage_is_muted_and_tone_preserved(self, tmp_path):
-        """게이트는 임계값 아래 구간만 눌러야 한다 (파일 전체를 죽이면 안 된다)."""
+        """The gate must attenuate only the below-threshold part (not kill the whole file)."""
         quiet_len, tone_len = 22050, 22050
         src = tmp_path / "gate-fixture.wav"
         tone = 0.5 * np.sin(2 * np.pi * 440 * np.arange(tone_len, dtype=np.float32) / 44100)
-        quiet = np.full(quiet_len, 0.0005, dtype=np.float32)  # -66 dB, 임계값 아래
+        quiet = np.full(quiet_len, 0.0005, dtype=np.float32)  # -66 dB, below the threshold
         mono = np.concatenate([quiet, tone]).astype(np.float32)
         sf.write(str(src), np.stack([mono, mono], axis=1), 44100, subtype="PCM_16")
 
@@ -411,7 +412,7 @@ class TestGate:
         assert _json(result)["effect"] == "gate"
 
         gated, _sr = read_wav(out)
-        # 저레벨 구간은 눌리고, 톤 구간은 그대로 남는다.
+        # The low-level part is attenuated and the tone part survives unchanged.
         assert float(np.abs(gated[:, :20000]).max()) < 0.001
         assert float(np.abs(gated[:, 25000:]).max()) == pytest.approx(0.5, abs=0.01)
         assert gated.shape[1] == quiet_len + tone_len
@@ -449,7 +450,7 @@ class TestHumanOutput:
         assert result.code == 0
         assert out.exists()
         assert "gain complete" in result.err
-        # print_success는 plain/rich 모두 stderr 콘솔로 나간다.
+        # print_success goes to the stderr console in both plain and rich modes.
         assert "gain complete" not in result.out
         assert "RMS:" in result.out
 
@@ -469,7 +470,7 @@ class TestHumanOutput:
             "-o", str(tmp_path / "out.wav"),
         ])
         assert result.code == 1
-        assert "파일 없음" in result.err
+        assert "File not found" in result.err
         assert not (tmp_path / "out.wav").exists()
 
 
@@ -481,25 +482,25 @@ class TestNoEffect:
         assert "fade-in" in result.err and "gain" in result.err
 
     def test_unknown_effect_in_namespace_raises_from_apply_effect(self, tmp_path):
-        """argparse의 choices를 우회한 effect 이름은 _apply_effect가 거부한다.
+        """_apply_effect refuses an effect name that bypassed argparse choices.
 
-        서브커맨드 이름은 parser가 강제하지만, run(args)를 직접 부르는 경로에서는
-        임의 문자열이 들어올 수 있다. 이때 조용히 원본을 통과시키지 않고
-        명시적으로 실패하는지 확인한다.
+        The parser enforces subcommand names, but a path that calls run(args) directly
+        can pass an arbitrary string. Check that it fails explicitly instead of silently
+        returning the input unchanged.
         """
         import argparse
 
         src = write_wav(tmp_path / "t.wav")
         audio, sr = read_wav(src)
         args = argparse.Namespace(effect="nonexistent-effect")
-        with pytest.raises(ValueError, match="알 수 없는 이펙트: nonexistent-effect"):
+        with pytest.raises(ValueError, match="Unknown effect: nonexistent-effect"):
             fx._apply_effect(audio, sr, args)
 
     def test_run_without_effect_reports_usage_and_exits_1(self, tmp_path, capsys):
-        """`effect`가 없는 Namespace로 run()을 직접 부르면 안내 후 종료한다.
+        """Calling run() directly with an effect-less Namespace prints usage and exits.
 
-        argparse는 서브커맨드를 요구하므로 이 분기는 손으로 만든 Namespace로만
-        도달한다. (다른 진입점이 run(args)를 직접 호출할 때의 계약)
+        argparse requires a subcommand, so this branch is only reachable through a
+        hand-built Namespace. (the contract for other entry points calling run(args))
         """
         import argparse
 
@@ -510,7 +511,7 @@ class TestNoEffect:
         with pytest.raises(SystemExit) as excinfo:
             fx.run(args)
         assert excinfo.value.code == 1
-        assert "이펙트를 지정해주세요" in capsys.readouterr().err
+        assert "Specify an effect" in capsys.readouterr().err
 
 
 class TestBatch:
@@ -526,7 +527,7 @@ class TestBatch:
         assert result.code == 0
         assert (out_dir / "a.wav").exists()
         assert (out_dir / "b.wav").exists()
-        assert "배치 완료: 2 성공, 0 실패 / 2 전체" in result.err
+        assert "Batch complete: 2 succeeded, 0 failed / 2 total" in result.err
 
     def test_json_directory_run_emits_one_payload_per_file(self, tmp_path):
         in_dir = tmp_path / "in"
@@ -578,7 +579,7 @@ class TestBatch:
         result = run_command(["--plain", "fx", str(in_dir), "gain", "--db", "-3",
                                   "-o", str(tmp_path / "out")])
         assert result.code == 1
-        assert "오디오 파일이 없습니다" in result.err
+        assert "No audio files found" in result.err
 
     def test_batch_file_level_error_payload(self, tmp_path, monkeypatch):
         in_dir = tmp_path / "in"
@@ -586,7 +587,7 @@ class TestBatch:
         write_wav(in_dir / "a.wav")
         out_dir = tmp_path / "out"
 
-        # 두 번째 호출에서만 _apply_effect가 터지도록 만들어 per-file 실패를 관찰한다.
+        # Make _apply_effect blow up only on the second call to observe the per-file failure.
         calls = {"n": 0}
         real_apply = fx._apply_effect
 
@@ -600,7 +601,7 @@ class TestBatch:
 
         result = run_command(["--json", "fx", str(in_dir), "gain", "--db", "-3",
                                   "-o", str(out_dir)])
-        assert result.code == 0  # 배치는 종료코드를 올리지 않는다 (계약)
+        assert result.code == 0  # batch must not raise the exit code (contract)
         payloads = [json.loads(line) for line in result.out.splitlines() if line.strip()]
         assert len(payloads) == 1
         assert payloads[0]["error"] == "boom"
@@ -620,4 +621,4 @@ class TestBatch:
         assert result.code == 0
         assert "warning:" in result.err
         assert "bad input" in result.err
-        assert "배치 완료: 0 성공, 1 실패 / 1 전체" in result.err
+        assert "Batch complete: 0 succeeded, 1 failed / 1 total" in result.err

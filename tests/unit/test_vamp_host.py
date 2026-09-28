@@ -50,7 +50,7 @@ class TestImportVamp:
     def test_missing_package_raises_install_hint(self, monkeypatch):
         monkeypatch.setitem(sys.modules, "vamp", None)
         # `import vamp` with a None entry raises ImportError → the helper's own message
-        with pytest.raises(ImportError, match="vamp 패키지가 필요합니다"):
+        with pytest.raises(ImportError, match="The 'vamp' package is required"):
             vamp_host._import_vamp()
 
     def test_returns_injected_module(self, stub_vamp):
@@ -163,7 +163,7 @@ class TestResultToFramesAndValues:
 
     def test_matrix_shape_rejected(self):
         res = self._res("matrix", {"matrix": (0.1, np.zeros((2, 2)))})
-        with pytest.raises(ValueError, match="vector/list 변환 불가"):
+        with pytest.raises(ValueError, match="cannot convert vector/list"):
             vamp_host.result_to_frames_and_values(res, 48000)
 
     def test_unknown_shape_rejected(self):
@@ -189,7 +189,7 @@ class TestResultToInstants:
 
     def test_non_list_rejected(self):
         res = vamp_host.VampResult("p", "", "vector", 1000, {"vector": (0.1, [1.0])})
-        with pytest.raises(ValueError, match="list 결과만 지원"):
+        with pytest.raises(ValueError, match="requires a list result"):
             vamp_host.result_to_instants(res, 1000)
 
 
@@ -203,7 +203,7 @@ class TestResultToMatrix:
 
     def test_non_matrix_rejected(self):
         res = vamp_host.VampResult("p", "", "vector", 48000, {"vector": (0.1, [1.0])})
-        with pytest.raises(ValueError, match="matrix 변환 불가"):
+        with pytest.raises(ValueError, match="cannot convert matrix"):
             vamp_host.result_to_matrix(res)
 
 

@@ -1,8 +1,8 @@
 # Created: 2026-09-28
-# Purpose: cli/preset.py 커버리지 — save/load/list/delete + not-found 경로 (AUD-1851).
+# Purpose: cli/preset.py coverage — save/load/list/delete + the not-found path (AUD-1851).
 #
-# 프리셋 저장은 실제 파일을 만든다(AUDIOMAN_PRESET_DIR은 conftest가 tmp_path로
-# 돌려놓는다). not-found 경로는 PresetManager를 실제로 태워 예외를 유도한다.
+# Saving a preset really creates files (conftest points AUDIOMAN_PRESET_DIR at
+# tmp_path). The not-found paths drive PresetManager for real to raise the exception.
 
 from __future__ import annotations
 
@@ -42,14 +42,14 @@ class TestPresetSave:
     def test_plain_mode_reports_saved_path(self, tmp_path):
         result = run_command(["--plain", "preset", "save", "p1", "-p", "plug"])
         assert result.code == 0
-        assert "프리셋 저장:" in result.err
+        assert "Preset saved:" in result.err
         assert str(tmp_path / "presets" / "plug" / "p1.json") in result.err
         assert result.out == ""
 
     def test_rejects_path_traversal_name(self):
-        # 잘못된 이름은 PresetManager가 ValueError로 거부한다. CLI는 이 예외를
-        # 잡지 않는다(= 실제 실행에서는 traceback과 함께 exit 1). 크래시를
-        # 'exit code'로만 뭉개지 않고 어떤 예외인지까지 고정한다.
+        # PresetManager rejects an invalid name with ValueError. The CLI does not catch
+        # it (= in a real run this exits 1 with a traceback). Pin which exception it is
+        # rather than flattening the crash into an 'exit code' assertion.
         with pytest.raises(ValueError, match="single path component"):
             run_command(["--json", "preset", "save", "../escape", "-p", "plug"])
 
@@ -104,14 +104,14 @@ class TestPresetLoad:
     def test_missing_preset_exits_1_with_message(self):
         result = run_command(["--json", "preset", "load", "ghost", "-p", "plug"])
         assert result.code == 1
-        assert "프리셋을 찾을 수 없습니다" in result.err
+        assert "Preset not found" in result.err
         assert "ghost" in result.err
         assert result.out == ""
 
     def test_missing_preset_without_plugin_exits_1(self):
         result = run_command(["--plain", "preset", "load", "ghost"])
         assert result.code == 1
-        assert "error: 프리셋을 찾을 수 없습니다" in result.err
+        assert "error: Preset not found" in result.err
 
 
 class TestPresetList:
@@ -135,7 +135,7 @@ class TestPresetList:
     def test_plain_mode_prints_empty_notice(self):
         result = run_command(["--plain", "preset", "list"])
         assert result.code == 0
-        assert "저장된 프리셋 없음" in result.out
+        assert "No saved presets" in result.out
 
     def test_plain_mode_table_has_name_plugin_params_description(self):
         run_command([
@@ -144,7 +144,7 @@ class TestPresetList:
         ])
         result = run_command(["--plain", "preset", "list", "-p", "plug"])
         assert result.code == 0
-        assert "프리셋 목록" in result.out
+        assert "Preset list" in result.out
         assert "Name\tPlugin\tParams\tDescription" in result.out
         assert "listed\tplug\t1\tdescribed" in result.out
 
@@ -184,12 +184,12 @@ class TestPresetDelete:
         run_command(["--json", "preset", "save", "gone", "-p", "plug"])
         result = run_command(["--plain", "preset", "delete", "gone", "-p", "plug"])
         assert result.code == 0
-        assert "프리셋 삭제: gone" in result.err
+        assert "Preset deleted: gone" in result.err
 
     def test_missing_preset_exits_1_without_deleting(self):
         result = run_command(["--json", "preset", "delete", "ghost", "-p", "plug"])
         assert result.code == 1
-        assert "프리셋을 찾을 수 없습니다" in result.err
+        assert "Preset not found" in result.err
         assert result.out == ""
 
 

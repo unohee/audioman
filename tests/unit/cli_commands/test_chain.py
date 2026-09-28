@@ -1,9 +1,10 @@
 # Created: 2026-09-28
-# Purpose: cli/chain.py 커버리지 — 단일/배치, dry-run, 순차/병렬, 종료코드 (AUD-1851).
+# Purpose: coverage for cli/chain.py - single/batch, dry-run, sequential/parallel, exit codes (AUD-1851).
 #
-# run_pipeline은 실제 VST3를 요구하므로 여기서는 core.pipeline.run_pipeline을
-# 대체하고 CLI의 계획/루프/JSONL/종료코드만 관찰한다. 워커(_chain_one)는 실제
-# run_pipeline을 태우되 이 호스트에서 플러그인이 해석되지 않는 경로를 검증한다.
+# run_pipeline needs real VST3 plugins, so these tests replace
+# core.pipeline.run_pipeline and observe only the CLI's plan/loop/JSONL/exit-code
+# contract. The worker (_chain_one) runs the real run_pipeline and exercises the
+# path where plugin resolution fails on this host.
 
 from __future__ import annotations
 
@@ -30,7 +31,7 @@ def _pipeline_result(input_path, output_path, steps):
 
 @pytest.fixture
 def stub_pipeline(monkeypatch):
-    """chain.run_pipeline을 기록형 페이크로 교체."""
+    """Replace chain.run_pipeline with a recording fake."""
     calls: list[dict] = []
 
     def _run_pipeline(input_path, output_path, steps):
@@ -51,7 +52,7 @@ class TestChainStringParsing:
             "--json", "chain", str(src), "-s", ", ,", "-o", str(tmp_path / "out.wav"),
         ])
         assert result.code == 1
-        assert "처리 단계가 비어있습니다" in result.err
+        assert "Processing chain is empty" in result.err
         assert stub_pipeline == []
 
     def test_parses_plugins_and_params(self, tmp_path, stub_pipeline):
@@ -88,9 +89,9 @@ class TestSingleDryRun:
         assert not (tmp_path / "out.wav").exists()
 
     def test_plain_plan_prints_each_step_with_params(self, tmp_path, stub_pipeline):
-        """step당 한 줄 + 출력 줄. 플러그인/파라미터 텍스트는 아직 살아 있다.
+        """One line per step plus the output line, with plugin/parameter text intact.
 
-        rich 마크업에 먹히는 부분은 별도 테스트에서 고정한다.
+        What rich markup would swallow is pinned by a separate test.
         """
         src = write_wav(tmp_path / "in.wav")
         result = run_command([
@@ -125,7 +126,7 @@ class TestSingleRun:
         ])
         assert result.code == 0
         assert "Chain complete" in result.err
-        assert "완료" in result.err
+        assert "Done" in result.err
         assert "Steps: 2" in result.out
         assert "1. dehum" in result.out
         assert "2. declick" in result.out
@@ -143,27 +144,27 @@ class TestSingleRun:
         src = write_wav(tmp_path / "in.wav")
 
         def _raise(input_path, output_path, steps):
-            raise ValueError("플러그인을 찾을 수 없습니다: 'ghost' (step 1)")
+            raise ValueError("Plugin not found: 'ghost' (step 1)")
 
         monkeypatch.setattr(chain, "run_pipeline", _raise)
         result = run_command([
             "--json", "chain", str(src), "-s", "ghost", "-o", str(tmp_path / "out.wav"),
         ])
         assert result.code == 1
-        assert "플러그인을 찾을 수 없습니다: 'ghost' (step 1)" in result.err
+        assert "Plugin not found: 'ghost' (step 1)" in result.err
 
     def test_file_not_found_from_pipeline_exits_1(self, tmp_path, monkeypatch):
         src = write_wav(tmp_path / "in.wav")
 
         def _raise(input_path, output_path, steps):
-            raise FileNotFoundError("파일 없음: missing.wav")
+            raise FileNotFoundError("File not found: missing.wav")
 
         monkeypatch.setattr(chain, "run_pipeline", _raise)
         result = run_command([
             "--json", "chain", str(src), "-s", "dehum", "-o", str(tmp_path / "out.wav"),
         ])
         assert result.code == 1
-        assert "파일 없음: missing.wav" in result.err
+        assert "File not found: missing.wav" in result.err
 
     def test_unexpected_error_is_wrapped(self, tmp_path, monkeypatch):
         src = write_wav(tmp_path / "in.wav")
@@ -176,7 +177,7 @@ class TestSingleRun:
             "--json", "chain", str(src), "-s", "dehum", "-o", str(tmp_path / "out.wav"),
         ])
         assert result.code == 1
-        assert "체인 처리 실패: chain exploded" in result.err
+        assert "Chain processing failed: chain exploded" in result.err
 
 
 class TestBatchDryRun:
@@ -208,15 +209,15 @@ class TestBatchDryRun:
             "-o", str(tmp_path / "out"), "--dry-run",
         ])
         assert result.code == 0
-        assert "배치: 1개 파일" in result.out
+        assert "batch: 1 files" in result.out
         assert str(tmp_path / "out") in result.out
 
     def test_step_names_survive_in_the_plan_lines(self, tmp_path, stub_pipeline):
-        """`[dehum (…)]` 대괄호 토큰은 계획 줄에서 그대로 보여야 한다.
+        """The `[dehum (…)]` bracket tokens must survive in the plan lines.
 
-        예전에는 `output_console.print`로 문장을 그대로 넘겨 rich가 대괄호를
-        markup으로 해석했고, 플러그인 이름이 통째로 지워져 화살표만 남았다
-        (`  → `, `  → `). AUD-1853 계열의 조용한 정보 손실.
+        Previously the sentence went straight to `output_console.print`, rich
+        parsed the brackets as markup, and the plugin names vanished, leaving
+        only the arrows (`  → `, `  → `). Silent information loss, AUD-1853.
         """
         src = write_wav(tmp_path / "in.wav")
         result = run_command([
@@ -229,7 +230,7 @@ class TestBatchDryRun:
         assert "  → [declick]" in result.out
 
     def test_plain_plan_lines_keep_the_bracket_tokens(self, tmp_path, stub_pipeline):
-        """plain 모드도 같은 계획 줄을 낸다."""
+        """Plain mode emits the same plan lines."""
         src = write_wav(tmp_path / "in.wav")
         result = run_command([
             "--plain", "chain", str(src), "-s", "dehum:freq=60,declick",
@@ -242,7 +243,7 @@ class TestBatchDryRun:
         assert "[" not in result.err
 
     def test_batch_plan_line_keeps_the_step_names(self, tmp_path, stub_pipeline):
-        """배치 계획의 `[step → step]` 토큰도 살아 있어야 한다."""
+        """The `[step → step]` token in the batch plan must survive too."""
         in_dir = tmp_path / "in"
         in_dir.mkdir()
         write_wav(in_dir / "a.wav")
@@ -252,7 +253,7 @@ class TestBatchDryRun:
             "chain", str(in_dir), "-s", "dehum,declick", "-o", str(out_dir), "--dry-run",
         ])
         assert result.code == 0
-        assert f"[dry-run] 배치: 1개 파일 → [dehum → declick] → {out_dir}" in result.out
+        assert f"[dry-run] batch: 1 files → [dehum → declick] → {out_dir}" in result.out
 
 
 class TestBatchRun:
@@ -282,7 +283,7 @@ class TestBatchRun:
             "--plain", "chain", str(in_dir), "-s", "dehum", "-o", str(tmp_path / "out"),
         ])
         assert result.code == 0
-        assert "배치 완료: 2 성공, 0 실패 / 2 전체" in result.err
+        assert "Batch complete: 2 succeeded, 0 failed / 2 total" in result.err
 
     def test_parallel_json_uses_pool(self, tmp_path, stub_pipeline, monkeypatch):
         import multiprocessing
@@ -348,7 +349,7 @@ class TestBatchRun:
         ])
         assert result.code == 1
         assert "warning:" in result.err and "bad chain" in result.err
-        assert "배치 완료: 0 성공, 1 실패 / 1 전체" in result.err
+        assert "Batch complete: 0 succeeded, 1 failed / 1 total" in result.err
 
     def test_parallel_failure_exits_1(self, tmp_path, monkeypatch):
         import multiprocessing
@@ -376,7 +377,7 @@ class TestBatchRun:
             "--plain", "chain", str(in_dir), "-s", "dehum", "-o", str(tmp_path / "out"),
         ])
         assert result.code == 1
-        assert "오디오 파일이 없습니다" in result.err
+        assert "No audio files found" in result.err
 
     def test_recursive_flag_includes_nested_files(self, tmp_path, stub_pipeline):
         in_dir = tmp_path / "in"
@@ -394,7 +395,7 @@ class TestBatchRun:
 
 
 class TestWorkerAndStepRebuild:
-    """워커는 예외를 per-file 실패 결과로 바꾸고, step dict는 라운드트립한다."""
+    """The worker turns exceptions into per-file failures and round-trips step dicts."""
 
     def test_steps_from_dicts_uses_plugin_key(self):
         steps = chain._steps_from_dicts([
@@ -435,7 +436,7 @@ class TestWorkerAndStepRebuild:
         assert r["input"] == str(src)
 
     def test_worker_reports_step_rebuild_errors_as_file_failures(self, tmp_path):
-        """dict가 아닌 steps는 워커 밖으로 예외를 새게 하지 않는다."""
+        """Non-dict steps must not leak an exception past the worker."""
         r = chain._chain_one((str(tmp_path / "in.wav"), str(tmp_path / "o.wav"), ["not-a-dict"]))
         assert r["ok"] is False
         assert r["input"] == str(tmp_path / "in.wav")

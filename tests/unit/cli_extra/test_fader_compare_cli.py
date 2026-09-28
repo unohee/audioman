@@ -172,7 +172,7 @@ class TestGroundTruthValidation:
         result = run_cli(["fader-compare", str(tmp_path / "ghost.json")])
 
         assert result.code == 1
-        assert "파일 없음" in result.stderr
+        assert "File not found" in result.stderr
         assert "Traceback" not in result.stderr
 
     def test_malformed_json_exits_nonzero(self, run_cli, tmp_path):
@@ -181,7 +181,7 @@ class TestGroundTruthValidation:
 
         result = run_cli(["fader-compare", str(bad)])
         assert result.code == 1
-        assert "ground truth JSON을 읽을 수 없습니다" in result.stderr
+        assert "Cannot read ground truth JSON" in result.stderr
         assert "Traceback" not in result.stderr
 
     def test_non_object_json_exits_nonzero(self, run_cli, tmp_path):
@@ -190,7 +190,7 @@ class TestGroundTruthValidation:
 
         result = run_cli(["fader-compare", str(bad)])
         assert result.code == 1
-        assert "최상위가 객체가 아닙니다" in result.stderr
+        assert "Top level of the ground truth JSON is not an object" in result.stderr
         assert "Traceback" not in result.stderr
 
     def test_non_string_source_dir_exits_nonzero(self, run_cli, tmp_path):
@@ -200,7 +200,7 @@ class TestGroundTruthValidation:
 
         result = run_cli(["fader-compare", str(bad)])
         assert result.code == 1
-        assert "source_dir가 유효하지 않습니다" in result.stderr
+        assert "ground truth source_dir is not valid" in result.stderr
         assert "Traceback" not in result.stderr
 
     def test_nonexistent_source_dir_exits_nonzero(self, run_cli, tmp_path):
@@ -211,7 +211,7 @@ class TestGroundTruthValidation:
 
         result = run_cli(["fader-compare", str(bad)])
         assert result.code == 1
-        assert "source_dir가 유효하지 않습니다" in result.stderr
+        assert "ground truth source_dir is not valid" in result.stderr
 
     def test_missing_gains_field_exits_nonzero(self, run_cli, tmp_path, stems_dir, stems):
         bad = tmp_path / "nogains.json"
@@ -219,7 +219,7 @@ class TestGroundTruthValidation:
 
         result = run_cli(["fader-compare", str(bad)])
         assert result.code == 1
-        assert "'gains' 필드가 없습니다" in result.stderr
+        assert "has no 'gains' field" in result.stderr
 
     def test_non_mapping_gains_exits_nonzero(self, run_cli, tmp_path, stems_dir, stems):
         bad = tmp_path / "listgains.json"
@@ -229,7 +229,7 @@ class TestGroundTruthValidation:
 
         result = run_cli(["fader-compare", str(bad)])
         assert result.code == 1
-        assert "'gains' 필드가 없습니다" in result.stderr
+        assert "has no 'gains' field" in result.stderr
 
     def test_source_dir_without_wavs_exits_nonzero(self, run_cli, tmp_path):
         """Was `ZeroDivisionError` after print_error returned."""
@@ -239,7 +239,7 @@ class TestGroundTruthValidation:
 
         result = run_cli(["fader-compare", str(gt)])
         assert result.code == 1
-        assert "source_dir에 wav 없음" in result.stderr
+        assert "No wav files in source_dir" in result.stderr
         assert "Traceback" not in result.stderr
 
     def test_no_matching_track_names_exits_nonzero(self, run_cli, tmp_path,
@@ -249,7 +249,7 @@ class TestGroundTruthValidation:
 
         result = run_cli(["fader-compare", str(gt)])
         assert result.code == 1
-        assert "매칭된 트랙이 없습니다" in result.stderr
+        assert "No tracks matched" in result.stderr
         assert "Traceback" not in result.stderr
 
     def test_non_numeric_gain_exits_nonzero(self, run_cli, tmp_path, stems_dir, stems):
@@ -257,7 +257,7 @@ class TestGroundTruthValidation:
 
         result = run_cli(["fader-compare", str(gt)])
         assert result.code == 1
-        assert "gain 값이 숫자가 아닙니다" in result.stderr
+        assert "gain is not a number" in result.stderr
         assert "Traceback" not in result.stderr
 
     def test_undecodable_stem_reports_the_automix_failure(self, run_cli, tmp_path,
@@ -267,7 +267,7 @@ class TestGroundTruthValidation:
 
         result = run_cli(["fader-compare", str(gt)])
         assert result.code == 1
-        assert "automix 실패" in result.stderr
+        assert "automix failed" in result.stderr
         assert "Traceback" not in result.stderr
 
 

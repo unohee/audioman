@@ -1,9 +1,10 @@
 # Created: 2026-09-28
-# Purpose: cli/dump.py 커버리지 — 단일 플러그인 JSON, --all JSONL, --preset,
+# Purpose: cli/dump.py coverage — single plugin JSON, --all JSONL, --preset,
 #          --save-preset, --output-file (AUD-1851).
 #
-# 이 호스트에는 실제 VST3가 없으므로(AUD-1857) 래퍼를 페이크 플러그인으로
-# 대체한다. 검증 대상은 CLI의 상태 추출/기록 로직과 파일 출력이다.
+# This host has no real VST3 plugins (AUD-1857), so the wrapper is replaced with a
+# fake plugin. What is verified is the CLI's state extraction/recording logic and
+# its file output.
 
 from __future__ import annotations
 
@@ -16,7 +17,7 @@ from harness import FakePlugin, run_command, wrapper_factory
 
 
 class RecordingPlugin(FakePlugin):
-    """파라미터 attribute를 실제로 들고 있는 페이크 플러그인."""
+    """A fake plugin that actually carries parameter attributes."""
 
     def __init__(self):
         super().__init__(
@@ -39,7 +40,7 @@ class ExplodingAttribute(RecordingPlugin):
 
 @pytest.fixture
 def stub_wrapper(monkeypatch):
-    """dump.VST3PluginWrapper를 페이크로 교체."""
+    """Replace dump.VST3PluginWrapper with a fake."""
     monkeypatch.setattr(dump, "VST3PluginWrapper", wrapper_factory(RecordingPlugin))
 
 
@@ -75,13 +76,13 @@ class TestSingleDump:
     def test_unknown_plugin_exits_1(self, fake_registry, stub_wrapper):
         result = run_command(["--json", "dump", "nope"])
         assert result.code == 1
-        assert "플러그인을 찾을 수 없습니다" in result.err
+        assert "Plugin not found" in result.err
         assert result.out == ""
 
     def test_neither_plugin_nor_all_exits_1(self, fake_registry):
         result = run_command(["--json", "dump"])
         assert result.code == 1
-        assert "플러그인 이름 또는 --all" in result.err
+        assert "plugin name or the --all" in result.err
 
     def test_cli_params_are_applied_to_the_wrapper(self, fake_registry, stub_wrapper):
         result = run_command([
@@ -92,7 +93,7 @@ class TestSingleDump:
 
 
 def FakeWrapperLast():
-    """dump가 마지막으로 만든 페이크 래퍼 (파라미터 적용 확인용)."""
+    """The fake wrapper dump created last (for checking applied parameters)."""
     from harness import FakeWrapper
 
     assert FakeWrapper.instances, "no wrapper was constructed"
@@ -101,7 +102,7 @@ def FakeWrapperLast():
 
 class TestPresetIntegration:
     def test_preset_is_loaded_and_applied(self, fake_registry, stub_wrapper, tmp_path):
-        # 실제 프리셋을 먼저 저장한 뒤 dump가 그것을 읽어 적용하는지 본다.
+        # Save a real preset first, then check that dump reads and applies it.
         preset_dir = tmp_path / "presets" / "fake-denoise"
         preset_dir.mkdir(parents=True)
         (preset_dir / "vocal.json").write_text(json.dumps({
@@ -116,7 +117,7 @@ class TestPresetIntegration:
     def test_missing_preset_exits_1(self, fake_registry, stub_wrapper):
         result = run_command(["--json", "dump", "fake-denoise", "--preset", "ghost"])
         assert result.code == 1
-        assert "프리셋을 찾을 수 없습니다" in result.err
+        assert "Preset not found" in result.err
 
     def test_preset_and_param_are_applied_in_order(self, fake_registry, stub_wrapper, tmp_path):
         preset_dir = tmp_path / "presets" / "fake-denoise"
@@ -172,7 +173,7 @@ class TestBatchDump:
     def test_no_plugin_matches_filter_exits_1(self, fake_registry, stub_wrapper):
         result = run_command(["--json", "dump", "--all", "--filter", "zzz"])
         assert result.code == 1
-        assert "조건에 맞는 플러그인이 없습니다" in result.err
+        assert "No plugins match the filter" in result.err
 
     def test_output_file_receives_jsonl_and_stdout_reports_progress(
         self, fake_registry, stub_wrapper, tmp_path
@@ -185,12 +186,12 @@ class TestBatchDump:
         lines = [json.loads(line) for line in target.read_text().splitlines() if line.strip()]
         assert len(lines) == 2
         assert all(line["batch"] is True for line in lines)
-        # 진행 상황은 stdout 콘솔(=result.out)로, 성공 요약은 stderr로 나간다.
+        # Progress goes to the stdout console (=result.out), the success summary to stderr.
         assert "[1/2] fake-denoise (4 params)" in result.out
         assert "Dump complete: 2 ok, 0 failed / 2 total" in result.err
-        # rich는 긴 경로를 줄바꿈하므로 경로 자체의 등장만 확인한다.
+        # rich wraps long paths, so only assert that the path itself appears.
         assert str(target) in result.out
-        assert "출력:" in result.out
+        assert "Output:" in result.out
 
     def test_wrapper_failure_is_recorded_as_error_record(self, fake_registry, monkeypatch, tmp_path):
         class Boom(RecordingPlugin):
@@ -200,7 +201,7 @@ class TestBatchDump:
         monkeypatch.setattr(dump, "VST3PluginWrapper", wrapper_factory(Boom))
         target = tmp_path / "failed.jsonl"
         result = run_command(["--json", "dump", "--all", "--output-file", str(target)])
-        assert result.code == 0  # 실패해도 종료코드는 올리지 않는다 (계약)
+        assert result.code == 0  # a failure must not raise the exit code (contract)
 
         lines = [json.loads(line) for line in target.read_text().splitlines() if line.strip()]
         assert len(lines) == 2
@@ -212,4 +213,4 @@ class TestBatchDump:
     def test_empty_registry_exits_1(self, empty_registry, stub_wrapper):
         result = run_command(["--json", "dump", "--all"])
         assert result.code == 1
-        assert "조건에 맞는 플러그인이 없습니다" in result.err
+        assert "No plugins match the filter" in result.err

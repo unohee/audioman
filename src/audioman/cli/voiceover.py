@@ -1,5 +1,5 @@
 # Created: 2026-04-27
-# Purpose: audioman vo 서브명령 — 보이스오버 분석/디노이즈/레벨링 일괄 처리
+# Purpose: audioman vo subcommand - voiceover analysis/denoise/leveling batch workflow
 
 from __future__ import annotations
 
@@ -27,42 +27,42 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     # vo analyze
     p_analyze = sub.add_parser(
         "analyze",
-        help="VAD + 통계만 — 편집하지 않음",
+        help="VAD + statistics only - does not edit audio",
     )
-    p_analyze.add_argument("input", help="입력 오디오 파일")
+    p_analyze.add_argument("input", help="Input audio file")
     _add_vad_args(p_analyze)
     p_analyze.add_argument(
         "--segments", action="store_true",
-        help="JSON 모드에서 모든 segment 상세 출력 (기본은 요약)",
+        help="In JSON mode print every segment in detail (default: summary)",
     )
     p_analyze.set_defaults(func=_run_analyze)
 
     # vo process
     p_proc = sub.add_parser(
         "process",
-        help="일괄 처리: VAD → denoise → utterance LUFS leveling",
+        help="Batch workflow: VAD -> denoise -> per-utterance LUFS leveling",
     )
-    p_proc.add_argument("input", help="입력 오디오 파일")
-    p_proc.add_argument("--output", "-o", required=True, help="출력 파일")
+    p_proc.add_argument("input", help="Input audio file")
+    p_proc.add_argument("--output", "-o", required=True, help="Output file")
     p_proc.add_argument(
         "--target-lufs", type=float, default=-20.0,
-        help="발화 단위 목표 LUFS (default: -20)",
+        help="Target LUFS per utterance (default: -20)",
     )
     p_proc.add_argument(
         "--max-true-peak", type=float, default=-1.0,
-        help="True Peak 천장 dBTP (default: -1)",
+        help="True peak ceiling in dBTP (default: -1)",
     )
     p_proc.add_argument(
         "--noise-attenuation", type=float, default=-12.0,
-        help="비음성 구간 추가 감쇠 dB (default: -12)",
+        help="Extra attenuation for non-speech regions in dB (default: -12)",
     )
     p_proc.add_argument(
         "--denoise-plugin", default="voice-de-noise",
-        help='RX denoise 플러그인 short name (default: voice-de-noise, "none"이면 skip)',
+        help='RX denoise plugin short name (default: voice-de-noise, "none" to skip)',
     )
     p_proc.add_argument(
         "--denoise-param", action="append", default=[],
-        help="디노이즈 플러그인 파라미터 (key=value, 반복 가능)",
+        help="Denoise plugin parameters (key=value, repeatable)",
     )
     _add_vad_args(p_proc)
     p_proc.set_defaults(func=_run_process)
@@ -72,16 +72,16 @@ def _add_vad_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--vad-threshold", type=float, default=0.5,
                         help="Silero VAD confidence threshold (default: 0.5)")
     parser.add_argument("--min-speech-ms", type=int, default=250,
-                        help="이보다 짧은 음성 구간은 무시 (default: 250)")
+                        help="Speech regions shorter than this are ignored (default: 250)")
     parser.add_argument("--min-silence-ms", type=int, default=200,
-                        help="이보다 짧은 무음은 발화 분할 안 함 (default: 200)")
+                        help="Silence shorter than this does not split an utterance (default: 200)")
     parser.add_argument("--speech-pad-ms", type=int, default=80,
-                        help="검출 구간 양쪽 padding (default: 80)")
+                        help="Padding on both sides of a detected region (default: 80)")
 
 
 def _run_analyze(args: argparse.Namespace) -> None:
     if not Path(args.input).exists():
-        print_error(f"파일이 없습니다: {args.input}")
+        print_error(f"File not found: {args.input}")
 
     try:
         result = voiceover.analyze(
@@ -92,7 +92,7 @@ def _run_analyze(args: argparse.Namespace) -> None:
             speech_pad_ms=args.speech_pad_ms,
         )
     except Exception as e:
-        print_error(f"분석 실패: {e}")
+        print_error(f"Analysis failed: {e}")
         return
 
     if args.json:
@@ -102,7 +102,7 @@ def _run_analyze(args: argparse.Namespace) -> None:
         print_json(json_envelope("vo analyze", result, schema=schema_uri("voiceover")))
         return
 
-    output_console.print(f"\n[bold]보이스오버 분석[/bold]: {result['input']}")
+    output_console.print(f"\n[bold]Voiceover analysis[/bold]: {result['input']}")
     output_console.print(f"  Duration: {result['duration_sec']}s @ {result['sample_rate']}Hz")
     output_console.print(f"  Speech segments: {result['n_speech_segments']}")
     output_console.print(
@@ -129,7 +129,7 @@ def _run_analyze(args: argparse.Namespace) -> None:
 
 def _run_process(args: argparse.Namespace) -> None:
     if not Path(args.input).exists():
-        print_error(f"파일이 없습니다: {args.input}")
+        print_error(f"File not found: {args.input}")
 
     denoise_plugin = args.denoise_plugin
     if denoise_plugin and denoise_plugin.lower() == "none":
@@ -152,13 +152,13 @@ def _run_process(args: argparse.Namespace) -> None:
             speech_pad_ms=args.speech_pad_ms,
         )
     except Exception as e:
-        print_error(f"처리 실패: {e}")
+        print_error(f"Processing failed: {e}")
         return
 
     data = result.to_dict()
 
     if args.json:
-        # per_segment는 길어서 요약만
+        # per_segment is long, so keep only the summary counts
         leveling = data.get("leveling") or {}
         if "per_segment" in leveling:
             leveling["per_segment_count"] = len(leveling["per_segment"])

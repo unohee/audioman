@@ -400,7 +400,7 @@ class TestFadeCurveDriftFallback:
     def test_unregistered_curve_still_raises_so_typos_are_not_swallowed(self):
         from audioman.core.dsp import fade_in
 
-        with pytest.raises(ValueError, match="알 수 없는 fade curve"):
+        with pytest.raises(ValueError, match="Unknown fade curve"):
             fade_in(np.ones(64, dtype=np.float32), 8, curve="not_a_curve_at_all")
 
     def test_shipped_curves_all_take_their_own_branch(self):

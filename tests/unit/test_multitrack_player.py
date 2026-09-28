@@ -172,7 +172,7 @@ class TestConstruction:
             p = MultitrackPlayer(tracks=[long, short], sample_rate=SR)
 
         assert p.total_samples == 500
-        assert "트랙 길이가 다름" in caplog.text
+        assert "Track lengths differ" in caplog.text
 
 
 class TestFromDirectory:
@@ -199,12 +199,12 @@ class TestFromDirectory:
     def test_directory_without_wavs_raises(self, tmp_path):
         with pytest.raises(ValueError) as exc:
             MultitrackPlayer.from_directory(tmp_path)
-        assert "wav 파일 없음" in str(exc.value)
+        assert "No wav files" in str(exc.value)
 
     def test_missing_directory_raises(self, tmp_path):
         with pytest.raises(ValueError) as exc:
             MultitrackPlayer.from_directory(tmp_path / "nope")
-        assert "디렉터리 아님" in str(exc.value)
+        assert "Not a directory" in str(exc.value)
 
     def test_target_sr_validated_against_every_file(self, tmp_path):
         sf.write(str(tmp_path / "a.wav"), np.zeros(64, dtype=np.float32), 8000)

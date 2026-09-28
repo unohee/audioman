@@ -166,7 +166,7 @@ class TestProbeErrors:
     def test_missing_input_exits_nonzero(self, run_cli, tmp_path):
         result = run_cli(["obs", "probe", str(tmp_path / "ghost.mp4")])
         assert result.code == 1
-        assert "파일/폴더 없음" in result.stderr
+        assert "File/folder not found" in result.stderr
 
     def test_unreadable_video_is_reported_and_skipped(self, run_cli, tmp_path):
         """A container ffprobe cannot read must not abort the whole run."""
@@ -206,7 +206,7 @@ class TestDryRunJson:
         report = result.payload["files"][0]
         assert report["treatments"] == []
         assert report["tracks"] == []
-        assert "모든 트랙 무음 — 처리 불필요" in report["notes"]
+        assert "All tracks silent — nothing to process" in report["notes"]
 
     def test_analysis_window_arguments_reach_the_report(self, run_cli, multitrack_video):
         result = run_cli([
@@ -252,7 +252,7 @@ class TestDryRunOutDir:
         assert (out_dir / "multi.json").is_file()
         # Human mode points at the directory it just wrote (the long absolute
         # path wraps at the console width, so match the stable fragments).
-        assert "상세 JSON:" in result.stdout
+        assert "Detailed JSON:" in result.stdout
         assert "nested/reports" in result.stdout
 
 
@@ -280,7 +280,7 @@ class TestDryRunHuman:
         videos.mkdir()
         result = run_cli(["obs", "dry-run", str(videos)])
         assert result.code == 0, result.stderr
-        assert "처리할 항목 없음" in result.stderr
+        assert "Nothing to process" in result.stderr
         assert "OBS dry-run" not in result.stdout
 
 
@@ -288,7 +288,7 @@ class TestDryRunErrors:
     def test_missing_input_exits_nonzero(self, run_cli, tmp_path):
         result = run_cli(["obs", "dry-run", str(tmp_path / "ghost.mp4")])
         assert result.code == 1
-        assert "파일/폴더 없음" in result.stderr
+        assert "File/folder not found" in result.stderr
 
     def test_unreadable_video_is_reported_and_skipped(self, run_cli, tmp_path):
         broken = tmp_path / "broken.mp4"

@@ -83,25 +83,25 @@ Global flags (`--json`, `--plain`, `--verbose`, `--version`) are defined at the 
 
 ## Plugin Click / Dropout Triage (DAW streaming)
 
-실제 DAW(Ableton 등)에서 나는 클릭을 audioman이 재현하고 자동 진단한다. DAW는 오디오를 고정 블록(128/256/512 samples)으로 콜백 처리하며 블록 사이 플러그인 내부 상태를 연속 유지한다 — `stream`은 그 환경을 재현해 오프라인 바운스와 무엇이 다른지 노출한다.
+audioman reproduces and automatically diagnoses the clicks you hear in a real DAW (Ableton, etc.). A DAW processes audio in fixed blocks (128/256/512 samples) via callbacks and keeps plugin internal state continuous across blocks — `stream` reproduces that environment and exposes what differs from an offline bounce.
 
 ```bash
-# 블록 크기별 실시간 CPU 부하 (RT factor, xrun, 동시 트랙 추정)
+# Real-time CPU load per block size (RT factor, xrun, concurrent track estimate)
 audioman stream bench mix.wav -p reverb --blocks 64,128,256,512,1024
 
-# 클릭/불연속 triage — 블록 경계 정렬 = 스트리밍 버그, 비정렬 = 소스 클릭
+# Click/discontinuity triage — block-boundary aligned = streaming bug, unaligned = source click
 audioman --json stream triage mix.wav -p denoise --block-size 512
 
-# 잘못된 호스트 동작(매 블록 reset) 시뮬레이션 — 클릭 강제 유발
+# Simulate a misbehaving host (reset on every block) — forces clicks
 audioman stream triage mix.wav -p denoise --reset-per-block
 
-# 블록 크기 의존 버그: 출력이 블록 크기마다 다른지 null test
+# Block-size-dependent bug: null test whether output differs per block size
 audioman stream compare mix.wav -p delay --blocks 128,256,512
 
-# 실제 오디오 디바이스로 재생 + PortAudio underflow(실 xrun) 카운트
+# Play through a real audio device + count PortAudio underflows (real xruns)
 audioman stream play mix.wav -p reverb --block-size 256
 
-# VST3 없이 테스트: builtin: 접두사로 pedalboard 내장 이펙트 사용
+# Test without VST3: use pedalboard built-in effects via the builtin: prefix
 audioman stream triage sine -p builtin:reverb --reset-per-block
 ```
 
@@ -229,19 +229,19 @@ Built-in analysis types: `spectrogram`, `spectral-centroid`, `spectral-entropy`,
 
 ## OBS multitrack Diagnosis
 
-OBS Studio 영상의 audio 스트림을 자동 진단해 어떤 트랙이 음성/음악/풀믹스인지 식별하고 처치 계획(dry-run)을 만든다.
+Automatically diagnoses the audio streams of OBS Studio videos, identifies which tracks are voice/music/fullmix, and produces a treatment plan (dry-run).
 
 ```bash
-# 트랙 토폴로지만 빠르게 (multitrack/single/duplicated/silent)
+# Track topology only, quickly (multitrack/single/duplicated/silent)
 audioman obs probe /Volumes/T7/OBS/
 
-# 60초 분석 + 진단 + 처치 계획 JSON 저장 (실제 처리 없음)
+# 60-second analysis + diagnosis + treatment plan JSON (no actual processing)
 audioman obs dry-run /Volumes/T7/OBS/ --seconds 60 --out-dir reports/
 ```
 
-각 활성 트랙은 `voice` / `music` / `fullmix` / `silent`로 분류되고, hum / clipping / DC offset / clicks / phase 검사 결과에 맞는 처치 (dehum, declip, voice-de-noise, leveling, stem_separate 등)가 정해진다. 같은 신호 그룹은 자동으로 미러링되어 동일 처치를 받는다.
+Each active track is classified as `voice` / `music` / `fullmix` / `silent`, and a treatment matching the hum / clipping / DC offset / clicks / phase check results (dehum, declip, voice-de-noise, leveling, stem_separate, etc.) is chosen. Identical signal groups are mirrored automatically and receive the same treatment.
 
-자세한 사용법, 분류 규칙, JSON 리포트 구조, 후속 처리 가이드는 [docs/obs-workflow.md](docs/obs-workflow.md) 참조.
+For detailed usage, classification rules, the JSON report structure, and follow-up processing guidance, see [docs/obs-workflow.md](docs/obs-workflow.md).
 
 ## Plugin Analysis (Doctor)
 

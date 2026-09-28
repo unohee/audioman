@@ -78,7 +78,7 @@ class TestDefaultPath:
         assert model["type"] == "dense"
         assert model["dimensions"] == "3"
         assert model["sampleRate"] == "8000"
-        assert "SVL 생성:" in result.stderr
+        assert "SVL written:" in result.stderr
 
     def test_default_spectrogram_bins_are_labelled_by_frequency(self, run_cli, tone):
         assert run_cli(["visualize", str(tone)]).code == 0
@@ -214,7 +214,7 @@ class TestBuiltinSpectrogram:
             ["visualize", str(short), "--builtin", "spectrogram", "--frame-size", "4096"]
         )
         assert result.code == 1
-        assert "spectrogram frame-size보다 짧습니다" in result.stderr
+        assert "Input audio is shorter than the spectrogram frame size" in result.stderr
         assert "samples=1600, frame-size=4096" in result.stderr
 
     def test_compute_spectrogram_rejects_non_positive_sizes(self, tone):
@@ -262,14 +262,16 @@ class TestBuiltinSpectrogram:
 
 
 class TestPlainModeHasNoMarkupTokens:
-    """--plain 출력에 rich 태그 텍스트가 새어 나가면 안 된다.
+    """Rich tag text must not leak into `--plain` output.
 
-    `--plain` 콘솔은 `markup=False`라, 태그가 붙은 문자열을 `console.print`에
-    그대로 넘기면 `[dim]...[/dim]`이 글자 그대로 찍힌다 (AUD-1853). 출력 헬퍼를
-    거치면 plain 경로에서 태그가 제거되고, 태그가 아닌 대괄호 텍스트는 남는다.
+    The `--plain` console uses `markup=False`, so passing a tagged string
+    straight to `console.print` prints `[dim]...[/dim]` verbatim (AUD-1853).
+    Going through the output helpers strips the tags on the plain path while
+    keeping bracket text that is not a tag.
 
-    `real_cli_console_binding`이 필요한 이유는 그 픽스처의 docstring 참고:
-    in-process 테스트는 기본적으로 rich 콘솔이 묶여 있어 누수를 탐지하지 못한다.
+    See that fixture's docstring for why `real_cli_console_binding` is needed:
+    in-process tests normally run against the bound rich console and therefore
+    cannot detect the leak.
     """
 
     TAG_RE = re.compile(r"\[/?(?:dim|bold|red|green|yellow|cyan)[^\]]*\]")
@@ -285,8 +287,8 @@ class TestPlainModeHasNoMarkupTokens:
         assert result.code == 0, result.stderr
         combined = result.stdout + result.stderr
         assert self.TAG_RE.search(combined) is None, combined
-        # 정보 줄은 여전히 나온다 (태그만 사라져야 한다).
-        assert "내장 분석: rms" in result.stderr
+        # Info lines still appear; only the tags should disappear.
+        assert "Built-in analysis: rms" in result.stderr
 
     def test_failure_path_has_no_tag_text(self, run_cli, tmp_path):
         short = write_wav(tmp_path / "short.wav", sample_rate=8000, duration=0.2)
@@ -296,14 +298,14 @@ class TestPlainModeHasNoMarkupTokens:
         assert result.code == 1
         combined = result.stdout + result.stderr
         assert self.TAG_RE.search(combined) is None, combined
-        assert "내장 분석: spectrogram (frame=4096, hop=512)" in result.stderr
+        assert "Built-in analysis: spectrogram (frame=4096, hop=512)" in result.stderr
 
     def test_plugin_listing_header_has_no_tag_text(self, run_cli, monkeypatch):
         monkeypatch.setattr("audioman.core.vamp_host.list_plugins", lambda: ["a:plug"])
         result = run_cli(["visualize", "ignored.wav", "--list-plugins"])
         assert result.code == 0, result.stderr
         assert self.TAG_RE.search(result.stdout) is None, result.stdout
-        assert "설치된 Vamp 플러그인 (1개)" in result.stdout
+        assert "Installed Vamp plugins (1)" in result.stdout
 
     def test_plugin_info_header_has_no_tag_text(self, run_cli, monkeypatch):
         monkeypatch.setattr(
@@ -316,14 +318,14 @@ class TestPlainModeHasNoMarkupTokens:
         assert "lib:plug" in result.stdout
 
     def test_vamp_run_has_no_tag_text(self, run_cli, tone, monkeypatch):
-        """Vamp 경로의 `[dim]Vamp 플러그인 실행: …[/dim]`, `[dim]결과 형태: …[/dim]`."""
+        """The `[dim]Running Vamp plugin: …[/dim]` and `[dim]Result shape: …[/dim]` lines."""
         _FakeVampCollect(monkeypatch, {"vector": (0.0625, [1.0])})
         result = run_cli(["visualize", str(tone), "--plugin", "lib:plug"])
         assert result.code == 0, result.stderr
         combined = result.stdout + result.stderr
         assert self.TAG_RE.search(combined) is None, combined
-        assert "Vamp 플러그인 실행: lib:plug" in result.stderr
-        assert "결과 형태: vector" in result.stderr
+        assert "Running Vamp plugin: lib:plug" in result.stderr
+        assert "Result shape: vector" in result.stderr
 
 
 class TestPngOutput:
@@ -336,7 +338,7 @@ class TestPngOutput:
         assert png.exists()
         assert png.stat().st_size > 0
         assert not (tone.parent / "tone_spectrogram.svl").exists()
-        assert "PNG 생성:" in result.stderr
+        assert "PNG written:" in result.stderr
 
     def test_png_alongside_svl_writes_both(self, run_cli, tone, tmp_path):
         png = tmp_path / "spec.png"
@@ -422,14 +424,14 @@ class TestPngOutput:
         assert result.code == 0, result.stderr
         assert calls and calls[0][0] == "xdg-open"
         # `print_info` in cli/output.py writes to the stderr console.
-        assert "Sonic Visualiser로 열기 시도" in result.stderr
+        assert "Opening in Sonic Visualiser" in result.stderr
 
 
 class TestMissingInput:
     def test_missing_file_exits_nonzero(self, run_cli, tmp_path):
         result = run_cli(["visualize", str(tmp_path / "nope.wav"), "--builtin", "rms"])
         assert result.code == 1
-        assert "파일을 찾을 수 없습니다" in result.stderr
+        assert "File not found" in result.stderr
 
 
 class TestOpenInSonicVisualiser:
@@ -441,7 +443,7 @@ class TestOpenInSonicVisualiser:
 
         monkeypatch.setattr("subprocess.Popen", _boom)
         visualize._open_in_sv(Path("/tmp/does-not-matter.svl"))
-        assert "Sonic Visualiser를 찾을 수 없습니다" in capsys.readouterr().err
+        assert "Sonic Visualiser was not found" in capsys.readouterr().err
 
     def test_darwin_uses_open_with_the_app_name(self, monkeypatch):
         from audioman.cli import visualize
@@ -458,7 +460,7 @@ class TestOpenInSonicVisualiser:
         assert visualize._sv_launcher(Path("/tmp/a.svl")) == ["xdg-open", "/tmp/a.svl"]
 
     def test_unsupported_platform_reports_instead_of_launching(self, monkeypatch, capsys):
-        """런처가 없는 플랫폼은 traceback 없이 안내만 낸다."""
+        """A platform with no launcher only prints the hint, no traceback."""
         from audioman.cli import visualize
 
         calls = []
@@ -466,7 +468,7 @@ class TestOpenInSonicVisualiser:
         monkeypatch.setattr("subprocess.Popen", lambda args: calls.append(args))
         visualize._open_in_sv(Path("/tmp/a.svl"))
         assert calls == []
-        assert "Sonic Visualiser를 찾을 수 없습니다" in capsys.readouterr().err
+        assert "Sonic Visualiser was not found" in capsys.readouterr().err
 
     def test_svl_output_with_open_flag_attempts_launch(self, run_cli, tone, monkeypatch):
         calls = []
@@ -501,14 +503,14 @@ class TestPluginListing:
                             lambda: ["a:plug", "b:plug"])
         result = run_cli(["visualize", "ignored.wav", "--list-plugins"])
         assert result.code == 0, result.stderr
-        assert "설치된 Vamp 플러그인 (2개)" in result.stdout
+        assert "Installed Vamp plugins (2)" in result.stdout
         assert "a:plug" in result.stdout and "b:plug" in result.stdout
 
     def test_no_plugins_installed_is_an_error(self, run_cli, monkeypatch):
         monkeypatch.setattr("audioman.core.vamp_host.list_plugins", lambda: [])
         result = run_cli(["visualize", "ignored.wav", "--list-plugins"])
         assert result.code == 1
-        assert "설치된 Vamp 플러그인이 없습니다" in result.stderr
+        assert "No Vamp plugins installed" in result.stderr
 
     def test_list_plugins_does_not_touch_the_input_path(self, run_cli, tmp_path, monkeypatch):
         """--list-plugins returns before the input existence check."""
@@ -564,7 +566,7 @@ class TestVampPaths:
             ["visualize", str(tone), "--plugin", "fake:plug", "--frame-size", "512", "--hop", "512"]
         )
         assert result.code == 0, result.stderr
-        assert "결과 형태: matrix" in result.stderr
+        assert "Result shape: matrix" in result.stderr
 
         out = tone.parent / "tone_fake_plug.svl"
         assert out.exists()
@@ -584,7 +586,7 @@ class TestVampPaths:
         _FakeVampCollect(monkeypatch, {"vector": (0.0625, [1.0, 2.0, 3.0])})
         result = run_cli(["visualize", str(tone), "--plugin", "lib:pitch-tracker"])
         assert result.code == 0, result.stderr
-        assert "결과 형태: vector" in result.stderr
+        assert "Result shape: vector" in result.stderr
         root = _svl_root(tone.parent / "tone_lib_pitchtracker.svl")
         model = _model(root)
         assert model["units"] == "Hz"
@@ -635,7 +637,7 @@ class TestVampPaths:
         _FakeVampCollect(monkeypatch, {"something_else": 1})
         result = run_cli(["visualize", str(tone), "--plugin", "fake:plug"])
         assert result.code == 1
-        assert "알 수 없는 결과 형태: unknown" in result.stderr
+        assert "Unknown result shape: unknown" in result.stderr
 
     def test_output_name_is_forwarded_to_vamp(self, run_cli, tone, monkeypatch):
         """--output-name reaches vamp.collect as the `output` kwarg."""
@@ -683,4 +685,4 @@ class TestVampAgainstARealPlugin:
         plugin_id = sorted(vamp.list_plugins())[0]
         result = run_cli(["visualize", str(tone), "--plugin", plugin_id])
         assert result.code == 0, result.stderr
-        assert "SVL 생성:" in result.stderr
+        assert "SVL written:" in result.stderr

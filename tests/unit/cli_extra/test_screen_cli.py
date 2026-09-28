@@ -328,7 +328,7 @@ class TestFailures:
         result = run_cli(["screen", str(tmp_path / "ghost.wav")])
 
         assert result.code == 1
-        assert "파일 없음" in result.stderr
+        assert "File not found" in result.stderr
         assert "Traceback" not in result.stderr
 
     def test_undecodable_input_file_exits_nonzero(self, run_cli, tmp_path):

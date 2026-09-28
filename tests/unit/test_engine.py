@@ -138,7 +138,7 @@ class TestProcessFileOffline:
         offline_env.monkeypatch.setattr(
             engine, "get_registry", lambda: SimpleNamespace(get=lambda n: None)
         )
-        with pytest.raises(ValueError, match="플러그인을 찾을 수 없습니다"):
+        with pytest.raises(ValueError, match="Plugin not found"):
             engine.process_file(tmp_path / "in.wav", tmp_path / "o.wav", "missing")
 
     def test_file_info_failure_falls_back_offline(self, offline_env, tmp_path):

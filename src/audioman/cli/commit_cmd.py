@@ -1,5 +1,5 @@
 # Created: 2026-04-05
-# Purpose: audioman commit 서브커맨드 — destructive commit + delay compensation
+# Purpose: audioman commit subcommand — destructive commit + delay compensation
 
 import argparse
 
@@ -32,17 +32,17 @@ def run(args: argparse.Namespace) -> None:
 
     steps = parse_chain_string(args.chain)
     if not steps:
-        print_error("처리 단계가 비어있습니다")
+        print_error("No processing steps given")
         return
 
-    # Dry-run: 레이턴시 측정만
+    # Dry-run: measure latency only
     if args.dry_run:
         from audioman.core.commit import dry_run_commit
 
         try:
             measurements, total = dry_run_commit(steps)
         except Exception as e:
-            print_error(f"레이턴시 측정 실패: {e}")
+            print_error(f"Latency measurement failed: {e}")
             return
 
         if args.json:
@@ -66,13 +66,13 @@ def run(args: argparse.Namespace) -> None:
                     f"(measured={m.measured_latency}, reported={m.reported_latency} {match}) "
                     f"confidence={conf_str}"
                 )
-            sr = 48000  # dry-run 기본 SR
+            sr = 48000  # default sample rate for dry-run
             output_console.print(
                 f"\n  [bold]Total: {total} samples ({total / sr * 1000:.1f}ms @ {sr}Hz)[/bold]"
             )
         return
 
-    # 실제 commit 실행
+    # Actual commit run
     from audioman.core.commit import commit_file
 
     try:
@@ -84,7 +84,7 @@ def run(args: argparse.Namespace) -> None:
             tail_trim=not args.no_tail_trim,
         )
     except Exception as e:
-        print_error(f"커밋 실패: {e}")
+        print_error(f"Commit failed: {e}")
         return
 
     if args.json:
@@ -107,7 +107,7 @@ def run(args: argparse.Namespace) -> None:
             )
         output_console.print(f"    Total: {result.total_latency_samples} samples")
     else:
-        output_console.print(f"  Latency: 0 samples (보상 불필요)")
+        output_console.print(f"  Latency: 0 samples (no compensation needed)")
 
     output_console.print(f"  Time:   {result.duration_seconds}s")
-    print_success("완료")
+    print_success("Done")

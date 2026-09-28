@@ -1,5 +1,5 @@
 # Created: 2026-04-07
-# Purpose: Automix — 계층적 게인 스테이징 (K-20 보정)
+# Purpose: Automix — hierarchical gain staging (K-20 calibration)
 
 import logging
 import re as _re
@@ -16,18 +16,18 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class BandDefinition:
-    """주파수 밴드 정의"""
+    """Frequency band definition"""
     name: str
     low_hz: float
     high_hz: float
 
     @property
     def center_hz(self) -> float:
-        """밴드 중심 주파수 (기하 평균)"""
+        """Band center frequency (geometric mean)"""
         return float(np.sqrt(self.low_hz * self.high_hz))
 
 
-# 기본 4밴드 정의
+# Default 4-band definition
 DEFAULT_BANDS = [
     BandDefinition("sub",  20,    200),
     BandDefinition("low",  200,   800),
@@ -38,7 +38,7 @@ DEFAULT_BANDS = [
 
 @dataclass
 class AutomixResult:
-    """automix 결과"""
+    """automix result"""
     gains_db: list[float]
     band_analysis: list[dict]
     target_profile: dict
@@ -50,7 +50,7 @@ class AutomixResult:
 
 
 # ────────────────────────────────────────────────────────
-# 악기 그룹 분류 + 계층적 게인 스테이징
+# Instrument group classification + hierarchical gain staging
 # ────────────────────────────────────────────────────────
 
 INSTRUMENT_GROUPS = {
@@ -60,7 +60,7 @@ INSTRUMENT_GROUPS = {
             "overhead", "oh", "cymbal", "ride", "crash", "clap",
             "room", "drum", "tambourine", "shaker", "perc",
         ],
-        # 그룹 내 상대 레벨 (dB) — Kick 기준 0dB
+        # relative level within a group (dB) — Kick is the 0 dB reference
         "relative_levels": {
             "kick": 0.0,
             "snare": -3.0,
@@ -100,7 +100,7 @@ INSTRUMENT_GROUPS = {
     },
 }
 
-# 그룹 간 상대 레벨 — Drums 기준 0dB
+# Relative level between groups — Drums is the 0 dB reference
 GROUP_BALANCE_DB = {
     "drums":    0.0,
     "bass":    +2.0,
@@ -114,7 +114,7 @@ GROUP_BALANCE_DB = {
 def classify_tracks(
     track_paths: list[str | Path],
 ) -> dict[str, list[int]]:
-    """트랙 파일명에서 악기 그룹 자동 분류"""
+    """Auto-classify instrument groups from track filenames"""
     result: dict[str, list[int]] = {g: [] for g in INSTRUMENT_GROUPS}
     result["other"] = []
 
@@ -136,7 +136,7 @@ def classify_tracks(
 
 
 def _match_relative_keyword(fname: str, relative_levels: dict) -> float:
-    """파일명에서 가장 구체적인 상대 레벨 키워드 매칭"""
+    """Match the most specific relative-level keyword in the filename"""
     fname_lower = fname.lower().replace("-", "").replace(" ", "").replace("_", "")
     best_match = "_default"
     best_len = 0
@@ -160,12 +160,12 @@ def _to_mono(audio: np.ndarray) -> np.ndarray:
 
 
 def k_weight_magnitude(freqs: np.ndarray, sample_rate: int = 48000) -> np.ndarray:
-    """ITU-R BS.1770 K-weighting 주파수 응답 (magnitude)"""
+    """ITU-R BS.1770 K-weighting frequency response (magnitude)"""
     if sample_rate <= 0:
         raise ValueError(f"sample_rate must be positive, got {sample_rate}")
 
-    # ITU-R BS.1770 De Man 보정 계수. RBJ cookbook 계수를 매 샘플레이트에서
-    # 다시 계산해 48 kHz 전용 응답을 다른 레이트에 재사용하지 않는다.
+    # ITU-R BS.1770 De Man calibration coefficients. The RBJ cookbook coefficients are
+    # recomputed at every sample rate, so the 48 kHz response is not reused at other rates.
     from pyloudnorm import IIRfilter
 
     shelf = IIRfilter(
@@ -195,7 +195,7 @@ K20_REF_LUFS = -20.0
 
 
 # ────────────────────────────────────────────────────────
-# 장르별 스펙트럼 프로파일 (197개 멀티트랙 분석 기반)
+# Per-genre spectral profiles (based on analysis of 197 multitracks)
 # K-weighted, normalized to -1dBFS peak
 # ────────────────────────────────────────────────────────
 
@@ -216,11 +216,11 @@ GENRE_PROFILES = {
         "description": "All genres average (N=197)",
         "bands": {"sub": -25.4, "low": -26.6, "mid": -28.0, "high": -35.1},
     },
-    # YouTube library (47,016곡) k-means k=8 클러스터링 기반.
-    # peak=0dB 정규화된 클러스터 중심값에 -25dB offset을 적용해 기존 프로파일과
-    # 스케일 정합(원본 값과 밴드 간 상대 구조는 보존).
+    # Based on k-means clustering (k=8) of the YouTube library (47,016 tracks).
+    # A -25 dB offset is applied to the peak=0 dB normalized cluster centroids to
+    # match the scale of the existing profiles (original values and inter-band relative structure preserved).
     "yt_rock": {
-        "description": "YouTube c5 — broadband rock/pop standard (N=13447, 최다 클러스터)",
+        "description": "YouTube c5 — broadband rock/pop standard (N=13447, largest cluster)",
         "bands": {"sub": -25.0, "low": -32.6, "mid": -36.9, "high": -47.8},
     },
     "yt_bright_pop": {
@@ -251,10 +251,10 @@ GENRE_PROFILES = {
         "description": "YouTube c4 — dark lo-fi / indie ambient (N=1151, high -70dB)",
         "bands": {"sub": -27.3, "low": -30.7, "mid": -45.1, "high": -70.8},
     },
-    # Archive/Collections (1,713곡, 클럽/테크노 도메인) k-means k=6 기반.
-    # YouTube와 완전히 다른 장르 분포 — 클럽 DJ 셋, 레이블 컴필레이션, 비닐 리핑.
+    # Based on k-means (k=6) of Archive/Collections (1,713 tracks, club/techno domain).
+    # Completely different genre distribution from YouTube — club DJ sets, label compilations, vinyl rips.
     "archive_techno_standard": {
-        "description": "Archive c4 — 클럽 standard techno/house (N=647, 최다)",
+        "description": "Archive c4 — club standard techno/house (N=647, largest)",
         "bands": {"sub": -25.0, "low": -36.7, "mid": -42.6, "high": -51.8},
     },
     "archive_sub_kick_driven": {
@@ -262,7 +262,7 @@ GENRE_PROFILES = {
         "bands": {"sub": -25.0, "low": -43.9, "mid": -47.5, "high": -57.3},
     },
     "archive_minimal_sub": {
-        "description": "Archive c1 — 극미니멀 sub-kick (N=340)",
+        "description": "Archive c1 — ultra-minimal sub-kick (N=340)",
         "bands": {"sub": -25.0, "low": -42.3, "mid": -53.7, "high": -57.0},
     },
     "archive_groovy_low": {
@@ -270,7 +270,7 @@ GENRE_PROFILES = {
         "bands": {"sub": -26.0, "low": -27.9, "mid": -37.2, "high": -49.3},
     },
     "archive_dub_techno": {
-        "description": "Archive c3 — 초어두운 dub-techno (N=152, high -53dB)",
+        "description": "Archive c3 — very dark dub-techno (N=152, high -53dB)",
         "bands": {"sub": -25.3, "low": -41.0, "mid": -56.8, "high": -78.8},
     },
     "archive_midrange_ambient": {
@@ -284,10 +284,10 @@ def genre_profile(
     genre: str = "default",
     bands: Optional[list[BandDefinition]] = None,
 ) -> list[float]:
-    """장르별 사전 계산된 스펙트럼 프로파일 반환
+    """Return a precomputed per-genre spectral profile
 
-    197개 멀티트랙 automix 결과에서 추출한 K-weighted 밴드별 평균 RMS.
-    지원 장르: electronica, pop, rock, default (전체 평균)
+    Per-band average K-weighted RMS extracted from 197 multitrack automix results.
+    Supported genres: electronica, pop, rock, default (overall average)
     """
     if bands is None:
         bands = DEFAULT_BANDS
@@ -299,7 +299,7 @@ def genre_profile(
 
 
 # ────────────────────────────────────────────────────────
-# 밴드별 RMS 측정
+# Per-band RMS measurement
 # ────────────────────────────────────────────────────────
 
 def compute_band_rms(
@@ -308,7 +308,7 @@ def compute_band_rms(
     bands: Optional[list[BandDefinition]] = None,
     k_weighted: bool = True,
 ) -> list[float]:
-    """프레임 단위 FFT → 밴드별 K-weighted RMS (dBFS)"""
+    """Frame-wise FFT → per-band K-weighted RMS (dBFS)"""
     if bands is None:
         bands = DEFAULT_BANDS
 
@@ -371,14 +371,14 @@ def compute_broadband_rms_db(audio: np.ndarray, sample_rate: int, k_weighted: bo
 
 
 # ────────────────────────────────────────────────────────
-# 타겟 프로파일
+# Target profiles
 # ────────────────────────────────────────────────────────
 
 def pink_noise_profile(
     bands: Optional[list[BandDefinition]] = None,
     ref_level_db: float = -20.0,
 ) -> list[float]:
-    """Pink noise (-3 dB/octave) 프로파일"""
+    """Pink noise (-3 dB/octave) profile"""
     if bands is None:
         bands = DEFAULT_BANDS
     ref_center = bands[0].center_hz
@@ -390,7 +390,7 @@ def reference_profile(
     bands: Optional[list[BandDefinition]] = None,
     k_weighted: bool = True,
 ) -> list[float]:
-    """레퍼런스 트랙에서 밴드별 RMS 프로파일 추출"""
+    """Extract the per-band RMS profile from a reference track"""
     if bands is None:
         bands = DEFAULT_BANDS
     audio, sr = read_audio(ref_path)
@@ -398,7 +398,7 @@ def reference_profile(
 
 
 # ────────────────────────────────────────────────────────
-# 계층적 게인 스테이징
+# Hierarchical gain staging
 # ────────────────────────────────────────────────────────
 
 def compute_automix_gains(
@@ -410,15 +410,15 @@ def compute_automix_gains(
     group_balance: Optional[dict[str, float]] = None,
     track_rms_db: Optional[list[float]] = None,
 ) -> tuple[list[float], float, Optional[dict]]:
-    """계층적 게인 스테이징
+    """Hierarchical gain staging
 
-    2단계:
-      1) 그룹 내 밸런스 — 악기별 관행 기반 상대 레벨
-         Kick=0dB, Snare=-3dB, OH=-8dB, Tambourine=-12dB 등
-      2) 그룹 간 밸런스 — 타겟 스펙트럼 기반
-         Drums=0dB, Vocals=-1dB, Bass=-2dB, Guitars=-4dB
+    Two stages:
+      1) In-group balance — practice-based relative levels per instrument
+         Kick=0 dB, Snare=-3 dB, OH=-8 dB, Tambourine=-12 dB, etc.
+      2) Between-group balance — based on the target spectrum
+         Drums=0 dB, Vocals=-1 dB, Bass=-2 dB, Guitars=-4 dB
 
-    track_paths가 없으면 flat 방식(broadband RMS 균등화)으로 폴백.
+    Falls back to the flat method (broadband RMS equalization) when track_paths is None.
     """
     n_tracks = len(tracks_band_rms)
     n_bands = len(target_band_rms)
@@ -442,13 +442,13 @@ def compute_automix_gains(
         if group_balance is None:
             group_balance = GROUP_BALANCE_DB
 
-        # ── Step 1: 그룹 내 밸런스 ──
-        # 각 그룹의 가장 큰 트랙을 기준(0dB)으로 나머지에 상대 레벨 적용
+        # ── Step 1: in-group balance ──
+        # use each group's loudest track as the reference (0 dB) and apply relative levels to the rest
         for group_name, indices in groups.items():
             group_def = INSTRUMENT_GROUPS.get(group_name, {})
             rel_levels = group_def.get("relative_levels", {"_default": 0.0})
 
-            # 그룹 내 트랙별 현재 RMS
+            # current RMS per track within the group
             group_rms = [(idx, track_rms_db[idx]) for idx in indices]
             ref_rms = max(rms for _, rms in group_rms)
 
@@ -458,11 +458,11 @@ def compute_automix_gains(
                 desired_rms = ref_rms + target_relative
                 gains_db_arr[idx] = desired_rms - current_rms
 
-        # ── Step 2: 그룹 간 밸런스 ──
-        # 각 그룹의 합산 RMS를 계산하고, 그룹 간 상대 레벨에 맞춤
+        # ── Step 2: between-group balance ──
+        # compute each group's summed RMS and match the between-group relative levels
         group_sum_rms_db = {}
         for group_name, indices in groups.items():
-            # 그룹 내 gain 적용 후 합산 파워
+            # summed power after applying in-group gains
             group_power = 0.0
             for idx in indices:
                 gain_linear = 10.0 ** (gains_db_arr[idx] / 20.0)
@@ -470,7 +470,7 @@ def compute_automix_gains(
                 group_power += (rms_linear * gain_linear) ** 2
             group_sum_rms_db[group_name] = 10.0 * np.log10(max(group_power, 1e-20))
 
-        # 기준 그룹 = drums (있으면)
+        # reference group = drums (if present)
         ref_group = "drums" if "drums" in groups else max(
             groups, key=lambda g: group_sum_rms_db.get(g, -120)
         )
@@ -489,7 +489,7 @@ def compute_automix_gains(
             for idx in indices:
                 gains_db_arr[idx] += correction
 
-        # ── Step 3: 전체 레벨을 타겟에 맞춤 ──
+        # ── Step 3: match the overall level to the target ──
         gains_linear = 10.0 ** (gains_db_arr / 10.0)
         mix_power = np.zeros(n_bands)
         for t in range(n_tracks):
@@ -500,18 +500,18 @@ def compute_automix_gains(
             gains_db_arr += 10.0 * np.log10(target_total / mix_total)
 
     else:
-        # ── Flat 방식 ──
+        # ── Flat method ──
         target_total = np.sum(target_vec)
         for t in range(n_tracks):
             tp = np.sum(A[:, t])
             if tp > 1e-20:
                 gains_db_arr[t] = 10.0 * np.log10(target_total / n_tracks / tp)
 
-    # 클리핑 + 반올림
+    # clip + round
     gains_db_arr = np.clip(gains_db_arr, min_gain_db, max_gain_db)
     gains_db = [round(float(g), 1) for g in gains_db_arr]
 
-    # 잔차
+    # residual
     gl = 10.0 ** (gains_db_arr / 10.0)
     recon = np.zeros(n_bands)
     for t in range(n_tracks):
@@ -523,7 +523,7 @@ def compute_automix_gains(
 
 
 # ────────────────────────────────────────────────────────
-# 메인 진입점
+# Main entry point
 # ────────────────────────────────────────────────────────
 
 def automix(
@@ -536,17 +536,17 @@ def automix(
     min_gain_db: float = -24.0,
     k_weighted: bool = True,
 ) -> AutomixResult:
-    """계층적 automix — 그룹 내/간 밸런싱 + K-20 보정
+    """Hierarchical automix — in-group/between-group balancing + K-20 calibration
 
-    1) 트랙명에서 악기 그룹 자동 분류 (drums/bass/guitars/keys/vocals/other)
-    2) 그룹 내: 엔지니어 관행 기반 상대 레벨 (Kick=0, Snare=-3, OH=-8 등)
-    3) 그룹 간: Drums=0, Vocals=-1, Bass=-2, Guitars=-4dB
-    4) 전체 레벨을 K-20 pink noise (또는 reference) 타겟에 맞춤
+    1) Auto-classify instrument groups from track names (drums/bass/guitars/keys/vocals/other)
+    2) In-group: engineer-practice-based relative levels (Kick=0, Snare=-3, OH=-8, etc.)
+    3) Between-group: Drums=0, Vocals=-1, Bass=-2, Guitars=-4 dB
+    4) Match the overall level to the K-20 pink noise (or reference) target
     """
     if bands is None:
         bands = DEFAULT_BANDS
 
-    # 타겟 프로파일
+    # target profile
     if target == "reference" and reference_path:
         target_rms = reference_profile(reference_path, bands, k_weighted=k_weighted)
         target_info = {"type": "reference", "path": str(reference_path), "k_weighted": k_weighted}
@@ -560,7 +560,7 @@ def automix(
         target_info = {"type": "pink_noise", "ref_level_db": ref_level_db, "k_weighted": k_weighted}
     target_info["bands"] = {b.name: round(rms, 1) for b, rms in zip(bands, target_rms)}
 
-    # 트랙별 분석
+    # per-track analysis
     tracks_band_rms = []
     track_rms_db = []
     band_analysis = []
@@ -577,7 +577,7 @@ def automix(
             "rms_db": round(broadband, 1),
         })
 
-    # 계층적 gain 계산
+    # hierarchical gain computation
     gains_db, residual, groups = compute_automix_gains(
         tracks_band_rms, target_rms,
         max_gain_db=max_gain_db,

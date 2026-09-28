@@ -1,4 +1,4 @@
-# tests/unit/test_session.py — 세션 파일 파싱 테스트
+# tests/unit/test_session.py - session file parsing tests
 
 import json
 import pytest
@@ -8,12 +8,12 @@ from audioman.core.session import load_session
 
 
 class TestLoadSession:
-    """YAML/JSON 세션 파일 파싱"""
+    """YAML/JSON session file parsing."""
 
     def test_yaml_session(self, tmp_path):
-        """YAML 세션 파일 파싱"""
+        """YAML session file parsing."""
         session_file = tmp_path / "session.yaml"
-        # 더미 트랙 파일 생성
+        # Create dummy track files
         (tmp_path / "vocals.wav").touch()
         (tmp_path / "guitar.wav").touch()
 
@@ -51,11 +51,11 @@ master:
 
         assert config.sample_rate == 48000
         assert config.subtype == "PCM_24"
-        # 상대 경로가 세션 파일 기준 절대 경로로 변환됨
+        # The relative path was turned into an absolute path under the session dir
         assert Path(config.output).is_absolute()
 
     def test_json_session(self, tmp_path):
-        """JSON 세션 파일 파싱"""
+        """JSON session file parsing."""
         session_file = tmp_path / "session.json"
         (tmp_path / "track1.wav").touch()
 
@@ -69,10 +69,10 @@ master:
 
         config = load_session(session_file)
         assert len(config.tracks) == 1
-        assert config.subtype == "PCM_24"  # 기본값
+        assert config.subtype == "PCM_24"  # default
 
     def test_missing_tracks(self, tmp_path):
-        """tracks 없으면 에러"""
+        """Missing tracks is an error."""
         session_file = tmp_path / "bad.yaml"
         session_file.write_text("output: out.wav\n")
 
@@ -80,7 +80,7 @@ master:
             load_session(session_file)
 
     def test_missing_output(self, tmp_path):
-        """output 없으면 에러"""
+        """Missing output is an error."""
         session_file = tmp_path / "bad.yaml"
         (tmp_path / "t.wav").touch()
         session_file.write_text("tracks:\n  - path: t.wav\n")
@@ -89,7 +89,7 @@ master:
             load_session(session_file)
 
     def test_relative_paths_resolved(self, tmp_path):
-        """상대 경로 → 세션 파일 디렉토리 기준 절대 경로"""
+        """A relative path resolves against the session file directory."""
         subdir = tmp_path / "project"
         subdir.mkdir()
         (subdir / "vocal.wav").touch()

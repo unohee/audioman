@@ -170,7 +170,7 @@ class TestCommitFile:
 
     def test_unknown_plugin_raises(self, env, tmp_path):
         src = _write(tmp_path / "in.wav", np.ones((2, 100), dtype=np.float32) * 0.1)
-        with pytest.raises(ValueError, match="플러그인을 찾을 수 없습니다"):
+        with pytest.raises(ValueError, match="Plugin not found"):
             commit.commit_file(src, tmp_path / "out.wav", [PipelineStep("missing", {})])
 
     def test_result_to_dict(self, env, tmp_path):

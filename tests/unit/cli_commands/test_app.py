@@ -1,9 +1,9 @@
 # Created: 2026-09-28
-# Purpose: cli/app.py 커버리지 — 최상위 파서/디스패치 (AUD-1851).
+# Purpose: coverage for cli/app.py — top-level parser/dispatch (AUD-1851).
 #
-# app.main은 모든 커맨드의 진입점이므로, 여기서는 (a) 커맨드 없는 호출이 도움말을
-# 내고 exit 0 하는 경로, (b) --verbose가 로깅을 켜는 경로, (c) --plain/환경변수가
-# plain 콘솔을 재구성하는 경로, (d) 실제 디스패치를 확인한다.
+# app.main is the entry point for every command, so these tests cover (a) a call with no
+# command printing help and exiting 0, (b) --verbose turning logging on, (c) --plain/env
+# vars rebuilding the plain console, and (d) the actual dispatch.
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ def restore_plain():
 class TestParser:
     def test_build_parser_registers_every_command(self):
         parser = app.build_parser()
-        # subparsers action이 노출하는 choices로 등록 여부를 본다.
+        # Check registration through the choices the subparsers action exposes.
         subparsers = next(
             action for action in parser._actions if getattr(action, "choices", None)
             and "scan" in action.choices
@@ -69,7 +69,7 @@ class TestDispatch:
         result = run_cli(["--plain", "scan"])
         assert result.code == 0
         assert fake_registry.scan_calls, "scan command did not reach the registry"
-        assert "발견된 플러그인" in result.out
+        assert "Plugins found" in result.out
 
 
 class TestVerboseLogging:
@@ -103,16 +103,16 @@ class TestPlainModeWiring:
         assert output_module.is_plain() is True
 
     def test_plain_flag_sets_env_for_i18n_detection(self, fake_registry, monkeypatch):
-        """`--plain`은 import 시점 i18n 감지를 위해 env도 세팅해야 한다."""
+        """`--plain` must also set the env var for the import-time i18n detection."""
         monkeypatch.delenv("AUDIOMAN_PLAIN", raising=False)
         run_cli(["--plain", "scan"])
-        # run_cli가 원래 값을 복원하므로, 세팅 여부는 _early_plain_detect로 확인한다.
+        # run_cli restores the original value, so check via _early_plain_detect.
         assert app._early_plain_detect(["--plain"]) is True
 
     def test_early_plain_detect_reads_argv_then_env(self, monkeypatch):
         monkeypatch.delenv("AUDIOMAN_PLAIN", raising=False)
         assert app._early_plain_detect(["--plain", "scan"]) is True
-        # 위 호출은 env까지 세팅하는 부작용이 있으므로 지우고 다시 본다.
+        # The call above also sets the env var, so clear it and check again.
         monkeypatch.delenv("AUDIOMAN_PLAIN", raising=False)
         assert app._early_plain_detect(["scan"]) is False
         monkeypatch.setenv("AUDIOMAN_PLAIN", "yes")

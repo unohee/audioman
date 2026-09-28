@@ -1,4 +1,4 @@
-# tests/unit/test_pipeline.py — 파이프라인 파싱 + 데이터 구조 테스트
+# tests/unit/test_pipeline.py — pipeline parsing + data structure tests
 
 import pytest
 
@@ -22,7 +22,7 @@ class TestPipelineStep:
 
 
 class TestParseChainString:
-    """체인 문자열 파싱"""
+    """Chain string parsing"""
 
     def test_single_plugin(self):
         steps = parse_chain_string("denoise")

@@ -1,5 +1,5 @@
 # Created: 2026-03-21
-# Purpose: audioman list 서브커맨드
+# Purpose: audioman list subcommand
 
 import argparse
 
@@ -36,7 +36,7 @@ def run(args: argparse.Namespace) -> None:
         rows.append([p.short_name, p.name, p.format, str(p.param_count), aliases])
 
     print_table(
-        f"플러그인 목록 ({len(plugins)}개)",
+        f"Plugin list ({len(plugins)})",
         ["Short Name", "Full Name", "Format", "Params", "Aliases"],
         rows,
     )

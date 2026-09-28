@@ -1,5 +1,5 @@
 # Created: 2026-04-27
-# Purpose: 보이스오버 일괄 처리 — VAD → RX denoise → utterance LUFS leveling
+# Purpose: Voiceover batch processing — VAD → RX denoise → utterance LUFS leveling
 # Dependencies: vad.py, loudness.py, RX 10 Voice De-noise (VST3)
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ def analyze(
     min_silence_ms: int = 200,
     speech_pad_ms: int = 80,
 ) -> dict:
-    """파일을 읽어 VAD만 실행, 통계와 segment 목록 반환 (편집 안 함)."""
+    """Read the file and run VAD only; return statistics and the segment list (no editing)."""
     audio, sr = read_audio(input_path)
     speech = detect_speech(
         audio, sr,
@@ -90,11 +90,11 @@ def _apply_denoise(
     plugin_short_name: str,
     params: dict[str, Any] | None,
 ) -> tuple[np.ndarray, str]:
-    """RX denoise 플러그인을 전체 오디오에 적용. (output, plugin_full_name) 반환."""
+    """Apply the RX denoise plugin to the whole audio. Returns (output, plugin_full_name)."""
     registry = get_registry()
     meta = registry.get(plugin_short_name)
     if not meta:
-        raise ValueError(f"플러그인을 찾을 수 없습니다: '{plugin_short_name}'")
+        raise ValueError(f"Plugin not found: '{plugin_short_name}'")
     wrapper = VST3PluginWrapper(meta.path)
     wrapper.load()
     if params:
@@ -117,12 +117,12 @@ def process(
     min_silence_ms: int = 200,
     speech_pad_ms: int = 80,
 ) -> VoiceoverResult:
-    """보이스오버 일괄 처리.
+    """Voiceover batch processing.
 
-    1) VAD로 음성/노이즈 구간 식별 (길이 유지)
-    2) 전체 오디오에 RX denoise 적용 (denoise_plugin이 None이면 skip)
-    3) 발화 단위 LUFS 레벨링 + 노이즈 구간 manual attenuation
-    4) TP 천장 보정 후 저장
+    1) Identify speech/noise regions with VAD (length preserved)
+    2) Apply RX denoise to the whole audio (skipped when denoise_plugin is None)
+    3) Per-utterance LUFS leveling + manual attenuation of noise regions
+    4) Correct the TP ceiling, then write
     """
     audio, sr = read_audio(input_path)
     measured_in = measure(audio, sr)
@@ -143,13 +143,13 @@ def process(
         len(speech), speech_sec, noise_sec,
     )
 
-    # 2) Denoise (전체 오디오)
+    # 2) Denoise (whole audio)
     plugin_full_name: str | None = None
     if denoise_plugin:
         logger.info("Applying denoise: %s", denoise_plugin)
         audio, plugin_full_name = _apply_denoise(audio, sr, denoise_plugin, denoise_params)
 
-    # 3) Per-utterance LUFS leveling + noise attenuation (길이 유지)
+    # 3) Per-utterance LUFS leveling + noise attenuation (length preserved)
     leveled, leveling_meta = level_utterances(
         audio, sr,
         speech_segments=speech,

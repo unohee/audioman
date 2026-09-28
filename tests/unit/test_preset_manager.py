@@ -62,7 +62,7 @@ class TestPresetManagerResidual:
         assert [p.name for p in presets] == ["good"]
 
     def test_delete_missing_raises(self, manager):
-        with pytest.raises(FileNotFoundError, match="프리셋을 찾을 수 없습니다"):
+        with pytest.raises(FileNotFoundError, match="Preset not found"):
             manager.delete("does-not-exist", plugin="denoise")
 
     def test_find_preset_without_plugin_scans_dirs(self, manager):

@@ -319,7 +319,7 @@ class TestBatch:
         result = run_cli(["observe", str(src_dir)])
         assert result.code == 0, result.stderr
         assert result.stdout.count("Findings:") == 2
-        assert "배치 완료: 2 성공, 0 실패 / 2 전체" in result.stderr
+        assert "Batch complete: 2 succeeded, 0 failed / 2 total" in result.stderr
 
     def test_empty_directory_exits_nonzero(self, run_cli, tmp_path):
         src_dir = tmp_path / "audio"
@@ -337,7 +337,7 @@ class TestFailures:
         result = run_cli(["observe", str(ghost)])
 
         assert result.code == 1
-        assert "파일 없음" in result.stderr
+        assert "File not found" in result.stderr
         assert "Traceback" not in result.stderr
 
     def test_undecodable_input_file_exits_nonzero(self, run_cli, tmp_path):
@@ -386,7 +386,7 @@ class TestFailures:
         assert result.code == 1
         assert "warning:" in result.stderr
         assert "broken.wav" in result.stderr
-        assert "배치 완료: 1 성공, 1 실패 / 2 전체" in result.stderr
+        assert "Batch complete: 1 succeeded, 1 failed / 2 total" in result.stderr
 
     def test_batch_exit_is_zero_when_every_file_succeeds(self, run_cli, tmp_path):
         src_dir = tmp_path / "audio"
@@ -395,7 +395,7 @@ class TestFailures:
 
         result = run_cli(["observe", str(src_dir)])
         assert result.code == 0
-        assert "배치 완료: 1 성공, 0 실패 / 1 전체" in result.stderr
+        assert "Batch complete: 1 succeeded, 0 failed / 1 total" in result.stderr
 
 
 class TestArgumentValidation:

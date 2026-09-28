@@ -1,5 +1,5 @@
 # Created: 2026-03-21
-# Purpose: pedalboard 기반 VST3 플러그인 래퍼
+# Purpose: pedalboard-based VST3 plugin wrapper
 
 import logging
 import math
@@ -96,7 +96,7 @@ def validate_audio_block(audio: np.ndarray) -> np.ndarray:
 
 
 class VST3PluginWrapper:
-    """pedalboard load_plugin 기반 VST3 래퍼"""
+    """VST3 wrapper built on pedalboard ``load_plugin``."""
 
     def __init__(self, path: str | Path) -> None:
         self._path = Path(path)
@@ -116,8 +116,8 @@ class VST3PluginWrapper:
             return
         import os
         from pedalboard import load_plugin
-        logger.debug(f"VST3 로드: {self._path}")
-        # iZotope 플러그인 로드 시 objc 런타임 로그가 stdout에 출력되는 문제 억제
+        logger.debug(f"Loading VST3: {self._path}")
+        # Suppress the objc runtime log that iZotope plugins print to stdout on load
         devnull: Optional[int] = None
         old_stdout: Optional[int] = None
         old_stderr: Optional[int] = None
@@ -146,7 +146,7 @@ class VST3PluginWrapper:
                     os.close(devnull)
 
     def get_parameters(self) -> list[ParameterInfo]:
-        """플러그인 파라미터 목록 추출"""
+        """Extract the plugin parameter list."""
         if self._parameters is not None:
             return self._parameters
 
@@ -154,14 +154,14 @@ class VST3PluginWrapper:
         params = []
 
         for attr_name, param in self._plugin.parameters.items():
-            # 파라미터 범위 추출
+            # Extract the parameter range
             try:
                 rng = param.range
                 min_val, max_val, step = rng
             except Exception:
                 min_val = max_val = step = None
 
-            # 현재값 읽기
+            # Read the current value
             try:
                 current = getattr(param, "value", None)
                 if current is None:
@@ -171,7 +171,7 @@ class VST3PluginWrapper:
             except Exception:
                 current = None
 
-            # 타입 추론
+            # Infer the type
             if isinstance(current, bool):
                 param_type = "bool"
             elif isinstance(current, str):
@@ -220,31 +220,33 @@ class VST3PluginWrapper:
             info = find_parameter_info(infos, name)
             if info is not None:
                 validate_parameter_value(name, value, info)
-            # 언더스코어/공백 양쪽 지원
+            # Accept both underscore and space forms
             attr_name = name.replace(" ", "_")
             try:
                 setattr(self._plugin, attr_name, value)
-                logger.debug(f"파라미터 설정: {attr_name} = {value}")
+                logger.debug(f"Set parameter: {attr_name} = {value}")
             except AttributeError:
-                # 공백 포함 이름 시도
+                # Retry with the space-separated name
                 space_name = name.replace("_", " ")
                 try:
                     setattr(self._plugin, space_name, value)
                 except Exception as e:
-                    raise AttributeError(f"파라미터 설정 실패: {name} = {value}") from e
+                    raise AttributeError(f"Failed to set parameter: {name} = {value}") from e
         self._parameters = None
 
     def process(self, audio: np.ndarray, sample_rate: int, reset: bool = True) -> np.ndarray:
         """Process audio. audio shape: (channels, samples), float32
 
         Args:
-            reset: True(기본)면 처리 전 플러그인 내부 상태를 리셋한다 — 전체 버퍼를
-                   한 번에 통과시키는 오프라인 렌더에 맞다. 블록 단위 스트리밍
-                   (DAW 재생 재현)에서는 reset=False로 호출해 이전 블록의 상태
-                   (필터 히스토리, lookahead 버퍼)를 연속 유지해야 한다.
-                   pedalboard 실측: reset=False 연속 호출은 whole-buffer 렌더와
-                   비트 단위로 일치(-600dB)하지만, 매 블록 reset=True면 경계마다
-                   상태가 끊겨 클릭이 발생(-7.5dB)한다.
+            reset: when True (the default) the plugin's internal state is reset
+                   before processing — the right choice for offline renders that
+                   push the whole buffer through at once. For block-by-block
+                   streaming (reproducing DAW playback), call with reset=False so
+                   the state carried over from the previous block (filter history,
+                   lookahead buffer) is preserved. Measured with pedalboard:
+                   consecutive reset=False calls match a whole-buffer render to
+                   the bit (-600 dB), whereas reset=True on every block breaks the
+                   state at each boundary and produces clicks (-7.5 dB).
 
         Raises:
             ValueError: the block is empty or carries NaN/Inf samples. Checked
@@ -256,6 +258,6 @@ class VST3PluginWrapper:
         return self._plugin.process(audio, sample_rate, reset=reset)
 
     def reset(self) -> None:
-        """플러그인 상태 리셋"""
+        """Reset the plugin state."""
         if self._plugin is not None:
             self._plugin.reset()

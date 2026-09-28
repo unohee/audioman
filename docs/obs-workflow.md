@@ -1,38 +1,38 @@
-# OBS multitrack 영상 자동 진단 워크플로우
+# OBS multitrack video auto-diagnosis workflow
 
-OBS Studio로 녹화한 영상에서 음성·음악 트랙을 자동 식별하고, 트랙별로 필요한 후처리(디노이즈/디험/디클립/스템 분리/라우드니스 평탄화)를 결정해 주는 dry-run 진단 파이프라인.
+A dry-run diagnosis pipeline that automatically identifies voice and music tracks in videos recorded with OBS Studio and decides on the post-processing each track needs (denoise / dehum / declip / stem separation / loudness leveling).
 
-## 도입 배경
+## Background
 
-OBS는 한 영상에 audio stream을 여러 개 인코딩할 수 있다 (마이크, BGM, 시스템 사운드 등을 분리 트랙으로). 그러나:
+OBS can encode several audio streams into a single video (microphone, BGM, system sound, etc. as separate tracks). However:
 
-- "Multitrack Audio" 옵션이 켜져 있지 않으면 **모든 스트림에 같은 마스터 믹스가 복제**되거나 **첫 번째 트랙에만 풀믹스**가 들어간다.
-- 음성 위주 트랙에 voice de-noise를 적용하면 좋지만, 음성+음악이 섞인 풀믹스에 같은 처리를 하면 **음악이 손상**된다.
-- 인벤토리가 수십 개 되면 어느 파일이 어떤 구조인지 일일이 확인하기 어렵다.
+- Unless the "Multitrack Audio" option is enabled, **the same master mix is duplicated onto every stream** or **the full mix lands only on the first track**.
+- Voice de-noise works well on a voice-dominant track, but applying the same processing to a full mix that contains both voice and music **damages the music**.
+- Once the inventory reaches dozens of files, checking which file has which structure by hand becomes impractical.
 
-`audioman obs` 서브명령은 이 문제를 자동화한다. 모든 영상의 트랙 토폴로지를 식별하고, 활성 트랙별로 음성/음악/풀믹스/무음을 분류한 뒤, 진단 결과에 맞는 처치 계획(dry-run)을 JSON으로 만든다. 실제 처리는 사람이 검토 후 수동 또는 후속 명령으로 실행한다.
+The `audioman obs` subcommands automate this. They identify the track topology of every video, classify each active track as voice/music/fullmix/silent, and then produce a dry-run treatment plan in JSON that matches the diagnosis. Actual processing is executed after human review, either manually or by a follow-up command.
 
 ## CLI
 
 ### `audioman obs probe`
 
-트랙 토폴로지만 빠르게 식별 (RMS만 측정).
+Quickly identifies track topology only (measures RMS alone).
 
 ```bash
-# 단일 파일
+# Single file
 audioman obs probe input.mov
 
-# 디렉터리 (.mov/.mp4/.mkv/.m4v 자동 인식, 같은 stem의 mov/mp4 중복 제거)
+# Directory (auto-detects .mov/.mp4/.mkv/.m4v, deduplicates mov/mp4 with the same stem)
 audioman obs probe /Volumes/T7/OBS/
 
-# 추출 길이 조정 (기본 15초)
+# Adjust extraction length (15 seconds by default)
 audioman obs probe input.mov --probe-seconds 30
 
 # JSON
 audioman --json obs probe /Volumes/T7/OBS/ > topology.json
 ```
 
-출력 (테이블 모드):
+Output (table mode):
 
 ```
 file                       topology     streams  active       groups            duration
@@ -42,36 +42,36 @@ file                       topology     streams  active       groups            
 2025-04-18 12-43-31.mov    silent       6        -            -                 5405.9s
 ```
 
-### 토폴로지 분류
+### Topology classification
 
-| 값 | 의미 | 처리 전략 |
+| Value | Meaning | Processing strategy |
 |----|------|-----------|
-| `multitrack` | 활성 트랙들의 RMS가 다름 → 진짜 멀티트랙 | 그룹별로 한 트랙만 분석, 같은 그룹은 결과 미러링 |
-| `single` | 활성 트랙이 1개 (나머지는 무음) | 1번 트랙만 분석 |
-| `duplicated` | 활성 트랙들의 RMS가 동일 → 같은 신호 복제 | 첫 활성 트랙만 분석, 나머진 결과 복사 |
-| `silent` | 모든 트랙 무음 | skip |
+| `multitrack` | Active tracks have different RMS → a genuine multitrack | Analyze one track per group, mirror the result to identical groups |
+| `single` | One active track (the rest are silent) | Analyze track 1 only |
+| `duplicated` | Active tracks have identical RMS → the same signal duplicated | Analyze the first active track only, copy the result to the rest |
+| `silent` | All tracks silent | skip |
 
-`unique_signal_groups`는 같은 RMS를 보인 트랙끼리의 인덱스 그룹. 예를 들어 `[[0,1], [2,3]]`은 트랙 0·1이 같은 신호(스테레오 페어이거나 2채널 복제), 2·3도 마찬가지라는 뜻. dry-run 시 트랙 0과 2만 분석하고 1·3은 같은 처치를 받도록 자동 미러링한다.
+`unique_signal_groups` holds the index groups of tracks that show the same RMS. For example, `[[0,1], [2,3]]` means tracks 0 and 1 carry the same signal (a stereo pair or a 2-channel duplicate) and so do 2 and 3. During dry-run only tracks 0 and 2 are analyzed, and tracks 1 and 3 are auto-mirrored to receive the same treatment.
 
 ### `audioman obs dry-run`
 
-활성 트랙별로 분류·진단·처치 계획을 만든다 (실제 처리 없음).
+Builds the classification, diagnosis, and treatment plan for each active track (no actual processing).
 
 ```bash
-# 60초 분석 (기본), 영상 중간부에서 추출
+# 60-second analysis (default), extracted from the middle of the video
 audioman obs dry-run input.mov --seconds 60
 
-# 분석 시작 시점 명시
+# Explicit analysis start time
 audioman obs dry-run input.mov --seconds 30 --start 120
 
-# 디렉터리 일괄 + JSON 리포트 저장
+# Directory batch + save JSON reports
 audioman obs dry-run /Volumes/T7/OBS/ --seconds 60 --out-dir reports/
 
-# 머신 리더블 출력
+# Machine-readable output
 audioman --json obs dry-run input.mov > diagnosis.json
 ```
 
-출력 (테이블 모드):
+Output (table mode):
 
 ```
 file                       topology     track          kind     actions                          issues
@@ -79,44 +79,44 @@ file                       topology     track          kind     actions         
 2026-05-04 15-19-04.mov    multitrack   track 2 (=>3)  music    dc_removal,declick               warn=1 crit=0
 ```
 
-`(=>1)`은 트랙 0의 처치를 트랙 1에도 적용한다는 미러링 표기.
+`(=>1)` means track 0's treatment is also applied to track 1.
 
-## 트랙 분류 (`classify_track`)
+## Track classification (`classify_track`)
 
-VAD speech 비율 + 스펙트럼 대역 분포 + hf slope를 결합한 휴리스틱. 4종류 + silent.
+A heuristic combining VAD speech ratio + spectral band distribution + hf slope. Four kinds plus silent.
 
-| kind | 판정 조건 (대략) | 특징 |
+| kind | Decision conditions (approximate) | Characteristics |
 |------|------------------|------|
-| `voice` | `speech_ratio > 0.4` AND `sub < 10%` AND `presence > 1%` | 마이크 음성 클린 트랙 |
-| `music` | `speech_ratio < 0.05` AND `sub > 15%` | BGM, 무대음악 등 |
-| `fullmix` | `speech_ratio > 0.2` AND `sub > 15%` | 음성+음악 마스터 믹스 |
-| `silent` | rms < 1e-4 | 처리 불필요 |
+| `voice` | `speech_ratio > 0.4` AND `sub < 10%` AND `presence > 1%` | Clean microphone voice track |
+| `music` | `speech_ratio < 0.05` AND `sub > 15%` | BGM, live music, etc. |
+| `fullmix` | `speech_ratio > 0.2` AND `sub > 15%` | Master mix of voice + music |
+| `silent` | rms < 1e-4 | No processing needed |
 
-`confidence` (0~1)와 함께 반환된다. 분석 구간이 짧거나 무음 구간을 잡으면 fullmix로 보수적으로 떨어지는 경향이 있어, `--seconds`를 넉넉히 (60~120초) 주는 것이 정확도에 도움이 된다.
+Returned together with `confidence` (0~1). A short analysis window or one that lands on a silent section tends to fall back conservatively to fullmix, so giving a generous `--seconds` (60~120 seconds) helps accuracy.
 
-## 처치 룰 엔진 (`recommend_treatment`)
+## Treatment rule engine (`recommend_treatment`)
 
-진단 결과(`spectrum_diagnostics` + 핵심 QC) → 처치 계획 변환. 각 처치는 `action`, `plugin_short` (registry 단축명), `params`, `rationale`, `severity`(info/warn/critical)를 가진다.
+Diagnosis results (`spectrum_diagnostics` + core QC) → treatment plan. Each treatment has `action`, `plugin_short` (registry short name), `params`, `rationale`, and `severity` (info/warn/critical).
 
-| Action | Plugin (registry short) | 트리거 |
+| Action | Plugin (registry short) | Trigger |
 |--------|-------------------------|--------|
-| `dehum` | `de-hum` | 50/60/120Hz 중 하나 이상에서 hum SNR 검출 |
-| `declip` | `de-clip` | 클리핑 샘플 1개 이상 (>100이면 critical) |
-| `dc_removal` | (DSP 내장 HPF) | DC offset > 0.001 |
-| `denoise` | `voice-de-noise` | voice 또는 fullmix(stem 분리 후) |
-| `leveling` | (`core/loudness.level_utterances`) | voice 트랙의 발화 단위 LUFS 평탄화 |
-| `stem_separate` | (Demucs 또는 RX Music Rebalance) | fullmix 트랙: vocals 분리 후 vocals에만 denoise |
-| `declick` | `de-click` | `qc.detect_clicks` 검출 (>5개면 warn) |
-| `phase_warning` | (없음) | 스테레오 negative correlation > 20% (모노 호환 위험) |
-| `channel_balance` | (게인 보정) | L/R 불균형 > 1.5 dB |
-| `loudness_check` | (없음) | music 트랙이 LUFS > -10 (헤드룸 부족) |
-| `skip` | — | silent 트랙 |
+| `dehum` | `de-hum` | hum SNR detected at one or more of 50/60/120Hz |
+| `declip` | `de-clip` | one or more clipped samples (critical above 100) |
+| `dc_removal` | (built-in DSP HPF) | DC offset > 0.001 |
+| `denoise` | `voice-de-noise` | voice, or fullmix (after stem separation) |
+| `leveling` | (`core/loudness.level_utterances`) | per-utterance LUFS leveling of a voice track |
+| `stem_separate` | (Demucs or RX Music Rebalance) | fullmix track: separate vocals, then denoise the vocals only |
+| `declick` | `de-click` | detected by `qc.detect_clicks` (warn above 5) |
+| `phase_warning` | (none) | stereo negative correlation > 20% (mono compatibility risk) |
+| `channel_balance` | (gain correction) | L/R imbalance > 1.5 dB |
+| `loudness_check` | (none) | music track at LUFS > -10 (insufficient headroom) |
+| `skip` | — | silent track |
 
-처치는 `severity`별로 정렬·필터해서 자동화 우선순위를 정하기 좋다.
+Treatments can be sorted and filtered by `severity`, which is handy for deciding automation priority.
 
-## JSON 리포트 구조
+## JSON report structure
 
-`--out-dir`로 저장하면 영상 stem별 JSON 1개씩 생성된다:
+Saving with `--out-dir` creates one JSON file per video stem:
 
 ```json
 {
@@ -157,50 +157,50 @@ VAD speech 비율 + 스펙트럼 대역 분포 + hf slope를 결합한 휴리스
       ]
     }
   ],
-  "notes": ["topology=multitrack, active=[0, 1, 2, 3]", "동일 신호 그룹 발견: [[0,1], [2,3]]"]
+  "notes": ["topology=multitrack, active=[0, 1, 2, 3]", "Identical signal groups found: [[0,1], [2,3]]"]
 }
 ```
 
-## 권장 후속 처리 (수동/스크립트)
+## Recommended follow-up processing (manual/scripted)
 
-dry-run JSON을 받아 트랙별로 다음 흐름:
+Taking the dry-run JSON, the per-track flow is:
 
-1. `mirrors` 목록을 활용해 같은 신호 그룹은 한 번만 처리하고 결과를 ffmpeg로 동일 파일에 매핑.
-2. `severity=critical` 처치(주로 declip)를 먼저 적용. RX 10 De-clip를 `audioman process` 또는 별도 스크립트로 호출.
-3. `kind=fullmix` 트랙은:
-   - **Demucs** (`htdemucs`, MPS 디바이스) 또는 **RX 10 Music Rebalance**로 vocals/other 분리.
-   - vocals stem에만 voice-de-noise 적용.
-   - 처리된 vocals + 원본 other를 합산해 다시 트랙으로.
-4. `kind=voice` 트랙은 `audioman vo process` 그대로 호출 가능 (VAD → denoise → utterance LUFS leveling).
-5. `kind=music` 트랙은 EQ/loudness만 점검.
-6. ffmpeg `-map`으로 처리된 트랙들을 원본 영상에 remux.
+1. Using the `mirrors` list, process each identical signal group only once and map the result back onto the same files with ffmpeg.
+2. Apply `severity=critical` treatments (mostly declip) first. Call RX 10 De-clip through `audioman process` or a separate script.
+3. For `kind=fullmix` tracks:
+   - Separate vocals/other with **Demucs** (`htdemucs`, MPS device) or **RX 10 Music Rebalance**.
+   - Apply voice-de-noise to the vocals stem only.
+   - Sum the processed vocals with the original other and write it back as a track.
+4. For `kind=voice` tracks, `audioman vo process` can be called as-is (VAD → denoise → utterance LUFS leveling).
+5. For `kind=music` tracks, only check EQ/loudness.
+6. Remux the processed tracks back into the original video with ffmpeg `-map`.
 
-## 자료 검증
+## Data verification
 
-51개 OBS 파일(`/Volumes/T7/OBS/`)에 대한 dry-run 결과:
+Dry-run results over 51 OBS files (`/Volumes/T7/OBS/`):
 
-- 토폴로지 분포: multitrack 7 / single 28 / duplicated 13 / silent 3
-- 트랙 분류 분포: fullmix 39 / voice 8 / music 5 / silent 3
-- 처치 빈도: stem_separate 39, denoise 47, declick 44, declip 10, dehum 8
-- Critical: 2건 (클리핑 샘플 53,120 / 1,085)
+- Topology distribution: multitrack 7 / single 28 / duplicated 13 / silent 3
+- Track classification distribution: fullmix 39 / voice 8 / music 5 / silent 3
+- Treatment frequency: stem_separate 39, denoise 47, declick 44, declip 10, dehum 8
+- Critical: 2 cases (clipped samples 53,120 / 1,085)
 
-즉 자료의 80%가 stem 분리 후에야 안전한 voice de-noise가 가능한 풀믹스 구조라는 점이 dry-run으로 명확해졌다.
+In other words, the dry-run made it clear that 80% of the material is fullmix-structured, where safe voice de-noise is only possible after stem separation.
 
-## 모듈 / 함수 참조
+## Module / function reference
 
-| 함수 | 역할 |
+| Function | Role |
 |------|------|
-| `core.obs.probe_topology(video)` | ffprobe + 트랙별 RMS로 토폴로지 분류 |
-| `core.obs.classify_track(audio, sr)` | VAD + 스펙트럼으로 voice/music/fullmix/silent 판정 |
-| `core.obs.diagnose_track(audio, sr, cls)` | spectrum_diagnostics + qc 측정을 통합 |
-| `core.obs.recommend_treatment(diag)` | 진단 → 처치 계획 룰 엔진 |
-| `core.obs.dry_run_video(video, ...)` | 영상 1개에 대한 위 단계 통합 실행 |
+| `core.obs.probe_topology(video)` | Classifies topology from ffprobe + per-track RMS |
+| `core.obs.classify_track(audio, sr)` | Decides voice/music/fullmix/silent from VAD + spectrum |
+| `core.obs.diagnose_track(audio, sr, cls)` | Combines spectrum_diagnostics + qc measurements |
+| `core.obs.recommend_treatment(diag)` | Diagnosis → treatment plan rule engine |
+| `core.obs.dry_run_video(video, ...)` | Runs all of the above for a single video |
 
 CLI: `cli/obs.py` (`probe`, `dry-run`).
-테스트: `tests/unit/test_obs.py` (17 테스트).
+Tests: `tests/unit/test_obs.py` (17 tests).
 
-## 의존성
+## Dependencies
 
-- `ffmpeg`, `ffprobe` — PATH에 있어야 함
-- 기존 audioman 코어: `core.{analysis, qc, vad, audio_file, loudness, registry}`
-- 처치 실행 단계(이 워크플로우 외부): RX 10 VST3 (`voice-de-noise`, `de-hum`, `de-click`, `de-clip`, `music-rebalance`), Demucs (4.x, torch MPS 권장)
+- `ffmpeg`, `ffprobe` — must be on PATH
+- Existing audioman core: `core.{analysis, qc, vad, audio_file, loudness, registry}`
+- Treatment execution stage (outside this workflow): RX 10 VST3 (`voice-de-noise`, `de-hum`, `de-click`, `de-clip`, `music-rebalance`), Demucs (4.x, torch MPS recommended)

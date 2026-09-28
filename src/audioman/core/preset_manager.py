@@ -1,5 +1,5 @@
 # Created: 2026-03-21
-# Purpose: 플러그인 프리셋 관리 (JSON 기반 CRUD)
+# Purpose: plugin preset management (JSON-based CRUD)
 
 import json
 import logging
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PresetData:
-    """프리셋 데이터"""
+    """Preset data"""
     name: str
     plugin: str
     parameters: dict[str, Any]
@@ -33,7 +33,7 @@ class PresetData:
 
 
 class PresetManager:
-    """프리셋 CRUD"""
+    """Preset CRUD"""
 
     def __init__(self, preset_dir: Optional[Path] = None) -> None:
         self._dir = preset_dir or Path(get_settings().preset_dir)
@@ -59,7 +59,7 @@ class PresetManager:
         params: dict[str, Any],
         description: str = "",
     ) -> Path:
-        """프리셋 저장"""
+        """Save preset"""
         plugin_dir = self._plugin_dir(plugin)
         plugin_dir.mkdir(parents=True, exist_ok=True)
 
@@ -73,20 +73,20 @@ class PresetManager:
 
         path = self._preset_path(plugin_dir, name)
         path.write_text(json.dumps(preset.to_dict(), indent=2, ensure_ascii=False))
-        logger.debug(f"프리셋 저장: {path}")
+        logger.debug(f"Preset saved: {path}")
         return path
 
     def load(self, name: str, plugin: Optional[str] = None) -> PresetData:
-        """프리셋 로드"""
+        """Load preset"""
         path = self._find_preset(name, plugin)
         if not path:
-            raise FileNotFoundError(f"프리셋을 찾을 수 없습니다: '{name}'")
+            raise FileNotFoundError(f"Preset not found: '{name}'")
 
         data = json.loads(path.read_text())
         return PresetData(**data)
 
     def list(self, plugin: Optional[str] = None) -> list[PresetData]:
-        """프리셋 목록"""
+        """List presets"""
         results = []
 
         if plugin:
@@ -102,24 +102,24 @@ class PresetManager:
                     data = json.loads(f.read_text())
                     results.append(PresetData(**data))
                 except Exception:
-                    logger.warning(f"프리셋 로드 실패: {f}")
+                    logger.warning(f"Failed to load preset: {f}")
 
         return results
 
     def delete(self, name: str, plugin: Optional[str] = None) -> None:
-        """프리셋 삭제"""
+        """Delete preset"""
         path = self._find_preset(name, plugin)
         if not path:
-            raise FileNotFoundError(f"프리셋을 찾을 수 없습니다: '{name}'")
+            raise FileNotFoundError(f"Preset not found: '{name}'")
         path.unlink()
 
     def _find_preset(self, name: str, plugin: Optional[str] = None) -> Optional[Path]:
-        """프리셋 파일 검색"""
+        """Locate the preset file"""
         if plugin:
             path = self._preset_path(self._plugin_dir(plugin), name)
             return path if path.exists() else None
 
-        # 모든 플러그인 디렉토리에서 검색
+        # Search every plugin directory
         if not self._dir.exists():
             return None
         for d in self._dir.iterdir():

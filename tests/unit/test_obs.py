@@ -1,5 +1,5 @@
 # Created: 2026-05-07
-# Purpose: core/obs.py 단위 테스트 — 토폴로지 분류, 트랙 분류, 처치 룰 엔진
+# Purpose: core/obs.py unit tests — topology classification, track classification, treatment rules
 
 from __future__ import annotations
 
@@ -21,11 +21,11 @@ def _ffmpeg_available() -> bool:
 
 
 def _make_voice_like(sr: int = 16000, dur: float = 5.0) -> np.ndarray:
-    """speech-like signal: 200~3500Hz 합성 + 변조."""
+    """speech-like signal: 200-3500Hz synthesis with modulation."""
     n = int(sr * dur)
     t = np.linspace(0, dur, n, dtype=np.float32)
-    # 기본 발화 톤(200Hz) + 포먼트 흉내 1500/2500Hz, 진폭 변조
-    env = (0.5 + 0.5 * np.sin(2 * np.pi * 4 * t))  # 4Hz 음절 envelope
+    # Base speech tone (200Hz) + formant imitation at 1500/2500Hz, amplitude-modulated
+    env = (0.5 + 0.5 * np.sin(2 * np.pi * 4 * t))  # 4Hz syllable envelope
     sig = env * (
         0.5 * np.sin(2 * np.pi * 200 * t)
         + 0.3 * np.sin(2 * np.pi * 1500 * t)
@@ -35,7 +35,7 @@ def _make_voice_like(sr: int = 16000, dur: float = 5.0) -> np.ndarray:
 
 
 def _make_music_like(sr: int = 16000, dur: float = 5.0) -> np.ndarray:
-    """music-like: sub/low가 강한 신호."""
+    """music-like: a signal with strong sub/low energy."""
     n = int(sr * dur)
     t = np.linspace(0, dur, n, dtype=np.float32)
     sig = (
@@ -54,10 +54,10 @@ def test_classify_silent():
 
 
 def test_classify_music_like():
-    """sub heavy 신호 → music으로 분류."""
+    """A sub-heavy signal → classified as music."""
     audio = _make_music_like(sr=16000, dur=5.0)
     cls = obs_core.classify_track(audio, 16000)
-    # speech_ratio가 거의 0이고 sub가 매우 높아 music 또는 fullmix로
+    # speech_ratio is near 0 and sub is very high, so music or fullmix
     assert cls.sub_band_pct > 15.0
     assert cls.kind in ("music", "fullmix")
 
@@ -72,12 +72,12 @@ def test_classify_returns_valid_fields():
 
 
 # ---------------------------------------------------------------------------
-# recommend_treatment 룰 엔진
+# recommend_treatment rule engine
 # ---------------------------------------------------------------------------
 
 
 def _base_diag(kind: str, **overrides) -> dict:
-    """recommend_treatment에 넣을 최소 진단 dict 빌더."""
+    """Builder for the minimal diagnosis dict handed to recommend_treatment."""
     diag = {
         "classification": {
             "kind": kind,
@@ -107,7 +107,7 @@ def test_recommend_voice_includes_denoise():
     actions = [t.action for t in plan]
     assert "denoise" in actions
     assert "leveling" in actions
-    # voice de-noise 플러그인이 지정되어야 함
+    # the voice de-noise plugin must be assigned
     denoise = next(t for t in plan if t.action == "denoise")
     assert denoise.plugin_short == "voice-de-noise"
 
@@ -116,7 +116,7 @@ def test_recommend_music_no_denoise():
     diag = _base_diag("music")
     plan = obs_core.recommend_treatment(diag)
     actions = [t.action for t in plan]
-    assert "denoise" not in actions  # 음악엔 voice denoise 적용 금지
+    assert "denoise" not in actions  # no voice denoise on music
     assert "stem_separate" not in actions
 
 
@@ -183,15 +183,15 @@ def test_recommend_channel_balance_warning():
 
 
 # ---------------------------------------------------------------------------
-# probe_topology — 합성 영상 (ffmpeg로 multitrack mov 생성)
+# probe_topology — synthetic video (multitrack mov built with ffmpeg)
 # ---------------------------------------------------------------------------
 
 
 def _try_make_multitrack_video(out_path, tracks_audio, sample_rate, video_duration=1.5):
-    """ffmpeg로 multitrack 영상 만들기. 실패 시 None 반환.
+    """Build a multitrack video with ffmpeg. Returns None on failure.
 
-    video_duration: 비디오 트랙 길이(초). -shortest 정책상 비디오/오디오 중 짧은
-    쪽에 맞춰 컷되므로, 오디오 길이와 같거나 길게 설정해야 오디오가 잘리지 않는다.
+    video_duration: length of the video track in seconds. -shortest cuts to the shorter
+    of video/audio, so set it equal to or longer than the audio to avoid clipping the audio.
     """
     import shutil
     import subprocess
@@ -227,7 +227,7 @@ def test_probe_topology_silent(tmp_path):
     silent = [np.zeros((2, sr), dtype=np.float32) for _ in range(3)]
     video = tmp_path / "silent.mp4"
     if _try_make_multitrack_video(video, silent, sr) is None:
-        pytest.skip("ffmpeg 없음")
+        pytest.skip("ffmpeg not available")
     r = obs_core.probe_topology(video, probe_seconds=1.0)
     assert r.topology == "silent"
     assert r.active_indices == []
@@ -240,9 +240,9 @@ def test_probe_topology_multitrack(tmp_path):
     music = _make_music_like(sr=sr, dur=1.5)
     video = tmp_path / "multi.mp4"
     if _try_make_multitrack_video(video, [voice, music], sr) is None:
-        pytest.skip("ffmpeg 없음")
+        pytest.skip("ffmpeg not available")
     r = obs_core.probe_topology(video, probe_seconds=1.0)
-    assert r.topology in ("multitrack", "single")  # RMS가 우연히 비슷하면 single로 빠질 수 있음
+    assert r.topology in ("multitrack", "single")  # can fall through to single if the RMS values happen to be similar
     assert len(r.active_indices) >= 1
 
 
@@ -251,47 +251,48 @@ def test_probe_topology_duplicated(tmp_path):
     voice = _make_voice_like(sr=sr, dur=1.5)
     video = tmp_path / "dup.mp4"
     if _try_make_multitrack_video(video, [voice, voice, voice], sr) is None:
-        pytest.skip("ffmpeg 없음")
+        pytest.skip("ffmpeg not available")
     r = obs_core.probe_topology(video, probe_seconds=1.0)
     assert r.topology == "duplicated"
     assert len(r.unique_signal_groups) == 1
 
 
 def test_probe_topology_full_scan_catches_late_signal(tmp_path):
-    """앞 구간이 무음이고 후반에만 신호가 있는 트랙은 짧은 probe_seconds로
-    silent로 오분류되지만, probe_seconds=None(전체 스캔)이면 active로 잡혀야 함.
+    """A track that is silent up front with signal only later is misclassified
+    as silent by a short probe_seconds, but must come back active with
+    probe_seconds=None (a full scan).
 
-    OBS 데스크탑 오디오 트랙처럼 산발적으로만 신호가 나오는 패턴 시뮬레이션.
+    Simulates a pattern where signal appears only sporadically, like an OBS desktop audio track.
     """
     sr = 48000
     dur = 4.0
     voice = _make_voice_like(sr=sr, dur=dur)
-    # 앞 2초 무음, 뒤 2초만 신호
+    # silent for the first 2 seconds, signal only in the last 2
     sparse = np.zeros((2, int(sr * dur)), dtype=np.float32)
     sparse[:, int(sr * 2.0):] = _make_voice_like(sr=sr, dur=2.0)
 
     video = tmp_path / "sparse.mp4"
     if _try_make_multitrack_video(video, [voice, sparse], sr, video_duration=dur) is None:
-        pytest.skip("ffmpeg 없음")
+        pytest.skip("ffmpeg not available")
 
-    # 앞 1초만 보면 sparse 트랙은 silent로 오분류됨
+    # Looking at only the first second misclassifies the sparse track as silent
     r_short = obs_core.probe_topology(video, probe_seconds=1.0)
     sparse_short = next(t for t in r_short.track_probes if t.index == 1)
     assert sparse_short.is_silent, (
-        "전제 검증: 앞 1초 스캔에서는 sparse 트랙이 silent여야 회귀 테스트 의미가 있음"
+        "precondition: with a 1s scan the sparse track must be silent for this regression test to mean anything"
     )
 
-    # 전체 스캔(default = None)이면 sparse 트랙도 active로 잡혀야 함
+    # A full scan (default = None) must pick up the sparse track as active too
     r_full = obs_core.probe_topology(video, probe_seconds=None)
     sparse_full = next(t for t in r_full.track_probes if t.index == 1)
     assert not sparse_full.is_silent, (
-        "전체 스캔에서는 sparse 트랙(후반 신호)이 active로 분류돼야 함"
+        "a full scan must classify the sparse track (late signal) as active"
     )
     assert 1 in r_full.active_indices
 
 
 def test_probe_topology_default_is_full_scan(tmp_path):
-    """probe_seconds 미지정 시 전체 영상 RMS를 사용 — 인터페이스 변경 회귀 테스트."""
+    """With probe_seconds omitted the whole-video RMS is used — regression test for the interface change."""
     sr = 48000
     dur = 3.0
     sparse = np.zeros((2, int(sr * dur)), dtype=np.float32)
@@ -299,9 +300,9 @@ def test_probe_topology_default_is_full_scan(tmp_path):
 
     video = tmp_path / "default_sparse.mp4"
     if _try_make_multitrack_video(video, [sparse], sr, video_duration=dur) is None:
-        pytest.skip("ffmpeg 없음")
+        pytest.skip("ffmpeg not available")
 
-    # 인자 없이 호출 — 기본 동작이 전체 스캔이어야 함
+    # Call without arguments — the default behaviour must be a full scan
     r = obs_core.probe_topology(video)
     assert r.active_indices == [0]
 
@@ -413,7 +414,7 @@ class TestProbeTopologyEdges:
     def test_missing_file_raises(self, tmp_path):
         if not _ffmpeg_available():
             pytest.skip("ffmpeg/ffprobe not available")
-        with pytest.raises(FileNotFoundError, match="파일 없음"):
+        with pytest.raises(FileNotFoundError, match="File not found"):
             obs_core.probe_topology(tmp_path / "missing.mp4")
 
     def test_probe_seconds_extracts_leading_window(self, tmp_path):
@@ -421,7 +422,7 @@ class TestProbeTopologyEdges:
         voice = _make_voice_like(sr=sr, dur=2.0)
         video = tmp_path / "window.mp4"
         if _try_make_multitrack_video(video, [voice], sr, video_duration=2.0) is None:
-            pytest.skip("ffmpeg 없음")
+            pytest.skip("ffmpeg not available")
         report = obs_core.probe_topology(video, probe_seconds=0.5)
         assert report.n_streams == 1
         assert report.sample_rate > 0
@@ -431,7 +432,7 @@ class TestProbeTopologyEdges:
         voice = _make_voice_like(sr=sr, dur=1.5)
         video = tmp_path / "dict.mp4"
         if _try_make_multitrack_video(video, [voice], sr) is None:
-            pytest.skip("ffmpeg 없음")
+            pytest.skip("ffmpeg not available")
         d = obs_core.probe_topology(video, probe_seconds=1.0).to_dict()
         assert set(d.keys()) >= {"topology", "n_streams", "active_indices",
                                  "unique_signal_groups", "sample_rate", "duration_sec", "tracks"}
@@ -454,7 +455,7 @@ class TestDryRunVideo:
     def _video(self, tmp_path, tracks, sr=48000, duration=2.0):
         path = tmp_path / "dryrun.mp4"
         if _try_make_multitrack_video(path, tracks, sr, video_duration=duration) is None:
-            pytest.skip("ffmpeg 없음")
+            pytest.skip("ffmpeg not available")
         return path
 
     def test_single_track_report(self, tmp_path):
@@ -474,7 +475,7 @@ class TestDryRunVideo:
         report = obs_core.dry_run_video(video, analysis_seconds=1.0)
         if report.topology.topology != "duplicated":
             pytest.skip(f"AAC encoding shifted RMS enough to look distinct ({report.topology.topology})")
-        assert any("복제 믹스" in n for n in report.notes)
+        assert any("Duplicated mix" in n for n in report.notes)
         assert len(report.treatments) == 1
         # every active track is mapped onto the representative that was analysed
         assert set(report.treatments[0]["mirrors"]) == set(report.topology.active_indices)
@@ -496,7 +497,7 @@ class TestDryRunVideo:
         report = obs_core.dry_run_video(video)
         assert report.track_diagnostics == []
         assert report.treatments == []
-        assert any("모든 트랙 무음" in n for n in report.notes)
+        assert any("All tracks silent" in n for n in report.notes)
 
     def test_analysis_start_sec_explicit(self, tmp_path):
         voice = _make_voice_like(sr=48000, dur=3.0)
@@ -778,7 +779,7 @@ class TestDryRunExtractionFailure:
         report = obs_core.dry_run_video(video)
         assert report.track_diagnostics == []
         assert report.treatments == []
-        assert any("추출 실패" in n for n in report.notes)
+        assert any("extraction failed" in n for n in report.notes)
 
 
 class TestProbeGroupingInnerSkip:

@@ -1,12 +1,14 @@
 # Created: 2026-03-31
-# Purpose: audioman eq-profile — EQ 플러그인 주파수/위상/비선형성 프로파일링
+# Purpose: audioman eq-profile — EQ plugin frequency/phase/nonlinearity profiling
 
 import argparse
 import json
 
 import numpy as np
 
-from audioman.cli.output import print_error, print_json, print_success, output_console
+from audioman.cli.output import (
+    print_error, print_json, print_success, print_markup, output_console,
+)
 from audioman.core.findings import json_envelope, schema_uri
 
 
@@ -20,7 +22,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--bypass-param", action="append", default=[],
                         help="Bypass state parameter (key=value)")
 
-    # 분석 모드
+    # analysis modes
     parser.add_argument(
         "--mode", "-m",
         choices=["response", "sweep", "nonlinear", "all"],
@@ -28,7 +30,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Analysis mode (default: all)",
     )
 
-    # 스윕 파라미터
+    # sweep parameters
     parser.add_argument(
         "--sweep-param", action="append", default=[],
         metavar="NAME=v1,v2,...",
@@ -40,21 +42,21 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Fixed parameters during sweep (e.g. --sweep-fixed band1_freq=1000)",
     )
 
-    # 비선형성 레벨
+    # nonlinearity levels
     parser.add_argument(
         "--levels", type=float, nargs="+",
         default=None,
         help="Input levels for nonlinearity test (dBFS, default: -36 -24 -18 -12 -6 -3 0)",
     )
 
-    # 공통 옵션
+    # common options
     parser.add_argument("--sample-rate", "-sr", type=int, default=44100)
     parser.add_argument("--fft-size", type=int, default=32768)
     parser.add_argument("--level", type=float, default=-12.0, help="Input level dB")
     parser.add_argument("--sweep-duration", type=float, default=6.0,
                         help="Log sweep duration in seconds")
 
-    # 출력
+    # output
     parser.add_argument("--output", "-o", metavar="FILE", help="Save result JSON file")
     parser.add_argument("--save-npy", metavar="DIR",
                         help="Save frequency/phase/delay curves as .npy files")
@@ -72,7 +74,7 @@ def _resolve_plugin(plugin_arg: str) -> str:
     meta = registry.get(plugin_arg)
     if meta:
         return meta.path
-    print_error(f"플러그인 없음: '{plugin_arg}'")
+    print_error(f"plugin not found: '{plugin_arg}'")
 
 
 def _parse_params(param_list: list[str]) -> dict | None:
@@ -83,7 +85,7 @@ def _parse_params(param_list: list[str]) -> dict | None:
 
 
 def _parse_sweep_config(sweep_params: list[str], fixed_params: list[str]) -> dict:
-    """--sweep-param와 --sweep-fixed를 sweep_config dict로 변환"""
+    """Convert --sweep-param and --sweep-fixed into a sweep_config dict"""
     fixed = {}
     for fp in fixed_params:
         if "=" not in fp:
@@ -137,7 +139,7 @@ def run(args: argparse.Namespace) -> None:
 
     for mode in modes:
         if not args.json:
-            output_console.print(f"\n[bold cyan]{mode}[/bold cyan] 분석 중...", highlight=False)
+            print_markup(f"\n[bold cyan]Analyzing {mode}[/bold cyan]...")
 
         try:
             if mode == "response":
@@ -150,9 +152,9 @@ def run(args: argparse.Namespace) -> None:
                 )
                 all_eq_results.append(r)
 
-                # 주요 통계
+                # key statistics
                 mag = np.array(r.magnitude_db)
-                # 20Hz~20kHz 범위만
+                # 20Hz-20kHz range only
                 freq_arr = np.array(r.frequencies)
                 mask = (freq_arr >= 20) & (freq_arr <= 20000)
                 mag_range = mag[mask]
@@ -168,20 +170,20 @@ def run(args: argparse.Namespace) -> None:
 
                 if not args.json:
                     output_console.print(
-                        f"  주파수 응답: {float(np.min(mag_range)):.1f} ~ "
+                        f"  Frequency response: {float(np.min(mag_range)):.1f} ~ "
                         f"{float(np.max(mag_range)):.1f} dB"
                     )
                     output_console.print(
-                        f"  최소위상: {'예' if r.is_minimum_phase else '아니오'}, "
+                        f"  Minimum phase: {'yes' if r.is_minimum_phase else 'no'}, "
                         f"THD@1kHz: {r.thd_at_1k:.4f}%"
                     )
 
             elif mode == "sweep":
                 sweep_config = _parse_sweep_config(args.sweep_param, args.sweep_fixed)
                 if not sweep_config:
-                    results["sweep"] = {"error": "스윕 파라미터 미지정 (--sweep-param 필요)"}
+                    results["sweep"] = {"error": "sweep parameters not specified (--sweep-param required)"}
                     if not args.json:
-                        output_console.print("  [yellow]--sweep-param 미지정[/yellow]")
+                        print_markup("  [yellow]--sweep-param not specified[/yellow]")
                     continue
 
                 eq_results = pa.measure_eq_parameter_sweep(
@@ -230,7 +232,7 @@ def run(args: argparse.Namespace) -> None:
                 )
                 all_eq_results.extend(eq_results)
 
-                # 레벨 간 편차 계산
+                # compute deviation across levels
                 thd_values = [r.thd_at_1k for r in eq_results]
                 levels_tested = [r.params.get("_input_level_db", 0) for r in eq_results]
 
@@ -255,21 +257,21 @@ def run(args: argparse.Namespace) -> None:
 
                 if not args.json:
                     output_console.print(
-                        f"  {len(eq_results)}개 레벨 측정, "
-                        f"최대 편차: {max_deviation:.2f} dB"
+                        f"  {len(eq_results)} levels measured, "
+                        f"max deviation: {max_deviation:.2f} dB"
                     )
-                    label = "[yellow]비선형 (레벨 의존)[/yellow]" if is_level_dependent \
-                        else "[green]선형 (레벨 무관)[/green]"
-                    output_console.print(f"  {label}")
+                    label = "[yellow]nonlinear (level dependent)[/yellow]" if is_level_dependent \
+                        else "[green]linear (level independent)[/green]"
+                    print_markup(f"  {label}")
                     for lv, thd in zip(levels_tested, thd_values):
                         output_console.print(f"    {lv:>6.0f} dBFS: THD={thd:.4f}%")
 
         except Exception as e:
             results[mode] = {"error": str(e)}
             if not args.json:
-                output_console.print(f"  [red]에러: {e}[/red]")
+                print_markup(f"  [red]error: {e}[/red]")
 
-    # .npy 저장
+    # save .npy
     if args.save_npy and all_eq_results:
         from pathlib import Path
         npy_dir = Path(args.save_npy)
@@ -287,17 +289,17 @@ def run(args: argparse.Namespace) -> None:
 
         if not args.json:
             print_success(
-                f"곡선 저장: {npy_dir}/ "
+                f"Curves saved: {npy_dir}/ "
                 f"({freq_curves.shape[0]} settings × {freq_curves.shape[1]} bins)"
             )
 
-        # 파라미터 라벨 저장
+        # save parameter labels
         labels = [r.params for r in all_eq_results]
         label_path = npy_dir / "settings_labels.json"
         with open(label_path, "w") as f:
             json.dump(labels, f, indent=2, ensure_ascii=False, default=str)
 
-    # JSON 출력
+    # JSON output
     if args.json:
         print_json(json_envelope("eq-profile", results, schema=schema_uri("eq-profile")))
 
@@ -306,7 +308,7 @@ def run(args: argparse.Namespace) -> None:
             json.dump(json_envelope("eq-profile", results, schema=schema_uri("eq-profile")),
                       f, indent=2, ensure_ascii=False, default=str)
         if not args.json:
-            print_success(f"결과 저장: {args.output}")
+            print_success(f"Result saved: {args.output}")
 
     if not args.json and not args.output:
-        print_success("EQ 프로파일링 완료")
+        print_success("EQ profiling complete")

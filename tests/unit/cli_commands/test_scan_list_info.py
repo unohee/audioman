@@ -1,9 +1,9 @@
 # Created: 2026-09-28
-# Purpose: cli/scan.py, cli/list_cmd.py, cli/info.py 커버리지 (AUD-1851).
+# Purpose: coverage for cli/scan.py, cli/list_cmd.py, cli/info.py (AUD-1851).
 #
-# 이 세 커맨드는 전부 registry를 조회한다. 이 호스트에는 등록 가능한 VST3가
-# 하나도 없으므로(AUD-1857), registry를 스텁으로 바꿔 실제 필터/출력 로직만
-# 관찰한다. info.py는 추가로 플러그인 래퍼를 로드하므로 래퍼도 대체한다.
+# All three commands query the registry. No VST3 on this host can be registered
+# (AUD-1857), so the registry is stubbed out and only the real filtering/output logic is
+# observed. info.py also loads a plugin wrapper, so that is replaced as well.
 
 from __future__ import annotations
 
@@ -43,23 +43,23 @@ class TestScan:
     def test_plain_table_shows_names_aliases_and_success_line(self, fake_registry):
         result = run_command(["--plain", "scan"])
         assert result.code == 0
-        assert "발견된 플러그인 (2개)" in result.out
+        assert "Plugins found (2)" in result.out
         assert "Short Name\tFull Name\tFormat\tAliases" in result.out
         assert "fake-denoise\tFake De-noise\tvst3\tdenoise, deno" in result.out
         assert "fake-comp\tFake Comp\tau\t-" in result.out  # no aliases -> dash
-        assert "2개 플러그인 스캔 완료" in result.err
+        assert "Scanned 2 plugins" in result.err
 
     def test_empty_registry_reports_zero_and_creates_app_dirs(self, empty_registry, tmp_path,
                                                             monkeypatch):
         monkeypatch.setenv("HOME", str(tmp_path))
         result = run_command(["--plain", "scan"])
         assert result.code == 0
-        assert "발견된 플러그인 (0개)" in result.out
-        assert "0개 플러그인 스캔 완료" in result.err
+        assert "Plugins found (0)" in result.out
+        assert "Scanned 0 plugins" in result.err
         assert (tmp_path / ".audioman" / "cache").is_dir()
 
     def test_rich_table_path_runs_without_plain(self, fake_registry):
-        """rich 경로(print_table의 Console 출력)도 실제로 태운다."""
+        """Also exercises the rich path (print_table's Console output)."""
         result = run_command(["scan"])
         assert result.code == 0
         assert "fake-denoise" in result.out
@@ -92,14 +92,14 @@ class TestList:
         ]
         result = run_command(["--plain", "list"])
         assert result.code == 0
-        assert "플러그인 목록 (1개)" in result.out
+        assert "Plugin list (1)" in result.out
         assert "Short Name\tFull Name\tFormat\tParams\tAliases" in result.out
         assert "p1\tP One\tvst3\t7\tone" in result.out
 
     def test_plain_table_dash_for_missing_aliases_and_empty_list(self, empty_registry):
         result = run_command(["--plain", "list"])
         assert result.code == 0
-        assert "플러그인 목록 (0개)" in result.out
+        assert "Plugin list (0)" in result.out
 
 
 class TestInfo:
@@ -135,7 +135,7 @@ class TestInfo:
     def test_unknown_plugin_exits_1_with_message(self, fake_registry):
         result = run_command(["--json", "info", "nope"])
         assert result.code == 1
-        assert "플러그인을 찾을 수 없습니다" in result.err
+        assert "Plugin not found" in result.err
         assert "nope" in result.err
         assert result.out == ""  # no payload emitted on the error path
 
@@ -145,7 +145,7 @@ class TestInfo:
         assert "Fake De-noise" in result.out
         assert "Short name: fake-denoise" in result.out
         assert "Aliases: denoise, deno" in result.out
-        assert "파라미터 (4개)" in result.out
+        assert "Parameters (4)" in result.out
         assert "[-60.0, 0.0]" in result.out       # float with bounds
         assert "(enum)" in result.out             # enum param
         assert "(bool)" in result.out             # bool param

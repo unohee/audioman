@@ -1,10 +1,11 @@
 # tests/unit/cli_commands/test_plain_tag_leaks.py
-# Purpose: `--plain` 출력에 rich 태그 텍스트가 새지 않는지 명령 단위로 막는다 (AUD-1853).
+# Purpose: command-level guard that rich tag text never leaks into `--plain` output (AUD-1853).
 #
-# `--plain` 콘솔은 `markup=False`이므로, `[dim]...[/dim]`처럼 태그가 붙은 문자열을
-# `console.print`에 그대로 넘기면 태그가 글자 그대로 찍힌다. 이 파일은 대표 명령을
-# 실제 파서로 실행해 stdout+stderr 어디에도 태그 텍스트가 없음을 확인하고,
-# 태그가 아닌 대괄호 텍스트(`[dry-run]`, `[0, 1]`, `[1/2]`)는 남아 있음을 확인한다.
+# The `--plain` console uses `markup=False`, so passing a tagged string such as
+# `[dim]...[/dim]` straight to `console.print` prints the tags verbatim. This file
+# runs representative commands through the real parser and checks that no tag text
+# appears in stdout+stderr, while bracket text that is not a tag stays
+# (`[dry-run]`, `[0, 1]`, `[1/2]`).
 
 from __future__ import annotations
 
@@ -29,7 +30,7 @@ from harness import (
 
 @pytest.fixture
 def stub_engine(monkeypatch):
-    """process.process_file 대체: VST3 없이 배치/단일 경로가 돌게 한다."""
+    """Stand-in for process.process_file so batch/single paths run without VST3."""
     calls = []
 
     def _process_file(input_path, output_path, plugin_name, params=None, passes=1):
@@ -52,7 +53,7 @@ def stub_engine(monkeypatch):
 
 @pytest.fixture
 def fixed_steps(monkeypatch):
-    """체인 파싱을 고정해 플러그인 해석 없이 계획 경로만 관찰한다."""
+    """Pin chain parsing so the plan path can be observed without resolving plugins."""
     steps = [
         PipelineStep(plugin_name="dehum", params={"freq": 60.0}),
         PipelineStep(plugin_name="declick", params={}),
@@ -62,7 +63,7 @@ def fixed_steps(monkeypatch):
 
 
 class TestPlainCommandsEmitNoTagText:
-    """대표 명령의 plain 출력에 태그 텍스트가 남지 않는다."""
+    """Representative commands leave no tag text in plain output."""
 
     def test_process_dry_run(self, tmp_path, stub_engine):
         src = write_wav(tmp_path / "in.wav")
@@ -85,12 +86,12 @@ class TestPlainCommandsEmitNoTagText:
         ])
         assert result.code == 0
         assert_no_leaked_tag_text(result)
-        assert f"[dry-run] 배치: 1개 파일 → [denoise] → {tmp_path / 'out'}" in result.out
+        assert f"[dry-run] batch: 1 files → [denoise] → {tmp_path / 'out'}" in result.out
 
     def test_process_batch_failure_is_reported_with_a_clean_message(self, tmp_path, monkeypatch):
-        """실패 경로 메시지에도 태그 텍스트가 없어야 한다."""
+        """Failure-path messages must not carry tag text either."""
         def _boom(*args, **kwargs):
-            raise ValueError("플러그인을 찾을 수 없습니다: 'ghost'")
+            raise ValueError("Plugin not found: 'ghost'")
 
         monkeypatch.setattr(process, "process_file", _boom)
         in_dir = tmp_path / "in"
@@ -102,7 +103,7 @@ class TestPlainCommandsEmitNoTagText:
         ])
         assert result.code == 1
         assert_no_leaked_tag_text(result)
-        assert "플러그인을 찾을 수 없습니다: 'ghost'" in result.err
+        assert "Plugin not found: 'ghost'" in result.err
 
     def test_chain_plan_lines(self, tmp_path, fixed_steps):
         src = write_wav(tmp_path / "in.wav")
@@ -129,7 +130,7 @@ class TestPlainCommandsEmitNoTagText:
         assert "[dehum → declick]" in result.out
 
     def test_chain_json_plan_is_unaffected(self, tmp_path, fixed_steps):
-        """JSON 모드는 stdout이 순수 JSON이어야 한다 (태그/마크업 무관)."""
+        """JSON mode keeps stdout pure JSON, regardless of tags/markup."""
         src = write_wav(tmp_path / "in.wav")
         result = run_command([
             "--plain", "--json", "chain", str(src), "-s", "dehum,declick",
@@ -140,7 +141,7 @@ class TestPlainCommandsEmitNoTagText:
 
 
 class _RecordingPlugin(FakePlugin):
-    """파라미터 attribute를 실제로 들고 있는 페이크 플러그인 (dump 경로용)."""
+    """Fake plugin that actually holds parameter attributes (for the dump path)."""
 
     def __init__(self):
         super().__init__(threshold=-20.0, mode="fast", bypass=False, label=object())
@@ -158,10 +159,10 @@ class _BoomPlugin(_RecordingPlugin):
 
 
 class TestPlainProgressMessagesKeepTheirEvidence:
-    """실패 메시지의 `[N/M]` 진행 표시는 plain 모드에서도 남아야 한다.
+    """The `[N/M]` progress marker in failure messages must survive plain mode.
 
-    예전 `_strip_markup`은 대괄호 그룹을 통째로 지워 `[1/2]` 같은 근거까지
-    사라졌다. 이제는 실제 rich 태그만 지운다.
+    The old `_strip_markup` removed whole bracket groups, which also erased the
+    evidence in `[1/2]`. Now only real rich tags are stripped.
     """
 
     def test_batch_failure_warning_keeps_the_index_and_message(
@@ -190,23 +191,23 @@ class TestPlainProgressMessagesKeepTheirEvidence:
 
 
 class TestTagLeakHelper:
-    """가드 자체가 실제 누수를 잡는지 (통과만 하는 상태가 아님)."""
+    """The guard itself catches real leaks (it is not a no-op that always passes)."""
 
     def test_detects_a_leaked_tag(self):
-        assert find_leaked_tag_text("  [dim]내장 분석[/dim]") == ["[dim]", "[/dim]"]
+        assert find_leaked_tag_text("  [dim]Built-in analysis[/dim]") == ["[dim]", "[/dim]"]
 
     def test_ignores_untagged_bracket_text(self):
         assert find_leaked_tag_text("[dry-run] in.wav → [denoise]") == []
 
     def test_detects_the_visualize_leak_shape(self):
-        """수정 전 `--plain visualize`가 실제로 내보내던 줄."""
-        line = "[dim]내장 분석: spectrogram (frame=999999, hop=512)[/dim]"
+        """The line the old `--plain visualize` actually emitted."""
+        line = "[dim]Built-in analysis: spectrogram (frame=999999, hop=512)[/dim]"
         assert find_leaked_tag_text(line) == ["[dim]", "[/dim]"]
 
     def test_plain_message_printer_is_clean(self):
-        """print_info에 태그를 넘겨도 plain에서는 태그가 남지 않는다."""
+        """Tags passed to print_info never survive on the plain path."""
         output.set_plain(True)
         with capture_streams() as (_out, err):
-            output.print_info("[dim]내장 분석: rms[/dim]")
+            output.print_info("[dim]Built-in analysis: rms[/dim]")
         assert find_leaked_tag_text(err.getvalue()) == []
-        assert "내장 분석: rms" in err.getvalue()
+        assert "Built-in analysis: rms" in err.getvalue()

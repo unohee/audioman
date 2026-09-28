@@ -72,7 +72,7 @@ class TestPrepHappyPath:
         out = tmp_path / "prepped.wav"
         result = run_cli(["master", "prep", str(source), "-o", str(out)])
         assert result.code == 0, result.stderr
-        assert "master prep 완료 (spotify)" in result.stderr
+        assert "master prep complete (spotify)" in result.stderr
         assert "Ops:       remove_dc, pad, fade_in, fade_out, loudness_normalize" in result.stdout
         assert "Duration:  2.00s → 4.20s" in result.stdout
 
@@ -157,7 +157,7 @@ class TestPrepOverrides:
     def test_missing_input_exits_nonzero(self, run_cli, tmp_path):
         result = run_cli(["master", "prep", str(tmp_path / "nope.wav"), "-o", str(tmp_path / "o.wav")])
         assert result.code == 1
-        assert "파일 없음" in result.stderr
+        assert "File not found" in result.stderr
 
 
 class TestPrepFailures:
@@ -270,16 +270,16 @@ class TestQc:
     def test_missing_input_exits_nonzero(self, run_cli, tmp_path):
         result = run_cli(["master", "qc", str(tmp_path / "nope.wav")])
         assert result.code == 1
-        assert "파일 없음" in result.stderr
+        assert "File not found" in result.stderr
 
     def test_evaluate_value_error_is_reported(self, run_cli, source, monkeypatch):
         def boom(*a, **k):
-            raise ValueError("알 수 없는 target")
+            raise ValueError("unknown target")
 
         monkeypatch.setattr(master_cli.qc, "evaluate_file", boom)
         result = run_cli(["master", "qc", str(source)])
         assert result.code == 1
-        assert "알 수 없는 target" in result.stderr
+        assert "unknown target" in result.stderr
 
 
 class TestVerify:
@@ -328,7 +328,7 @@ class TestVerify:
         out = tmp_path / "verified.wav"
         result = run_cli(["master", "verify", str(source), "-o", str(out)])
         assert result.code == 0, result.stderr
-        assert "prep 완료 (spotify)" in result.stderr
+        assert "prep complete (spotify)" in result.stderr
         assert "QC target: spotify" in result.stdout
         assert "QC Verdict:" in result.stdout
         assert str(out) not in result.stdout  # only the file name is shown
@@ -368,7 +368,7 @@ class TestVerify:
     def test_missing_input_exits_nonzero(self, run_cli, tmp_path):
         result = run_cli(["master", "verify", str(tmp_path / "nope.wav"), "-o", str(tmp_path / "v.wav")])
         assert result.code == 1
-        assert "파일 없음" in result.stderr
+        assert "File not found" in result.stderr
 
 
 class TestListProfiles:

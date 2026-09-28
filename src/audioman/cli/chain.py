@@ -1,5 +1,5 @@
 # Created: 2026-03-21
-# Purpose: audioman chain 서브커맨드 (단일 + 배치)
+# Purpose: audioman chain subcommand (single + batch)
 
 import argparse
 import json
@@ -37,7 +37,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
 def run(args: argparse.Namespace) -> None:
     steps = parse_chain_string(args.steps)
     if not steps:
-        print_error("처리 단계가 비어있습니다")
+        print_error("Processing chain is empty")
 
     input_path = Path(args.input)
 
@@ -75,7 +75,7 @@ def _run_single(args: argparse.Namespace, steps) -> None:
     except (FileNotFoundError, ValueError) as e:
         print_error(str(e))
     except Exception as e:
-        print_error(f"체인 처리 실패: {e}")
+        print_error(f"Chain processing failed: {e}")
 
     if args.json:
         print_json(json_envelope("chain", result.to_dict(), schema=schema_uri("chain")))
@@ -88,7 +88,7 @@ def _run_single(args: argparse.Namespace, steps) -> None:
     output_console.print(f"  Input:  {result.input_path}")
     output_console.print(f"  Output: {result.output_path}")
     output_console.print(f"  Time:   {result.duration_seconds}s")
-    print_success("완료")
+    print_success("Done")
 
 
 def _run_batch(args: argparse.Namespace, steps, input_dir: Path) -> None:
@@ -96,7 +96,7 @@ def _run_batch(args: argparse.Namespace, steps, input_dir: Path) -> None:
     files = collect_audio_files(input_dir, recursive=args.recursive)
 
     if not files:
-        print_error(f"오디오 파일이 없습니다: {input_dir}")
+        print_error(f"No audio files found: {input_dir}")
 
     step_names = " → ".join(s.plugin_name for s in steps)
 
@@ -114,11 +114,11 @@ def _run_batch(args: argparse.Namespace, steps, input_dir: Path) -> None:
         if args.json:
             print_json(json_envelope("chain", plan, schema=schema_uri("chain")))
         else:
-            print_literal(f"[dry-run] 배치: {len(files)}개 파일 → [{step_names}] → {output_dir}")
+            print_literal(f"[dry-run] batch: {len(files)} files → [{step_names}] → {output_dir}")
         return
 
     jobs = []
-    # steps를 직렬화 (multiprocessing 전달용)
+    # Serialize the steps so they can be passed through multiprocessing
     steps_dicts = [s.to_dict() for s in steps]
     for fpath in files:
         out_path = resolve_output_path(fpath, input_dir, output_dir, suffix=args.suffix)
@@ -151,11 +151,11 @@ def _steps_from_dicts(steps_dicts: list[dict]) -> list[PipelineStep]:
 
 
 def _chain_one(job_args):
-    """체인 멀티프로세싱 워커.
+    """Chain multiprocessing worker.
 
-    워커에서 발생한 모든 예외는 파일 단위 실패 결과로 변환한다. 예외가 밖으로
-    새면 `Pool.imap_unordered`가 메인 프로세스에서 re-raise해 배치 전체가
-    죽는다.
+    Every exception raised in the worker is turned into a per-file failure
+    result. Letting it escape would make `Pool.imap_unordered` re-raise in the
+    main process and kill the whole batch.
     """
     fpath, out_path, steps_dicts = job_args
     try:
@@ -177,7 +177,7 @@ def _run_chain_sequential(args, jobs, steps, total):
         TimeElapsedColumn(), TextColumn("ETA"), TimeRemainingColumn(),
         console=output_console, disable=args.json,
     ) as progress:
-        task_id = progress.add_task("체인 처리", total=total)
+        task_id = progress.add_task("Chain processing", total=total)
         for i, (fpath, out_path, _) in enumerate(jobs):
             try:
                 result = run_pipeline(input_path=fpath, output_path=out_path, steps=steps)
@@ -192,7 +192,7 @@ def _run_chain_sequential(args, jobs, steps, total):
                     print_warning(f"  {Path(fpath).name}: {e}")
             progress.update(task_id, advance=1, description=f"{Path(fpath).name}")
     if not args.json:
-        print_success(f"배치 완료: {ok} 성공, {fail} 실패 / {total} 전체")
+        print_success(f"Batch complete: {ok} succeeded, {fail} failed / {total} total")
     if fail:
         sys.exit(1)
 
@@ -208,7 +208,7 @@ def _run_chain_parallel(args, jobs, total):
         TextColumn("{task.completed}/{task.total}"), TimeElapsedColumn(),
         console=output_console, disable=args.json,
     ) as progress:
-        task_id = progress.add_task(f"체인 ({args.workers} workers)", total=total)
+        task_id = progress.add_task(f"Chain ({args.workers} workers)", total=total)
         with Pool(processes=args.workers) as pool:
             for r in pool.imap_unordered(_chain_one, jobs):
                 if r["ok"]:
@@ -221,6 +221,6 @@ def _run_chain_parallel(args, jobs, total):
                         print(json.dumps(json_envelope("chain", {"input": r["input"], "error": r["error"]}, schema=schema_uri("chain")), ensure_ascii=False))
                 progress.update(task_id, advance=1, description=f"[{ok+fail}/{total}] {Path(r['input']).name}")
     if not args.json:
-        print_success(f"배치 완료: {ok} 성공, {fail} 실패 / {total} 전체 ({args.workers} workers)")
+        print_success(f"Batch complete: {ok} succeeded, {fail} failed / {total} total ({args.workers} workers)")
     if fail:
         sys.exit(1)

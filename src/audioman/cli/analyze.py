@@ -1,5 +1,5 @@
 # Created: 2026-03-21
-# Purpose: audioman analyze 서브커맨드 — 오디오 분석
+# Purpose: audioman analyze subcommand — audio analysis
 
 import argparse
 import json
@@ -65,12 +65,12 @@ def _analyze_file(
     summary = compute_summary(metrics)
     silence = detect_silence(audio, sr, threshold_db=silence_threshold)
 
-    # Findings: signal + (optional) spectral. LLM agent 후기 대응.
+    # Findings: signal + (optional) spectral. Addresses LLM agent feedback.
     findings = detect_signal_findings(audio, sr, file=str(path))
     findings.extend(silence_to_findings(silence, audio_length, sr, file=str(path)))
 
-    # LLM agent 후기 #3 대응: duration/total_samples를 명시적으로 보장.
-    # `frames`는 채널당 샘플 수, `total_samples`는 그 별칭(명시적 이름).
+    # Addresses LLM agent feedback #3: guarantee duration/total_samples explicitly.
+    # `frames` is the sample count per channel, `total_samples` is its alias (explicit name).
     result = {
         "file": str(path),
         "sample_rate": sr,
@@ -129,7 +129,7 @@ def _run_single(args: argparse.Namespace, path: Path) -> None:
     except FileNotFoundError as e:
         print_error(str(e))
 
-    # 웨이브폼 렌더링 (JSON 모드에서도 ascii_waveform 필드로 포함)
+    # Waveform rendering (also included as the ascii_waveform field in JSON mode)
     waveform_text = None
     envelope_text = None
     spectral_text = None
@@ -159,12 +159,12 @@ def _run_single(args: argparse.Namespace, path: Path) -> None:
         print_json(out)
         return
 
-    # human-readable 출력
+    # human-readable output
     output_console.print(f"\n[bold]{result['file']}[/bold]")
     output_console.print(f"  Duration: {result['duration']}s | SR: {result['sample_rate']}Hz | CH: {result['channels']}")
     output_console.print(f"  RMS: {result['rms']:.4f} | Peak: {result['peak']:.4f}")
 
-    # 웨이브폼
+    # Waveform
     if waveform_text:
         output_console.print(f"\n[bold]Waveform[/bold]")
         output_console.print(waveform_text, highlight=False)
@@ -175,7 +175,7 @@ def _run_single(args: argparse.Namespace, path: Path) -> None:
 
     output_console.print()
 
-    # summary 테이블
+    # summary table
     rows = []
     for metric, stats in result["summary"].items():
         rows.append([
@@ -223,7 +223,7 @@ def _run_single(args: argparse.Namespace, path: Path) -> None:
 def _run_batch(args: argparse.Namespace, input_dir: Path) -> None:
     files = collect_audio_files(input_dir, recursive=args.recursive)
     if not files:
-        print_error(f"오디오 파일이 없습니다: {input_dir}")
+        print_error(f"No audio files found: {input_dir}")
 
     fail = 0
     for i, fpath in enumerate(files):
@@ -257,6 +257,6 @@ def _run_batch(args: argparse.Namespace, input_dir: Path) -> None:
                 output_console.print(f"  [{i+1}/{len(files)}] {fpath.name}: ERROR {e}")
 
     if not args.json:
-        print_success(f"분석 완료: {len(files)}개 파일")
+        print_success(f"Analysis complete: {len(files)} files")
     if fail:
         sys.exit(1)

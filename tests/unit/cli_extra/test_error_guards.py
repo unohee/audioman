@@ -60,7 +60,7 @@ class TestFaderCompareGuards:
 
         result = run_cli(["fader-compare", str(tmp_path / "ghost.json")])
         assert result.code == 0
-        assert seen and "파일 없음" in seen[0]
+        assert seen and "File not found" in seen[0]
         assert "Traceback" not in result.stderr
 
     def test_malformed_json_returns_before_touching_the_fields(self, run_cli, tmp_path,
@@ -75,7 +75,7 @@ class TestFaderCompareGuards:
 
         result = run_cli(["fader-compare", str(bad)])
         assert result.code == 0
-        assert seen and "읽을 수 없습니다" in seen[0]
+        assert seen and "Cannot read ground truth JSON" in seen[0]
         assert "Traceback" not in result.stderr
 
     def test_non_object_json_returns_before_field_access(self, run_cli, tmp_path, monkeypatch):
@@ -89,7 +89,7 @@ class TestFaderCompareGuards:
 
         result = run_cli(["fader-compare", str(bad)])
         assert result.code == 0
-        assert seen and "최상위가 객체가 아닙니다" in seen[0]
+        assert seen and "Top level of the ground truth JSON is not an object" in seen[0]
 
     def test_invalid_source_dir_returns_before_glob(self, run_cli, tmp_path, monkeypatch):
         from audioman.cli import fader_compare as fc
@@ -102,7 +102,7 @@ class TestFaderCompareGuards:
 
         result = run_cli(["fader-compare", str(bad)])
         assert result.code == 0
-        assert seen and "source_dir가 유효하지 않습니다" in seen[0]
+        assert seen and "ground truth source_dir is not valid" in seen[0]
         # The guard stops the run before Path(5).glob() can raise TypeError.
         assert "Traceback" not in result.stderr
 
@@ -119,7 +119,7 @@ class TestFaderCompareGuards:
 
         result = run_cli(["fader-compare", str(bad)])
         assert result.code == 0
-        assert seen and "'gains' 필드가 없습니다" in seen[0]
+        assert seen and "has no 'gains' field" in seen[0]
         assert "Fader-test vs Automix" not in result.stdout
 
     def test_source_dir_without_wavs_returns_before_the_zip(self, run_cli, tmp_path,
@@ -135,7 +135,7 @@ class TestFaderCompareGuards:
 
         result = run_cli(["fader-compare", str(gt)])
         assert result.code == 0
-        assert seen and "source_dir에 wav 없음" in seen[0]
+        assert seen and "No wav files in source_dir" in seen[0]
         assert "Traceback" not in result.stderr
 
     def test_automix_failure_returns_before_the_summary(self, run_cli, tmp_path,
@@ -150,7 +150,7 @@ class TestFaderCompareGuards:
 
         result = run_cli(["fader-compare", str(gt)])
         assert result.code == 0
-        assert seen and "automix 실패" in seen[0]
+        assert seen and "automix failed" in seen[0]
         assert "Fader-test vs Automix" not in result.stdout
 
     def test_gain_cardinality_mismatch_returns_before_indexing(self, run_cli, tmp_path,
@@ -172,7 +172,7 @@ class TestFaderCompareGuards:
         result = run_cli(["fader-compare", str(gt)])
 
         assert result.code == 0
-        assert seen and "gain 수가 입력 트랙 수와 다릅니다" in seen[0]
+        assert seen and "different number of gains than input tracks" in seen[0]
         assert "tracks=3" in seen[0] and "gains=1" in seen[0]
         # The guard stops the run before the statistics divide by a bad count.
         assert "Fader-test vs Automix" not in result.stdout
@@ -188,7 +188,7 @@ class TestFaderCompareGuards:
         result = run_cli(["fader-compare", str(gt)])
 
         assert result.code == 0
-        assert seen and "gain 값이 숫자가 아닙니다" in seen[0]
+        assert seen and "gain is not a number" in seen[0]
         assert "Fader-test vs Automix" not in result.stdout
 
     def test_no_matching_tracks_returns_before_dividing(self, run_cli, tmp_path,
@@ -203,7 +203,7 @@ class TestFaderCompareGuards:
         result = run_cli(["fader-compare", str(gt)])
 
         assert result.code == 0
-        assert seen and "매칭된 트랙이 없습니다" in seen[0]
+        assert seen and "No tracks matched" in seen[0]
         assert "Traceback" not in result.stderr
         assert "Fader-test vs Automix" not in result.stdout
 
@@ -243,7 +243,7 @@ class TestObserveGuards:
         assert result.code == 0
         assert seen and "No audio files in" in seen[0]
         # The guard returns before the batch loop, so nothing else is reported.
-        assert "배치 완료" not in result.stderr
+        assert "Batch complete" not in result.stderr
         assert result.stdout == ""
 
 
@@ -261,7 +261,7 @@ class TestObsGuards:
 
         result = run_cli(["obs", "probe", str(tmp_path / "ghost.mp4")])
         assert result.code == 0
-        assert seen and "파일/폴더 없음" in seen[0]
+        assert seen and "File/folder not found" in seen[0]
         assert "OBS topology" not in result.stdout
 
     def test_probe_failure_continues_with_the_next_video(self, run_cli, tmp_path, monkeypatch):
@@ -314,7 +314,7 @@ class TestObsGuards:
 
         result = run_cli(["obs", "dry-run", str(tmp_path / "ghost.mp4")])
         assert result.code == 0
-        assert seen and "파일/폴더 없음" in seen[0]
+        assert seen and "File/folder not found" in seen[0]
 
     def test_dry_run_failure_continues_with_the_next_video(self, run_cli, tmp_path,
                                                            monkeypatch):

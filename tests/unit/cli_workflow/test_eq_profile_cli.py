@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 import numpy as np
 import pytest
@@ -106,7 +107,7 @@ class TestPluginResolution:
     def test_unknown_plugin_exits_nonzero(self, run_cli, resolved):
         result = run_cli(["eq-profile", "-p", "not-installed", "--mode", "response"])
         assert result.code == 1
-        assert "플러그인 없음: 'not-installed'" in result.stderr
+        assert "plugin not found: 'not-installed'" in result.stderr
 
 
 class TestParamParsing:
@@ -177,11 +178,11 @@ class TestResponseMode:
     def test_human_output_reports_range_phase_and_thd(self, run_cli, resolved, fake_eq):
         result = run_cli(["eq-profile", "-p", "fake-eq", "--mode", "response"])
         assert result.code == 0, result.stderr
-        assert "response 분석 중..." in result.stdout
-        assert "주파수 응답: -3.0 ~ 2.2 dB" in result.stdout
-        assert "최소위상: 예" in result.stdout
+        assert "Analyzing response..." in result.stdout
+        assert "Frequency response: -3.0 ~ 2.2 dB" in result.stdout
+        assert "Minimum phase: yes" in result.stdout
         assert "THD@1kHz: 0.0100%" in result.stdout
-        assert "EQ 프로파일링 완료" in result.stderr
+        assert "EQ profiling complete" in result.stderr
 
     def test_non_minimum_phase_is_reported_as_no(self, run_cli, resolved, monkeypatch):
         import audioman.core.plugin_analysis as real_pa
@@ -190,7 +191,7 @@ class TestResponseMode:
                             lambda *a, **k: _eq_response(minimum_phase=False))
         result = run_cli(["eq-profile", "-p", "fake-eq", "--mode", "response"])
         assert result.code == 0, result.stderr
-        assert "최소위상: 아니오" in result.stdout
+        assert "Minimum phase: no" in result.stdout
 
     def test_params_and_bypass_params_are_forwarded(self, run_cli, resolved, fake_eq):
         result = run_cli(
@@ -224,20 +225,20 @@ class TestResponseMode:
                             lambda *a, **k: (_ for _ in ()).throw(ValueError("bad param")))
         result = run_cli(["eq-profile", "-p", "fake-eq", "--mode", "response"])
         assert result.code == 0, result.stderr
-        assert "에러: bad param" in result.stdout
+        assert "error: bad param" in result.stdout
 
 
 class TestSweepMode:
     def test_sweep_without_params_reports_the_missing_option(self, run_cli, resolved, fake_eq):
         result = run_cli(["eq-profile", "-p", "fake-eq", "--mode", "sweep"], json_mode=True)
         assert result.code == 0, result.stderr
-        assert result.payload["sweep"] == {"error": "스윕 파라미터 미지정 (--sweep-param 필요)"}
+        assert result.payload["sweep"] == {"error": "sweep parameters not specified (--sweep-param required)"}
         assert fake_eq == []  # no measurement was attempted
 
     def test_sweep_human_message_for_missing_params(self, run_cli, resolved, fake_eq):
         result = run_cli(["eq-profile", "-p", "fake-eq", "--mode", "sweep"])
         assert result.code == 0, result.stderr
-        assert "--sweep-param 미지정" in result.stdout
+        assert "--sweep-param not specified" in result.stdout
 
     def test_sweep_measures_once_per_value(self, run_cli, resolved, fake_eq):
         result = run_cli(
@@ -305,8 +306,8 @@ class TestNonlinearMode:
     def test_human_output_labels_the_deviation(self, run_cli, resolved, fake_eq):
         result = run_cli(["eq-profile", "-p", "fake-eq", "--mode", "nonlinear"])
         assert result.code == 0, result.stderr
-        assert "개 레벨 측정, 최대 편차:" in result.stdout
-        assert "비선형 (레벨 의존)" in result.stdout
+        assert "levels measured, max deviation:" in result.stdout
+        assert "nonlinear (level dependent)" in result.stdout
         assert "dBFS: THD=" in result.stdout
 
     def test_level_independent_eq_is_labelled_linear(self, run_cli, resolved, monkeypatch):
@@ -321,7 +322,7 @@ class TestNonlinearMode:
         )
         result = run_cli(["eq-profile", "-p", "fake-eq", "--mode", "nonlinear"])
         assert result.code == 0, result.stderr
-        assert "선형 (레벨 무관)" in result.stdout
+        assert "linear (level independent)" in result.stdout
 
     def test_a_single_level_is_not_level_dependent(self, run_cli, resolved, monkeypatch):
         import audioman.core.plugin_analysis as real_pa
@@ -392,7 +393,7 @@ class TestNpyExport:
             ["eq-profile", "-p", "fake-eq", "--mode", "response", "--save-npy", str(npy_dir)]
         )
         assert result.code == 0, result.stderr
-        assert "곡선 저장:" in result.stderr
+        assert "Curves saved:" in result.stderr
         assert "1 settings × 8 bins" in result.stderr
 
     def test_save_npy_is_skipped_when_no_measurement_succeeded(
@@ -419,7 +420,7 @@ class TestAllModeAndOutput:
         payload = result.payload
         assert "response" in payload
         # sweep needs --sweep-param; in `all` mode it reports the missing option.
-        assert payload["sweep"] == {"error": "스윕 파라미터 미지정 (--sweep-param 필요)"}
+        assert payload["sweep"] == {"error": "sweep parameters not specified (--sweep-param required)"}
         assert "nonlinear" in payload
         assert [name for name, *_ in fake_eq] == ["response", "nonlinear"]
 
@@ -443,7 +444,7 @@ class TestAllModeAndOutput:
         assert saved["command"] == "eq-profile"
         assert saved["plugin"] == PLUGIN_PATH
         assert "response" in saved
-        assert "결과 저장" in result.stderr
+        assert "Result saved" in result.stderr
 
     def test_json_without_output_prints_the_envelope(self, run_cli, resolved, fake_eq):
         result = run_cli(["eq-profile", "-p", "fake-eq", "--mode", "response"], json_mode=True)
@@ -463,7 +464,7 @@ class TestAllModeAndOutput:
     def test_human_completion_message_without_json_or_output(self, run_cli, resolved, fake_eq):
         result = run_cli(["eq-profile", "-p", "fake-eq", "--mode", "response"])
         assert result.code == 0, result.stderr
-        assert "EQ 프로파일링 완료" in result.stderr
+        assert "EQ profiling complete" in result.stderr
 
     def test_common_options_reach_the_engine(self, run_cli, resolved, fake_eq):
         assert run_cli(
@@ -478,3 +479,49 @@ class TestAllModeAndOutput:
             "sweep_duration": 3.0,
             "level_db": -6.0,
         }
+
+
+class TestPlainModeTagLeaks:
+    """`--plain` binds a `markup=False` console, so a tagged string passed
+    straight to `console.print` prints its tags verbatim (AUD-1853).
+
+    `real_cli_console_binding` reproduces the console the real `--plain`
+    process binds at import time; without it these leaks stay invisible.
+    """
+
+    TAG_RE = re.compile(r"\[/?(?:dim|bold|red|green|yellow|cyan)[^\]]*\]")
+
+    @pytest.fixture(autouse=True)
+    def plain_console(self, real_cli_console_binding):
+        from audioman.cli import eq_profile
+
+        real_cli_console_binding(eq_profile)
+
+    def test_success_path_has_no_tag_text(self, run_cli, resolved, fake_eq):
+        result = run_cli(["eq-profile", "-p", "fake-eq", "--mode", "response"])
+        assert result.code == 0, result.stderr
+        combined = result.stdout + result.stderr
+        assert self.TAG_RE.search(combined) is None, combined
+        assert "[bold" not in combined, combined
+        # the user-visible text survives; only the tags disappear
+        assert "Analyzing response" in result.stdout
+        assert "Minimum phase: yes" in result.stdout
+
+    def test_level_dependent_label_has_no_tag_text(self, run_cli, resolved, fake_eq):
+        result = run_cli(["eq-profile", "-p", "fake-eq", "--mode", "nonlinear"])
+        assert result.code == 0, result.stderr
+        combined = result.stdout + result.stderr
+        assert self.TAG_RE.search(combined) is None, combined
+        assert "[yellow]" not in combined, combined
+        assert "nonlinear (level dependent)" in result.stdout
+
+    def test_failure_path_has_no_tag_text(self, run_cli, resolved, monkeypatch):
+        import audioman.core.plugin_analysis as real_pa
+
+        monkeypatch.setattr(real_pa, "measure_eq_response",
+                            lambda *a, **k: (_ for _ in ()).throw(ValueError("bad param")))
+        result = run_cli(["eq-profile", "-p", "fake-eq", "--mode", "response"])
+        assert result.code == 0, result.stderr
+        combined = result.stdout + result.stderr
+        assert self.TAG_RE.search(combined) is None, combined
+        assert "error: bad param" in result.stdout

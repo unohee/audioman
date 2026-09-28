@@ -1,12 +1,13 @@
 # Created: 2026-05-07
-# Purpose: OBS 멀티트랙 영상 자동 진단 — 트랙 토폴로지 분류, voice/music/fullmix 분류,
-#          spectrum_diagnostics + qc.evaluate를 묶어 처치 계획(dry-run) 생성.
-# Dependencies: ffmpeg/ffprobe (외부 CLI), audioman.core.{analysis, qc, vad, audio_file, loudness}
+# Purpose: automatic diagnosis of OBS multitrack video — track topology classification,
+#          voice/music/fullmix classification, and a treatment plan (dry-run) built from
+#          spectrum_diagnostics + qc.evaluate.
+# Dependencies: ffmpeg/ffprobe (external CLI), audioman.core.{analysis, qc, vad, audio_file, loudness}
 #
-# 사용 가이드: docs/obs-workflow.md
-# CLI:        cli/obs.py (audioman obs probe / audioman obs dry-run)
-# 진입점:      probe_topology() → classify_track() → diagnose_track() → recommend_treatment()
-#             또는 dry_run_video()로 영상 1개 통합 실행
+# Guide: docs/obs-workflow.md
+# CLI:   cli/obs.py (audioman obs probe / audioman obs dry-run)
+# Entry: probe_topology() → classify_track() → diagnose_track() → recommend_treatment()
+#        or dry_run_video() to run all of it for a single video
 
 from __future__ import annotations
 
@@ -38,19 +39,19 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# 토폴로지 분류 (트랙 간 RMS 분포로 OBS 녹화 모드 식별)
+# Topology classification (identifies the OBS recording mode from the RMS spread across tracks)
 # ---------------------------------------------------------------------------
 
 Topology = Literal["multitrack", "single", "duplicated", "silent", "unknown"]
 TrackKind = Literal["voice", "music", "fullmix", "silent", "unknown"]
 
 _RMS_SILENCE_THRESHOLD = 1e-4
-_RMS_DUPLICATE_TOLERANCE = 1e-3  # |rmsA - rmsB| < tol → 같은 신호로 간주
+_RMS_DUPLICATE_TOLERANCE = 1e-3  # |rmsA - rmsB| < tol → treated as the same signal
 
 
 @dataclass
 class TrackProbe:
-    """트랙 한 개의 빠른 RMS 프로브 결과."""
+    """Fast RMS probe result for a single track."""
     index: int
     rms: float
     is_silent: bool
@@ -62,8 +63,8 @@ class TopologyReport:
     topology: Topology
     n_streams: int
     track_probes: list[TrackProbe]
-    active_indices: list[int]                    # 신호 있는 트랙
-    unique_signal_groups: list[list[int]]        # 같은 RMS인 트랙끼리 그룹핑
+    active_indices: list[int]                    # tracks carrying signal
+    unique_signal_groups: list[list[int]]        # tracks with equal RMS grouped together
     sample_rate: int
     duration_sec: float
 
@@ -89,11 +90,11 @@ class TopologyReport:
 
 def _ensure_tools() -> None:
     if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
-        raise RuntimeError("ffmpeg/ffprobe가 PATH에 없습니다.")
+        raise RuntimeError("ffmpeg/ffprobe not found on PATH.")
 
 
 def _ffprobe_streams(video: Path) -> list[dict]:
-    """video의 모든 audio 스트림 메타데이터."""
+    """Metadata for every audio stream of `video`."""
     cmd = [
         "ffprobe", "-v", "error",
         "-select_streams", "a",
@@ -117,7 +118,7 @@ def _extract_track_to_wav(
     sample_rate: int | None = None,
     mono: bool = False,
 ) -> bool:
-    """ffmpeg로 video의 (0:a:audio_index) 트랙을 WAV로 추출. 성공 여부 반환."""
+    """Extract track (0:a:audio_index) of `video` to WAV with ffmpeg. Returns success."""
     cmd: list[str] = ["ffmpeg", "-y", "-loglevel", "error"]
     if start_sec > 0:
         cmd += ["-ss", f"{start_sec:.3f}"]
@@ -131,7 +132,7 @@ def _extract_track_to_wav(
     cmd += ["-c:a", "pcm_s24le", str(out_path)]
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
-        logger.debug("ffmpeg 추출 실패 idx=%d: %s", audio_index, r.stderr.strip()[:200])
+        logger.debug("ffmpeg extraction failed idx=%d: %s", audio_index, r.stderr.strip()[:200])
         return False
     return out_path.exists() and out_path.stat().st_size > 1024
 
@@ -142,23 +143,24 @@ def probe_topology(
     probe_seconds: float | None = None,
     probe_sample_rate: int = 16000,
 ) -> TopologyReport:
-    """ffprobe로 트랙 수 파악 → 각 트랙을 mono 16k로 추출 → RMS로 토폴로지 분류.
+    """Count tracks with ffprobe → extract each track as mono 16k → classify topology by RMS.
 
     `probe_seconds`:
-      - None  → 영상 전체를 RMS 측정 (기본). 데스크탑 트랙처럼 "앞은 무음, 중간에 신호"
-        패턴이 silent로 오분류되는 것을 막기 위해 전체 스캔이 안전.
-      - float → 트랙별 앞 N초만 추출. 빠른 토폴로지 확인용.
+      - None  → measure RMS over the whole video (default). A full scan is safer because it
+        avoids misclassifying desktop-like tracks ("silent start, signal in the middle")
+        as silent.
+      - float → extract only the first N seconds of each track. For a quick topology check.
 
-    분류 규칙:
+    Classification rules:
       - n_active == 0       → silent
       - n_active == 1       → single
-      - active 트랙 RMS가 모두 _RMS_DUPLICATE_TOLERANCE 안에 들어옴 → duplicated
-      - 그 외                → multitrack
+      - all active track RMS values fall within _RMS_DUPLICATE_TOLERANCE → duplicated
+      - otherwise           → multitrack
     """
     _ensure_tools()
     video = Path(video)
     if not video.exists():
-        raise FileNotFoundError(f"파일 없음: {video}")
+        raise FileNotFoundError(f"File not found: {video}")
 
     streams = _ffprobe_streams(video)
     if not streams:
@@ -171,7 +173,7 @@ def probe_topology(
     sr = int(streams[0].get("sample_rate", 0) or 0)
     duration_sec = 0.0
     try:
-        # container duration 우선
+        # Prefer the container duration
         cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration",
                "-of", "csv=p=0", str(video)]
         duration_sec = float(subprocess.check_output(cmd, text=True).strip() or 0.0)
@@ -211,7 +213,7 @@ def probe_topology(
     active = [p for p in probes if not p.is_silent]
     active_indices = [p.index for p in active]
 
-    # 같은 RMS인 트랙끼리 그룹핑
+    # Group tracks that share the same RMS
     groups: list[list[int]] = []
     used = set()
     for i, p in enumerate(active):
@@ -227,16 +229,16 @@ def probe_topology(
                 used.add(q.index)
         groups.append(grp)
 
-    # 토폴로지 결정
+    # Decide the topology
     if not active:
         topology: Topology = "silent"
     elif len(active) == 1:
         topology = "single"
     elif len(groups) == 1 and len(active) == len(probes):
-        # 모든 트랙이 활성 + 모두 같은 RMS → 복제 마스터 믹스
+        # Every track is active and all share the same RMS → duplicated master mix
         topology = "duplicated"
     elif len(groups) == 1 and len(active) >= 2:
-        # 활성 트랙이 모두 같은 RMS (silent 트랙은 따로)
+        # All active tracks share the same RMS (silent tracks are separate)
         topology = "duplicated"
     else:
         topology = "multitrack"
@@ -253,7 +255,7 @@ def probe_topology(
 
 
 # ---------------------------------------------------------------------------
-# 트랙 분류 (voice / music / fullmix / silent)
+# Track classification (voice / music / fullmix / silent)
 # ---------------------------------------------------------------------------
 
 
@@ -283,14 +285,14 @@ def classify_track(
     audio: np.ndarray,
     sample_rate: int,
 ) -> TrackClassification:
-    """VAD + spectrum_diagnostics로 트랙 종류 추정.
+    """Estimate the track kind with VAD + spectrum_diagnostics.
 
-    경험 규칙 (예측치, dry-run용 — 의사결정 보조):
+    Heuristic rules (predictions for dry-run — decision support):
       - speech_ratio > 0.4  AND  sub < 10%  AND  presence > 1%  → voice
       - speech_ratio < 0.05 AND  sub > 15%                       → music
-      - speech_ratio > 0.2  AND  sub > 15%                       → fullmix (음성+음악)
-      - 그 외                                                       → fullmix (보수적)
-      - rms ~ 0                                                   → silent
+      - speech_ratio > 0.2  AND  sub > 15%                       → fullmix (speech+music)
+      - otherwise                                                → fullmix (conservative)
+      - rms ~ 0                                                  → silent
     """
     rms = float(np.sqrt(np.mean(audio ** 2)))
     if rms < _RMS_SILENCE_THRESHOLD:
@@ -323,7 +325,7 @@ def classify_track(
         kind = "fullmix"
         confidence = 0.7
     elif speech_ratio > 0.2:
-        # 음성 위주이지만 저역이 약하지 않음 — 보수적으로 fullmix
+        # Speech-dominant but the low end is not weak — stay conservative and pick fullmix
         kind = "voice" if presence_pct > 2.0 and sub_pct < 5.0 else "fullmix"
         confidence = 0.6
     else:
@@ -342,14 +344,14 @@ def classify_track(
 
 
 # ---------------------------------------------------------------------------
-# 트랙 진단 + 처치 추천
+# Track diagnosis + treatment recommendation
 # ---------------------------------------------------------------------------
 
 
 @dataclass
 class Treatment:
     action: str                   # "denoise" / "dehum" / "declip" / "leveling" / "stem_separate" / ...
-    plugin_short: str | None      # registry short name (없으면 None)
+    plugin_short: str | None      # registry short name (None when there is none)
     params: dict[str, Any] = field(default_factory=dict)
     rationale: str = ""
     severity: str = "info"        # "info" / "warn" / "critical"
@@ -375,12 +377,12 @@ def diagnose_track(
     sample_rate: int,
     classification: TrackClassification,
 ) -> dict:
-    """트랙에 대해 spectrum_diagnostics + 핵심 QC를 모은 통합 진단."""
+    """Combined diagnosis for one track: spectrum_diagnostics + key QC metrics."""
     diag = spectrum_diagnostics(audio, sample_rate, fft_size=16384, min_rms=0.005)
     loud = measure(audio, sample_rate).to_dict()
     clip = detect_clipping(audio)
     dc = _measure_dc_offset(audio)
-    # click 검출은 비싸므로 60s 이하 발췌에만 (긴 파일은 요약만)
+    # Click detection is expensive, so only for excerpts up to 60s (longer files are skipped)
     n_samp = audio.shape[-1] if audio.ndim == 2 else len(audio)
     if n_samp / sample_rate <= 600:
         clicks = detect_clicks(audio, sample_rate)
@@ -404,7 +406,7 @@ def diagnose_track(
 
 
 def recommend_treatment(track_diag: dict) -> list[Treatment]:
-    """진단 결과 → 처치 계획 룰 엔진."""
+    """Diagnosis result → treatment plan rule engine."""
     plan: list[Treatment] = []
     cls = track_diag["classification"]
     kind: TrackKind = cls["kind"]
@@ -422,18 +424,18 @@ def recommend_treatment(track_diag: dict) -> list[Treatment]:
             action="dehum",
             plugin_short="de-hum",
             params={"frequencies_hz": [h["frequency_hz"] for h in hum_hits]},
-            rationale=f"전원 험 검출: {[(h['frequency_hz'], h['snr_db']) for h in hum_hits]}",
+            rationale=f"Mains hum detected: {[(h['frequency_hz'], h['snr_db']) for h in hum_hits]}",
             severity="warn",
         ))
 
-    # 2. Clipping → de-clip 우선
+    # 2. Clipping → de-clip first
     if clip.get("n_samples", 0) > 0:
         sev = "critical" if clip["n_samples"] > 100 else "warn"
         plan.append(Treatment(
             action="declip",
             plugin_short="de-clip",
             params={"clipped_samples": clip["n_samples"]},
-            rationale=f"클리핑 샘플 {clip['n_samples']}개",
+            rationale=f"{clip['n_samples']} clipped sample(s)",
             severity=sev,
         ))
 
@@ -447,38 +449,38 @@ def recommend_treatment(track_diag: dict) -> list[Treatment]:
             severity="warn",
         ))
 
-    # 4. 트랙 종류별 핵심 처치
+    # 4. Core treatment per track kind
     if kind == "voice":
-        # speech_ratio 높고 저역 적음 → voice de-noise
+        # High speech_ratio with little low end → voice de-noise
         plan.append(Treatment(
             action="denoise",
             plugin_short="voice-de-noise",
             params={},
-            rationale=f"voice 트랙 (speech_ratio={cls['speech_ratio']}, presence={cls['presence_band_pct']}%)",
+            rationale=f"voice track (speech_ratio={cls['speech_ratio']}, presence={cls['presence_band_pct']}%)",
             severity="info",
         ))
-        # voiceover.process는 leveling까지 묶여있음
+        # voiceover.process already bundles leveling
         plan.append(Treatment(
             action="leveling",
             plugin_short=None,
             params={"target_lufs": -20.0, "max_true_peak_dbtp": -1.0},
-            rationale="발화 단위 LUFS 평탄화",
+            rationale="Flatten LUFS per utterance",
             severity="info",
         ))
 
     elif kind == "music":
-        # 음악 트랙: denoise 금지, EQ/loudness만
+        # Music track: no denoise, EQ/loudness only
         if loud.get("integrated_lufs") is not None and loud["integrated_lufs"] > -10:
             plan.append(Treatment(
                 action="loudness_check",
                 plugin_short=None,
                 params={"current_lufs": loud["integrated_lufs"]},
-                rationale="음악 트랙 LUFS > -10, 헤드룸 부족",
+                rationale="Music track LUFS > -10, not enough headroom",
                 severity="warn",
             ))
 
     elif kind == "fullmix":
-        # 풀믹스: voice de-noise를 그대로 적용하면 음악 손상 → stem 분리 권고
+        # Fullmix: applying voice de-noise as-is would damage the music → recommend stem separation
         plan.append(Treatment(
             action="stem_separate",
             plugin_short=None,
@@ -487,16 +489,16 @@ def recommend_treatment(track_diag: dict) -> list[Treatment]:
                 "primary_model": "htdemucs",
                 "primary_device": "mps",
                 "expected_stems": ["vocals", "other"],
-                "alternate_tool": "music-rebalance",   # RX 10 Music Rebalance도 가능
+                "alternate_tool": "music-rebalance",   # RX 10 Music Rebalance also works
             },
-            rationale="음성+음악 풀믹스 — Demucs(htdemucs/MPS) 우선, 대안 RX 10 Music Rebalance",
+            rationale="Speech+music fullmix — prefer Demucs (htdemucs/MPS), fallback RX 10 Music Rebalance",
             severity="info",
         ))
         plan.append(Treatment(
             action="denoise",
             plugin_short="voice-de-noise",
             params={"apply_to": "vocals_stem_only"},
-            rationale="stem 분리 후 vocals 트랙에 voice de-noise",
+            rationale="Voice de-noise on the vocals stem after stem separation",
             severity="info",
         ))
 
@@ -504,7 +506,7 @@ def recommend_treatment(track_diag: dict) -> list[Treatment]:
         plan.append(Treatment(
             action="skip",
             plugin_short=None,
-            rationale="무음 트랙",
+            rationale="Silent track",
             severity="info",
         ))
 
@@ -515,11 +517,11 @@ def recommend_treatment(track_diag: dict) -> list[Treatment]:
             action="declick",
             plugin_short="de-click",
             params={"n_clicks": n_clicks},
-            rationale=f"클릭 {n_clicks}개 검출",
+            rationale=f"{n_clicks} click(s) detected",
             severity="warn" if n_clicks > 5 else "info",
         ))
 
-    # 6. Phase (스테레오 모노 호환성)
+    # 6. Phase (stereo-to-mono compatibility)
     phase = track_diag.get("phase", {})
     neg_pct = phase.get("negative_correlation_pct", 0.0) if phase.get("applicable") else 0.0
     if neg_pct > 20.0:
@@ -527,7 +529,7 @@ def recommend_treatment(track_diag: dict) -> list[Treatment]:
             action="phase_warning",
             plugin_short=None,
             params={"negative_correlation_pct": neg_pct},
-            rationale="모노 합산 시 cancellation 위험",
+            rationale="Risk of cancellation when summed to mono",
             severity="warn",
         ))
 
@@ -539,7 +541,7 @@ def recommend_treatment(track_diag: dict) -> list[Treatment]:
                 action="channel_balance",
                 plugin_short=None,
                 params={"imbalance_db": imb["imbalance_db"]},
-                rationale=f"L/R 불균형 {imb['imbalance_db']} dB",
+                rationale=f"L/R imbalance {imb['imbalance_db']} dB",
                 severity="warn",
             ))
 
@@ -547,7 +549,7 @@ def recommend_treatment(track_diag: dict) -> list[Treatment]:
 
 
 # ---------------------------------------------------------------------------
-# 영상 한 개에 대한 dry-run 진단
+# Dry-run diagnosis for a single video
 # ---------------------------------------------------------------------------
 
 
@@ -555,7 +557,7 @@ def recommend_treatment(track_diag: dict) -> list[Treatment]:
 class VideoDryRunReport:
     video_path: str
     topology: TopologyReport
-    track_diagnostics: list[dict]    # 활성 트랙별 diagnose_track 결과
+    track_diagnostics: list[dict]    # diagnose_track result per active track
     treatments: list[dict]            # [{track_index, plan: [Treatment]}]
     notes: list[str]
 
@@ -576,12 +578,12 @@ def dry_run_video(
     analysis_start_sec: float | None = None,
     classify_only_active: bool = True,
 ) -> VideoDryRunReport:
-    """영상 1개를 dry-run 진단:
+    """Dry-run diagnosis for a single video:
        1) probe_topology
-       2) 활성 트랙 ([analysis_start_sec, +analysis_seconds] 구간) 추출 → classify + diagnose
-       3) 처치 계획 생성
+       2) extract active tracks ([analysis_start_sec, +analysis_seconds] window) → classify + diagnose
+       3) build the treatment plan
 
-    실제 처리는 하지 않음. 결과는 JSON 직렬화 가능.
+    Nothing is actually processed. The result is JSON-serializable.
     """
     _ensure_tools()
     video = Path(video)
@@ -594,15 +596,15 @@ def dry_run_video(
     treatments: list[dict] = []
 
     if topo.topology == "silent":
-        notes.append("모든 트랙 무음 — 처리 불필요")
+        notes.append("All tracks silent — nothing to process")
         return VideoDryRunReport(str(video), topo, [], [], notes)
 
-    # 분석할 트랙 선정:
-    #   - duplicated → 첫 번째 활성 트랙만 (나머지는 같은 신호)
-    #   - multitrack → unique_signal_groups의 대표만 분석하고 나머진 결과 복사
+    # Which tracks to analyze:
+    #   - duplicated → only the first active track (the rest carry the same signal)
+    #   - multitrack → analyze one representative per unique_signal_groups and copy the result to the rest
     if topo.topology == "duplicated":
         analyze_indices = topo.active_indices[:1]
-        notes.append("복제 믹스: 첫 활성 트랙만 분석")
+        notes.append("Duplicated mix: analyzing only the first active track")
         mirror_map: dict[int, int] = {idx: analyze_indices[0] for idx in topo.active_indices}
     elif topo.topology == "multitrack":
         analyze_indices = [grp[0] for grp in topo.unique_signal_groups]
@@ -611,12 +613,12 @@ def dry_run_video(
             for idx in grp[1:]:
                 mirror_map[idx] = grp[0]
         if mirror_map:
-            notes.append(f"동일 신호 그룹 발견: {topo.unique_signal_groups}")
+            notes.append(f"Identical signal groups found: {topo.unique_signal_groups}")
     else:
         analyze_indices = topo.active_indices
         mirror_map = {}
 
-    # 분석 시작 시점: 영상 중간부 (말하는 구간일 확률 높음)
+    # Analysis start point: middle of the video (most likely to contain speech)
     if analysis_start_sec is None:
         if topo.duration_sec > analysis_seconds * 2:
             analysis_start_sec = max(0.0, topo.duration_sec / 2 - analysis_seconds / 2)
@@ -633,7 +635,7 @@ def dry_run_video(
                 start_sec=analysis_start_sec,
             )
             if not ok:
-                notes.append(f"track {idx}: 추출 실패")
+                notes.append(f"track {idx}: extraction failed")
                 continue
             audio, sr = read_audio(wav)
             cls = classify_track(audio, sr)
@@ -651,7 +653,7 @@ def dry_run_video(
                 "mirrors": [],
             })
 
-    # mirror된 트랙도 같은 처치를 받도록 treatments 확장
+    # Extend treatments to mirrored tracks so they receive the same treatment
     if mirror_map:
         analyzed_by_idx = {tr["track_index"]: tr for tr in treatments}
         for mirror_idx, source_idx in mirror_map.items():

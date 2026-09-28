@@ -1,5 +1,5 @@
 # Created: 2026-03-21
-# Purpose: audioman preset 서브커맨드
+# Purpose: audioman preset subcommand
 
 import argparse
 
@@ -61,7 +61,7 @@ def run_save(args: argparse.Namespace) -> None:
             schema=schema_uri("preset"),
         ))
     else:
-        print_success(f"프리셋 저장: {path}")
+        print_success(f"Preset saved: {path}")
 
 
 def run_load(args: argparse.Namespace) -> None:
@@ -102,7 +102,7 @@ def run_list(args: argparse.Namespace) -> None:
         return
 
     if not presets:
-        output_console.print("저장된 프리셋 없음")
+        output_console.print("No saved presets")
         return
 
     rows = []
@@ -110,7 +110,7 @@ def run_list(args: argparse.Namespace) -> None:
         param_count = str(len(p.parameters))
         rows.append([p.name, p.plugin, param_count, p.description or "-"])
 
-    print_table("프리셋 목록", ["Name", "Plugin", "Params", "Description"], rows)
+    print_table("Preset list", ["Name", "Plugin", "Params", "Description"], rows)
 
 
 def run_delete(args: argparse.Namespace) -> None:
@@ -127,4 +127,4 @@ def run_delete(args: argparse.Namespace) -> None:
             schema=schema_uri("preset"),
         ))
     else:
-        print_success(f"프리셋 삭제: {args.name}")
+        print_success(f"Preset deleted: {args.name}")

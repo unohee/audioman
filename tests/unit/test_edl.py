@@ -1,4 +1,4 @@
-# tests/unit/test_edl.py — 비파괴 EDL 워크플로우
+# tests/unit/test_edl.py — non-destructive EDL workflow
 
 import json
 from pathlib import Path
@@ -12,7 +12,7 @@ from audioman.core import edl as edl_core
 
 @pytest.fixture
 def long_wav(tmp_path, sample_rate):
-    """3초짜리 신호: 1초 사인 + 1초 무음 + 1초 노이즈."""
+    """A 3-second signal: 1 s sine + 1 s silence + 1 s noise."""
     sr = sample_rate
     t = np.arange(sr) / sr
     sine = (np.sin(2 * np.pi * 440 * t) * 0.5).astype(np.float32)
@@ -53,11 +53,11 @@ class TestInitAndLoad:
 
 class TestValidation:
     def test_unknown_op_type(self):
-        with pytest.raises(ValueError, match="알 수 없는 op type"):
+        with pytest.raises(ValueError, match="unknown op type"):
             edl_core.validate_op({"type": "explode"})
 
     def test_missing_required_keys(self):
-        with pytest.raises(ValueError, match="필수 키 누락"):
+        with pytest.raises(ValueError, match="missing required keys"):
             edl_core.validate_op({"type": "cut_region", "start_sec": 0})
 
     def test_valid_op_passes(self):
@@ -78,7 +78,7 @@ class TestRender:
         original, _ = sf.read(str(long_wav), always_2d=True)
         rendered, _ = sf.read(str(out), always_2d=True)
         assert original.shape == rendered.shape
-        # PCM_24 양자화 오차 허용
+        # allow for PCM_24 quantization error
         assert np.allclose(original, rendered, atol=1e-4)
 
     def test_render_cut_region(self, long_wav, tmp_path, sample_rate):
@@ -86,12 +86,12 @@ class TestRender:
         edl_core.add_op(edl, {"type": "cut_region", "start_sec": 1.0, "end_sec": 2.0})
         out = tmp_path / "cut.wav"
         result = edl_core.render_edl(edl, out)
-        # 1초 삭제 → 2초 남음
+        # delete 1 s -> 2 s remain
         assert abs(result.output_duration_sec - 2.0) < 0.01
 
     def test_render_chain_of_ops(self, long_wav, tmp_path):
         edl = edl_core.init_edl(long_wav)
-        # 가운데 무음 자르고 → fade_in → gain
+        # cut the middle silence -> fade_in -> gain
         edl_core.add_op(edl, {"type": "cut_region", "start_sec": 1.0, "end_sec": 2.0})
         edl_core.add_op(edl, {"type": "fade_in", "duration_sec": 0.1})
         edl_core.add_op(edl, {"type": "gain", "db": -6.0})
@@ -100,35 +100,35 @@ class TestRender:
         assert result.n_ops == 3
         assert abs(result.output_duration_sec - 2.0) < 0.01
 
-        # gain -6dB로 줄였으니 원본보다 작아야 함
+        # reduced by gain -6dB, so it must be smaller than the original
         original, _ = sf.read(str(long_wav), always_2d=True)
         rendered, _ = sf.read(str(out), always_2d=True)
         original_peak = float(np.max(np.abs(original)))
         rendered_peak = float(np.max(np.abs(rendered)))
-        # -6dB = 약 0.5x. 허용 오차로 0.55x 이내
+        # -6dB is about 0.5x; allow up to 0.55x
         assert rendered_peak < original_peak * 0.55
 
     def test_render_invalid_op_raises(self, long_wav, tmp_path):
         edl = edl_core.init_edl(long_wav)
-        # validate_op을 우회해 직접 ops에 주입 → render에서 _apply_op이 잡아냄
+        # inject straight into ops, bypassing validate_op -> _apply_op catches it during render
         edl.ops.append({"type": "explode"})
         with pytest.raises(RuntimeError, match="op #1"):
             edl_core.render_edl(edl, tmp_path / "x.wav")
 
     def test_source_modification_detected(self, long_wav, tmp_path, sample_rate):
         edl = edl_core.init_edl(long_wav)
-        # source 파일 변조
+        # tamper with the source file
         sr = sample_rate
         new_audio = np.ones(sr, dtype=np.float32) * 0.1
         sf.write(str(long_wav), new_audio, sr, subtype="PCM_24")
 
-        with pytest.raises(ValueError, match="source 파일이 변경됨"):
+        with pytest.raises(ValueError, match="source file changed"):
             edl_core.render_edl(edl, tmp_path / "x.wav")
 
     def test_no_verify_skips_check(self, long_wav, tmp_path, sample_rate):
         edl = edl_core.init_edl(long_wav)
         sf.write(str(long_wav), np.ones(sample_rate, dtype=np.float32) * 0.1, sample_rate, subtype="PCM_24")
-        # no_verify=True면 통과
+        # passes with no_verify=True
         result = edl_core.render_edl(edl, tmp_path / "x.wav", verify_source=False)
         assert result.n_ops == 0
 
@@ -140,7 +140,7 @@ class TestWorkspaceUndoRedo:
         assert ws.parent.parent == long_wav.parent
 
     def test_undo_redo_roundtrip(self, long_wav):
-        # init → 두 op 추가 → undo → redo
+        # init -> add two ops -> undo -> redo
         edl = edl_core.init_edl(long_wav)
         edl_path = edl_core.edl_path(long_wav)
         edl_core.workspace_dir(long_wav).mkdir(parents=True, exist_ok=True)
@@ -158,14 +158,14 @@ class TestWorkspaceUndoRedo:
         assert len(edl_core.list_history(long_wav)) == 3
         assert len(edl_core.list_redo(long_wav)) == 0
 
-        # undo 1번 → ops 1개로
+        # one undo -> 1 op
         rolled = edl_core.undo(long_wav)
         assert rolled is not None
         assert len(rolled.ops) == 1
         assert rolled.ops[0]["type"] == "fade_in"
         assert len(edl_core.list_redo(long_wav)) == 1
 
-        # redo → ops 2개로 복원
+        # redo -> restored to 2 ops
         forward = edl_core.redo(long_wav)
         assert forward is not None
         assert len(forward.ops) == 2
@@ -178,7 +178,7 @@ class TestWorkspaceUndoRedo:
         edl_core.workspace_dir(long_wav).mkdir(parents=True, exist_ok=True)
         edl_core.save_edl(edl, edl_path)
         edl_core.snapshot_history(edl, long_wav)
-        # history가 1개뿐 → undo 불가
+        # only one history entry -> cannot undo
         result = edl_core.undo(long_wav)
         assert result is None
 
@@ -200,7 +200,7 @@ class TestWorkspaceUndoRedo:
         edl_core.undo(long_wav)
         assert len(edl_core.list_redo(long_wav)) == 1
 
-        # 새 op 추가하면 redo는 비워져야 함 (다른 길로 갔으므로)
+        # adding a new op must clear redo (a different path was taken)
         edl = edl_core.load_edl(edl_path)
         edl_core.add_op(edl, {"type": "normalize"})
         edl_core.save_edl(edl, edl_path)
@@ -232,7 +232,7 @@ class TestParamSerialization:
 
 class TestEDLDataclassEdges:
     def test_version_too_new_rejected(self):
-        with pytest.raises(ValueError, match="지원하지 않는 EDL version"):
+        with pytest.raises(ValueError, match="unsupported EDL version"):
             edl_core.EDL.from_dict({
                 "version": edl_core.EDL_VERSION + 1,
                 "source": "/a.wav", "source_sha256": "x",
@@ -264,11 +264,11 @@ class TestEDLDataclassEdges:
 
 class TestValidationEdges:
     def test_non_dict_op_rejected(self):
-        with pytest.raises(ValueError, match="op은 dict여야 합니다"):
+        with pytest.raises(ValueError, match="op must be a dict"):
             edl_core.validate_op(["not", "a", "dict"])
 
     def test_missing_type_key_rejected(self):
-        with pytest.raises(ValueError, match="알 수 없는 op type"):
+        with pytest.raises(ValueError, match="unknown op type"):
             edl_core.validate_op({"start_sec": 0, "end_sec": 1})
 
     def test_add_op_stores_copy_and_updates_modified(self, long_wav):
@@ -281,7 +281,7 @@ class TestValidationEdges:
         assert edl.modified_at >= before
 
     def test_load_missing_file_raises(self, tmp_path):
-        with pytest.raises(FileNotFoundError, match="EDL 파일 없음"):
+        with pytest.raises(FileNotFoundError, match="EDL file not found"):
             edl_core.load_edl(tmp_path / "nope.json")
 
 
@@ -398,7 +398,7 @@ class TestRenderAllOpTypes:
         edl_core.add_op(edl, {
             "type": "splice", "clip": str(clip_path), "position_sec": 0.1, "mode": "insert",
         })
-        with pytest.raises(RuntimeError, match="sample rate 불일치"):
+        with pytest.raises(RuntimeError, match="sample rate mismatch"):
             edl_core.render_edl(edl, tmp_path / "out.wav")
 
     def test_splice_mono_clip_expanded_to_stereo(self, src, tmp_path):
@@ -432,7 +432,7 @@ class TestRenderAllOpTypes:
         edl_core.add_op(edl, {
             "type": "splice", "clip": str(clip_path), "position_sec": 0.0, "mode": "insert",
         })
-        with pytest.raises(RuntimeError, match="채널 변환 불가"):
+        with pytest.raises(RuntimeError, match="channel conversion not possible"):
             edl_core.render_edl(edl, tmp_path / "out.wav")
 
     def test_cut_region_with_crossfade_ms(self, src, tmp_path):
@@ -456,7 +456,7 @@ class TestRenderErrors:
             source=str(tmp_path / "gone.wav"), source_sha256="x",
             sample_rate=48000, channels=2, duration_sec=1.0,
         )
-        with pytest.raises(FileNotFoundError, match="EDL source 파일 없음"):
+        with pytest.raises(FileNotFoundError, match="EDL source file not found"):
             edl_core.render_edl(edl, tmp_path / "o.wav")
 
     def test_sample_rate_mismatch_raises(self, tmp_path):
@@ -465,7 +465,7 @@ class TestRenderErrors:
         sf.write(str(src), np.zeros(sr, dtype=np.float32), sr, subtype="FLOAT")
         edl = edl_core.init_edl(src)
         edl.sample_rate = 44100  # tamper
-        with pytest.raises(ValueError, match="sample rate 불일치"):
+        with pytest.raises(ValueError, match="sample rate mismatch"):
             edl_core.render_edl(edl, tmp_path / "o.wav")
 
     def test_edl_path_recorded(self, tmp_path):
@@ -598,7 +598,7 @@ class TestPluginOpsInEDL:
         self._install_fakes(monkeypatch, missing="nope")
         edl = edl_core.init_edl(src)
         edl_core.add_op(edl, {"type": "process", "plugin": "nope"})
-        with pytest.raises(RuntimeError, match="플러그인을 찾을 수 없음"):
+        with pytest.raises(RuntimeError, match="plugin not found"):
             edl_core.render_edl(edl, tmp_path / "o.wav")
 
     def test_chain_op_applies_each_step(self, monkeypatch, tmp_path, src):
@@ -623,7 +623,7 @@ class TestPluginOpsInEDL:
         self._install_fakes(monkeypatch, missing="ghost")
         edl = edl_core.init_edl(src)
         edl_core.add_op(edl, {"type": "chain", "steps": [{"plugin": "ghost"}]})
-        with pytest.raises(RuntimeError, match="chain 플러그인 없음"):
+        with pytest.raises(RuntimeError, match="chain plugin not found"):
             edl_core.render_edl(edl, tmp_path / "o.wav")
 
 

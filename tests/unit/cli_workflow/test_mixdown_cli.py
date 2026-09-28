@@ -100,7 +100,7 @@ class TestDryRun:
     def test_no_input_files_is_a_usage_error(self, run_cli, tmp_path):
         result = run_cli(["mixdown", "-o", str(tmp_path / "m.wav")])
         assert result.code == 1
-        assert "입력 파일을 지정하세요" in result.stderr
+        assert "Specify input files" in result.stderr
         assert "--session" in result.stderr
 
 
@@ -132,8 +132,8 @@ class TestExecution:
         loud = write_wav(tmp_path / "loud.wav", sample_rate=8000, duration=0.1, amplitude=0.95)
         result = run_cli(["mixdown", str(loud), str(loud), "-o", str(tmp_path / "m.wav")])
         assert result.code == 0, result.stderr
-        assert "클리핑 감지" in result.stderr
-        assert "리미터 추가" in result.stderr
+        assert "Clipping detected" in result.stderr
+        assert "add a limiter" in result.stderr
 
     def test_human_output_reports_mixdown_complete(self, run_cli, tracks, tmp_path):
         out = tmp_path / "mix.wav"
@@ -149,7 +149,7 @@ class TestExecution:
         bogus.write_bytes(b"not audio")
         result = run_cli(["mixdown", str(bogus), "-o", str(tmp_path / "m.wav")])
         assert result.code == 1
-        assert "믹스다운 실패" in result.stderr
+        assert "Mixdown failed" in result.stderr
 
     def test_master_chain_plugin_lookup_failure_is_reported(self, run_cli, tracks, tmp_path):
         result = run_cli(
@@ -157,7 +157,7 @@ class TestExecution:
              "--master", "definitely-not-installed"],
         )
         assert result.code == 1
-        assert "믹스다운 실패" in result.stderr
+        assert "Mixdown failed" in result.stderr
         assert "definitely-not-installed" in result.stderr
 
     def test_master_chain_runs_through_the_registry(self, run_cli, tracks, tmp_path, monkeypatch):
@@ -343,7 +343,7 @@ class TestAutomix:
              "--automix"],
         )
         assert result.code == 1
-        assert "Automix 분석 실패" in result.stderr
+        assert "Automix analysis failed" in result.stderr
 
 
 class TestSessionMode:
@@ -403,14 +403,14 @@ class TestSessionMode:
         bad.write_text("{not json", encoding="utf-8")
         result = run_cli(["mixdown", "-o", str(tmp_path / "o.wav"), "--session", str(bad)])
         assert result.code == 1
-        assert "세션 파일 로드 실패" in result.stderr
+        assert "Failed to load session file" in result.stderr
 
     def test_missing_session_file_is_reported(self, run_cli, tmp_path):
         result = run_cli(
             ["mixdown", "-o", str(tmp_path / "o.wav"), "--session", str(tmp_path / "nope.json")]
         )
         assert result.code == 1
-        assert "세션 파일 로드 실패" in result.stderr
+        assert "Failed to load session file" in result.stderr
 
 
 class TestEarlyReturnsAfterErrors:
@@ -432,7 +432,7 @@ class TestEarlyReturnsAfterErrors:
         result = run_cli(["mixdown", "-o", str(tmp_path / "o.wav"), "--session", str(bad)])
 
         assert result.code == 0
-        assert seen and "세션 파일 로드 실패" in seen[0]
+        assert seen and "Failed to load session file" in seen[0]
         assert not (tmp_path / "o.wav").exists()
 
     def test_missing_inputs_return_before_building_tracks(self, run_cli, tmp_path, monkeypatch):
@@ -444,7 +444,7 @@ class TestEarlyReturnsAfterErrors:
         result = run_cli(["mixdown", "-o", str(tmp_path / "o.wav")])
 
         assert result.code == 0
-        assert seen and "입력 파일을 지정하세요" in seen[0]
+        assert seen and "Specify input files" in seen[0]
         assert not (tmp_path / "o.wav").exists()
 
     def test_automix_failure_returns_before_applying_gains(self, run_cli, tmp_path, monkeypatch):
@@ -459,7 +459,7 @@ class TestEarlyReturnsAfterErrors:
         )
 
         assert result.code == 0
-        assert seen and "Automix 분석 실패" in seen[0]
+        assert seen and "Automix analysis failed" in seen[0]
         assert not (tmp_path / "o.wav").exists()
 
     def test_mixdown_failure_returns_before_reporting(self, run_cli, tmp_path, monkeypatch):
@@ -473,7 +473,7 @@ class TestEarlyReturnsAfterErrors:
         result = run_cli(["mixdown", str(bogus), "-o", str(tmp_path / "o.wav")])
 
         assert result.code == 0
-        assert seen and "믹스다운 실패" in seen[0]
+        assert seen and "Mixdown failed" in seen[0]
         assert "Mixdown complete" not in result.stderr
 
 

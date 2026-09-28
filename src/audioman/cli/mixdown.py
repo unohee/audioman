@@ -1,5 +1,5 @@
 # Created: 2026-04-05
-# Purpose: audioman mixdown 서브커맨드 — bounce + 마스터 체인
+# Purpose: audioman mixdown subcommand — bounce + master chain
 
 import argparse
 
@@ -63,13 +63,13 @@ def run(args: argparse.Namespace) -> None:
     from audioman.core.mixer import TrackConfig, mixdown
     from audioman.core.pipeline import parse_chain_string
 
-    # 세션 파일 모드
+    # Session file mode
     if args.session:
         from audioman.core.session import load_session
         try:
             session = load_session(args.session)
         except Exception as e:
-            print_error(f"세션 파일 로드 실패: {e}")
+            print_error(f"Failed to load session file: {e}")
             return
 
         tracks = session.tracks
@@ -79,7 +79,7 @@ def run(args: argparse.Namespace) -> None:
         master_chain = session.master_chain
     else:
         if not args.inputs:
-            print_error("입력 파일을 지정하세요 (또는 --session 사용)")
+            print_error("Specify input files (or use --session)")
             return
 
         gains = _parse_float_list(args.gain)
@@ -105,7 +105,7 @@ def run(args: argparse.Namespace) -> None:
         subtype = "PCM_24"
         master_chain = parse_chain_string(args.master) if args.master.strip() else None
 
-    # Automix: 밴드별 RMS 분석으로 트랙 gain 자동 계산
+    # Automix: compute track gains automatically from per-band RMS analysis
     automix_result = None
     if args.automix:
         from audioman.core.automix import automix as run_automix
@@ -125,10 +125,10 @@ def run(args: argparse.Namespace) -> None:
                 reference_path=ref_path,
             )
         except Exception as e:
-            print_error(f"Automix 분석 실패: {e}")
+            print_error(f"Automix analysis failed: {e}")
             return
 
-        # 계산된 gain을 트랙에 적용
+        # Apply the computed gains to the tracks
         for i, gain_db in enumerate(automix_result.gains_db):
             tracks[i].gain_db += gain_db
 
@@ -173,7 +173,7 @@ def run(args: argparse.Namespace) -> None:
                 output_console.print(f"    Residual: {automix_result.residual_error_db:.1f}dB")
         return
 
-    # 실행
+    # Execute
     try:
         result = mixdown(
             tracks=tracks,
@@ -184,7 +184,7 @@ def run(args: argparse.Namespace) -> None:
             compensate_latency=not args.no_compensation,
         )
     except Exception as e:
-        print_error(f"믹스다운 실패: {e}")
+        print_error(f"Mixdown failed: {e}")
         return
 
     if args.json:
@@ -214,5 +214,5 @@ def run(args: argparse.Namespace) -> None:
 
     output_console.print(f"  Time:   {result.duration_seconds}s")
     if result.clipping_detected:
-        print_warning("클리핑 감지 — 마스터 체인에 리미터 추가 또는 트랙 볼륨 조정 권장")
-    print_success("완료")
+        print_warning("Clipping detected — add a limiter to the master chain or lower the track levels")
+    print_success("Done")

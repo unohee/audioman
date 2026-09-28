@@ -1,5 +1,5 @@
 # Created: 2026-03-21
-# Purpose: audioman info 서브커맨드
+# Purpose: audioman info subcommand
 
 import argparse
 
@@ -20,9 +20,9 @@ def run(args: argparse.Namespace) -> None:
     meta = registry.get(args.plugin)
 
     if not meta:
-        print_error(f"플러그인을 찾을 수 없습니다: '{args.plugin}'")
+        print_error(f"Plugin not found: '{args.plugin}'")
 
-    # 플러그인 로드하여 파라미터 추출
+    # Load the plugin to extract its parameters
     wrapper = VST3PluginWrapper(meta.path)
     params = wrapper.get_parameters()
     meta.param_count = len(params)
@@ -38,7 +38,7 @@ def run(args: argparse.Namespace) -> None:
         ))
         return
 
-    # 기본 정보
+    # Basic info
     output_console.print(f"\n[bold]{meta.name}[/bold]")
     output_console.print(f"  Short name: {meta.short_name}")
     output_console.print(f"  Path: {meta.path}")
@@ -47,7 +47,7 @@ def run(args: argparse.Namespace) -> None:
         output_console.print(f"  Aliases: {', '.join(meta.aliases)}")
     output_console.print()
 
-    # 파라미터 테이블
+    # Parameter table
     rows = []
     for p in params:
         if p.type == "float":
@@ -61,7 +61,7 @@ def run(args: argparse.Namespace) -> None:
         rows.append([p.name, p.type, current, range_str])
 
     print_table(
-        f"파라미터 ({len(params)}개)",
+        f"Parameters ({len(params)})",
         ["Name", "Type", "Current", "Range"],
         rows,
     )

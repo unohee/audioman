@@ -1,5 +1,5 @@
 # Created: 2026-03-21
-# Purpose: 배치 처리 유틸리티
+# Purpose: Batch processing utilities
 
 from pathlib import Path
 
@@ -7,13 +7,13 @@ AUDIO_EXTENSIONS = {".wav", ".flac", ".mp3", ".aiff", ".aif", ".ogg", ".opus", "
 
 
 def collect_audio_files(path: str | Path, recursive: bool = False) -> list[Path]:
-    """디렉토리에서 오디오 파일 수집"""
+    """Collect audio files from a directory"""
     path = Path(path)
     if path.is_file():
         return [path]
 
     if not path.is_dir():
-        raise FileNotFoundError(f"경로를 찾을 수 없습니다: {path}")
+        raise FileNotFoundError(f"Path not found: {path}")
 
     glob_pattern = "**/*" if recursive else "*"
     files = sorted(
@@ -30,7 +30,7 @@ def resolve_output_path(
     suffix: str = "",
     ext: str = ".wav",
 ) -> Path:
-    """입력 파일에 대응하는 출력 경로 생성 (디렉토리 구조 유지)"""
+    """Build the output path matching an input file (preserving the directory structure)"""
     relative = input_path.relative_to(input_dir) if input_dir != input_path else input_path.name
     stem = Path(relative).stem
     parent = Path(relative).parent

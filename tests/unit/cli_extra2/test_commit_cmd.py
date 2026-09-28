@@ -34,7 +34,7 @@ class TestChainParsing:
         )
 
         assert result.code == 0, result.stderr
-        assert seen and "처리 단계가 비어있습니다" in seen[0]
+        assert seen and "No processing steps given" in seen[0]
         assert not (tmp_path / "out.wav").exists()
 
     def test_empty_chain_exits_nonzero_through_the_real_error_path(self, run_cli, source, tmp_path):
@@ -42,7 +42,7 @@ class TestChainParsing:
             ["commit", str(source), "-o", str(tmp_path / "out.wav"), "--chain", ","],
         )
         assert result.code == 1
-        assert "처리 단계가 비어있습니다" in result.stderr
+        assert "No processing steps given" in result.stderr
 
 
 class TestDryRun:
@@ -132,7 +132,7 @@ class TestDryRun:
         )
 
         assert result.code == 0, result.stderr
-        assert seen and "레이턴시 측정 실패" in seen[0]
+        assert seen and "Latency measurement failed" in seen[0]
 
     def test_unknown_plugin_in_dry_run_is_reported(self, run_cli, source, tmp_path):
         result = run_cli(
@@ -140,7 +140,7 @@ class TestDryRun:
              "--chain", "definitely-not-installed", "--dry-run"],
         )
         assert result.code == 1
-        assert "레이턴시 측정 실패" in result.stderr
+        assert "Latency measurement failed" in result.stderr
         assert "definitely-not-installed" in result.stderr
 
 
@@ -294,7 +294,7 @@ class TestCommit:
                           "--chain", "fake-denoiser"])
 
         assert result.code == 0, result.stderr
-        assert seen and "커밋 실패" in seen[0]
+        assert seen and "Commit failed" in seen[0]
         assert "Commit complete" not in result.stderr
 
     def test_unknown_plugin_fails_the_commit(self, run_cli, source, tmp_path):
@@ -303,7 +303,7 @@ class TestCommit:
              "--chain", "definitely-not-installed"],
         )
         assert result.code == 1
-        assert "커밋 실패" in result.stderr
+        assert "Commit failed" in result.stderr
         assert "definitely-not-installed" in result.stderr
 
     def test_multi_step_chain_is_applied_in_order(self, run_cli, source, tmp_path, monkeypatch):

@@ -1,4 +1,4 @@
-# tests/unit/test_qc.py — 마스터링 QC 검수 리포트
+# tests/unit/test_qc.py — mastering QC inspection report
 
 import numpy as np
 import pytest
@@ -18,7 +18,7 @@ def _stereo_sine(amp: float = 0.3, freq: float = 1000.0, duration: float = 5.0, 
 
 @pytest.fixture
 def clean_master_wav(tmp_path):
-    """납품 표준에 가까운 깨끗한 마스터 (5초 사인 + 1초 헤드 무음 + 2초 테일 무음)."""
+    """A clean master close to delivery standard (5 s sine + 1 s head silence + 2 s tail silence)."""
     sr = SR
     head = np.zeros((2, sr // 5), dtype=np.float32)  # 200ms
     body = _stereo_sine(0.3, duration=5.0, sr=sr)
@@ -36,18 +36,18 @@ class TestDetectClipping:
         assert result["n_samples"] == 0
 
     def test_clipping_detected(self):
-        # 강제 클립 — 일부 샘플을 1.0 이상으로 만들기
+        # force clipping — push some samples to 1.0 or above
         audio = _stereo_sine(0.5)
         audio[0, 100:110] = 1.0
         audio[1, 200:205] = -1.0
         result = qc.detect_clipping(audio)
-        # 채널 union — sample 100~109(10) + 200~204(5) = 15
+        # channel union — samples 100~109 (10) + 200~204 (5) = 15
         assert result["n_samples"] == 15
         assert result["per_channel"] == [10, 5]
 
     def test_threshold_strictness(self):
-        audio = _stereo_sine(0.999)  # 거의 클립
-        # threshold 0.999면 일부 잡힐 수 있음, 0.9999면 안 잡힘
+        audio = _stereo_sine(0.999)  # nearly clipped
+        # at a threshold of 0.999 some may be caught; at 0.9999 none are
         relaxed = qc.detect_clipping(audio, threshold=0.9999)
         assert relaxed["n_samples"] == 0
 
@@ -61,24 +61,24 @@ class TestDetectClicks:
     def test_artificial_click_detected(self):
         sr = SR
         audio = _stereo_sine(0.2, duration=2.0, sr=sr)
-        # 1초 지점에 단일 샘플 spike
+        # a single-sample spike at 1 second
         click_pos = sr
         audio[0, click_pos] = 0.95
         audio[1, click_pos] = 0.95
         result = qc.detect_clicks(audio, sr, sensitivity=5.0)
         assert result["n_clicks"] >= 1
-        # 위치도 1초 부근
+        # the location is also around 1 second
         assert any(abs(loc - 1.0) < 0.01 for loc in result["locations_sec"])
 
     def test_grouping_consecutive(self):
         sr = SR
         audio = _stereo_sine(0.1, duration=1.0, sr=sr)
-        # 연속 샘플에 spike (한 번의 클릭으로 묶여야 함)
+        # spike across consecutive samples (must group into one click)
         for i in range(5):
             audio[0, sr // 2 + i] = 0.8
         result = qc.detect_clicks(audio, sr, sensitivity=5.0, min_separation_ms=10.0)
-        # 5개 spike이 한 클릭으로 그룹핑돼야 함
-        assert result["n_clicks"] <= 2  # 대개 1개
+        # 5 spikes must be grouped into a single click
+        assert result["n_clicks"] <= 2  # usually 1
 
     def test_short_buffer_does_not_crash(self):
         result = qc.detect_clicks(np.array([0.0, 0.8, 0.0], dtype=np.float32), SR)
@@ -94,7 +94,7 @@ class TestPhaseCorrelation:
 
     def test_inverted_correlation_negative(self):
         s = _stereo_sine(0.3)
-        s[1] = -s[1]  # 우채널 반전
+        s[1] = -s[1]  # invert the right channel
         result = qc.stereo_phase_correlation(s, sample_rate=SR)
         assert result["global_correlation"] < -0.95
 
@@ -112,7 +112,7 @@ class TestChannelImbalance:
 
     def test_left_louder(self):
         s = _stereo_sine(0.3)
-        s[0] *= 2.0  # 좌채널 +6dB
+        s[0] *= 2.0  # left channel +6 dB
         result = qc.channel_imbalance_db(s)
         assert 5.5 < result["imbalance_db"] < 6.5
 
@@ -141,14 +141,14 @@ class TestEvaluate:
         assert report["target"] == "spotify"
         assert "verdict" in report
         assert "checks" in report
-        # 스테레오 사인이라 phase corr는 PASS, padding도 spotify 범위 안
+        # it is a stereo sine, so phase corr is PASS and the padding is within the Spotify range
         names = [c["name"] for c in report["checks"]]
         assert "integrated_lufs" in names
         assert "true_peak_dbtp" in names
         assert "head_silence_ms" in names
 
     def test_clipped_signal_fails(self, tmp_path):
-        # 강한 클리핑 스테레오
+        # heavily clipped stereo
         sr = SR
         s = _stereo_sine(0.5, duration=5.0, sr=sr)
         s[0, 100:200] = 1.0
@@ -161,7 +161,7 @@ class TestEvaluate:
         assert clip_check["status"] in ("WARN", "FAIL")
 
     def test_unknown_target_raises(self, clean_master_wav):
-        with pytest.raises(ValueError, match="알 수 없는 target"):
+        with pytest.raises(ValueError, match="Unknown target"):
             qc.evaluate_file(clean_master_wav, target="myspace")
 
     def test_targets_listing(self):
@@ -174,8 +174,8 @@ class TestEvaluate:
 
 class TestVerdictAggregation:
     def test_all_pass_verdict(self, clean_master_wav):
-        # 깨끗한 마스터 — verdict는 보통 WARN (사인이라 LUFS가 spotify -14 범위 밖일 수 있음)
-        # 정확한 verdict보다는 구조 확인
+        # a clean master — the verdict is usually WARN (as a sine, the LUFS may fall outside Spotify's -14 range)
+        # check the structure rather than the exact verdict
         report = qc.evaluate_file(clean_master_wav, target="spotify")
         assert report["verdict"] in ("PASS", "WARN", "FAIL")
         assert report["summary"]["n_pass"] + report["summary"]["n_warn"] + report["summary"]["n_fail"] == len(report["checks"])

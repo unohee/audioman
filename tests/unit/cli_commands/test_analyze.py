@@ -1,9 +1,11 @@
 # Created: 2026-09-28
-# Purpose: cli/analyze.py 커버리지 — 단일/배치 분석, --frames, --waveform, --spectrum (AUD-1851).
+# Purpose: coverage for cli/analyze.py — single/batch analysis, --frames, --waveform,
+#          --spectrum (AUD-1851).
 #
-# analyze는 플러그인을 전혀 쓰지 않는 순수 분석 커맨드다. 여기서는 JSON 페이로드의
-# 실제 수치(샘플레이트/채널/무음 구간/hum)와 사람용 출력의 각 분기(무음 없음,
-# 무음 10개 초과, spectrum hum 있음/없음, hf_slope 유무)를 모두 태운다.
+# analyze is a pure analysis command that uses no plugins at all. These tests exercise the
+# real numbers in the JSON payload (sample rate/channels/silence regions/hum) and every
+# branch of the human-facing output (no silence, more than 10 silence regions,
+# spectrum hum present/absent, hf_slope available/not).
 
 from __future__ import annotations
 
@@ -21,7 +23,7 @@ def _json(result) -> dict:
 
 
 def _write_hummed(path, *, sample_rate=44100, duration=0.5, freq=60.0, amp=0.5):
-    """60Hz 험 단일 성분. spectrum_diagnostics의 hum 검출을 확실히 태운다."""
+    """A single 60Hz hum component. Reliably exercises hum detection in spectrum_diagnostics."""
     n = int(sample_rate * duration)
     t = np.arange(n, dtype=np.float32) / sample_rate
     mono = (amp * np.sin(2 * np.pi * freq * t)).astype(np.float32)
@@ -31,7 +33,7 @@ def _write_hummed(path, *, sample_rate=44100, duration=0.5, freq=60.0, amp=0.5):
 
 
 def _write_many_silences(path, *, sample_rate=44100, regions=12, seg_sec=0.2):
-    """톤과 무음이 교대하는 파일. 무음 구간이 regions개 생긴다."""
+    """A file alternating tone and silence, producing `regions` silence regions."""
     n = int(sample_rate * seg_sec)
     tone = 0.5 * np.sin(2 * np.pi * 440 * np.arange(n, dtype=np.float32) / sample_rate)
     parts = []
@@ -134,7 +136,7 @@ class TestSpectrum:
         assert spec["frames_analyzed"] > 0
         assert spec["band_energy"]
         assert spec["dominant_frequencies"]
-        # 440Hz 톤의 지배 주파수가 실제로 440 근처여야 한다.
+        # The dominant frequency of a 440Hz tone must really be near 440.
         top = max(spec["dominant_frequencies"], key=lambda d: d["db_rel_peak"])
         assert top["frequency_hz"] == pytest.approx(440.0, abs=30.0)
         assert "hum_check" in spec and "hf_slope" in spec
@@ -153,7 +155,7 @@ class TestSpectrum:
         assert [h for h in spec["hum_check"] if h["is_hum"]] == []
 
     def test_low_sample_rate_makes_hf_slope_unavailable(self, tmp_path):
-        # 8kHz에서는 10-16kHz 대역이 없어 slope를 계산할 수 없다.
+        # At 8kHz there is no 10-16kHz band, so the slope cannot be computed.
         src = write_wav(tmp_path / "low.wav", sample_rate=8000, duration=0.5)
         spec = _json(run_command([
             "--json", "analyze", str(src), "--spectrum", "--spectrum-fft", "2048",
@@ -265,7 +267,7 @@ class TestHumanOutput:
     def test_missing_input_file_exits_1(self, tmp_path):
         result = run_command(["--json", "analyze", str(tmp_path / "ghost.wav")])
         assert result.code == 1
-        assert "파일 없음" in result.err
+        assert "File not found" in result.err
 
 
 class TestArgValidation:
@@ -296,7 +298,7 @@ class TestBatch:
         assert "[1/2]" in result.out and "[2/2]" in result.out
         assert "a.wav:" in result.out and "b.wav:" in result.out
         assert "RMS=" in result.out and "Centroid=" in result.out
-        assert "분석 완료: 2개 파일" in result.err
+        assert "Analysis complete: 2 files" in result.err
 
     def test_json_directory_analysis_emits_jsonl(self, tmp_path):
         in_dir = tmp_path / "in"
@@ -328,13 +330,13 @@ class TestBatch:
         empty.mkdir()
         result = run_command(["--plain", "analyze", str(empty)])
         assert result.code == 1
-        assert "오디오 파일이 없습니다" in result.err
+        assert "No audio files found" in result.err
 
     def test_per_file_error_is_reported_and_exits_1(self, tmp_path):
         in_dir = tmp_path / "in"
         in_dir.mkdir()
         write_wav(in_dir / "good.wav")
-        # 확장자는 오디오지만 내용이 깨진 파일 -> read_audio가 실패한다.
+        # Audio extension but corrupt contents -> read_audio fails.
         (in_dir / "broken.wav").write_bytes(b"not really audio")
 
         result = run_command(["--plain", "analyze", str(in_dir)])

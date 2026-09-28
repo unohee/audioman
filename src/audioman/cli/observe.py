@@ -1,7 +1,7 @@
 # Created: 2026-05-11
-# Purpose: `audioman observe` — fault 관측 1급 명령.
-# analyze/doctor가 산발적으로 만들던 결함 정보를 단일 Finding[] 스키마로 통합.
-# LLM agent가 `audioman observe X --json | jq '.findings'`로 바로 소비할 수 있게 한다.
+# Purpose: `audioman observe` — the first-class fault observation command.
+# Unifies the fault information scattered across analyze/doctor into a single Finding[] schema.
+# Lets LLM agents consume it directly with `audioman observe X --json | jq '.findings'`.
 
 from __future__ import annotations
 
@@ -117,8 +117,8 @@ def _observe_file(
         )
         all_findings.extend(spectrum_to_findings(spectrum, file=str(path)))
 
-    # plugin/container 카테고리는 Phase C에서 채움. 지금은 사용자가 명시적으로
-    # 지정하면 빈 결과를 반환 (스키마 일관성 유지).
+    # plugin/container categories are filled in Phase C. For now, if the user asks for them
+    # explicitly we return an empty result (keeps the schema consistent).
 
     filtered = filter_findings(
         all_findings,
@@ -195,7 +195,7 @@ def run(args: argparse.Namespace) -> None:
                 _print_human(payload)
 
         if not args.json:
-            print_success(f"배치 완료: {len(files) - fail} 성공, {fail} 실패 / {len(files)} 전체")
+            print_success(f"Batch complete: {len(files) - fail} succeeded, {fail} failed / {len(files)} total")
         if fail:
             sys.exit(1)
         return

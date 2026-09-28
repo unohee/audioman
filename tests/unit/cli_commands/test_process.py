@@ -1,10 +1,11 @@
 # Created: 2026-09-28
-# Purpose: cli/process.py 커버리지 — 단일/배치, dry-run, workers, 종료코드 (AUD-1851).
+# Purpose: coverage for cli/process.py - single/batch, dry-run, workers, exit codes (AUD-1851).
 #
-# process_file은 실제 VST3를 요구하므로(core/engine) 이 호스트에서는 실행할 수
-# 없다. 여기서는 core.engine.process_file을 대체해 CLI의 배치 루프/JSONL/종료코드
-# 계약만 관찰하고, 배치 워커(_process_one)는 실제 process_file을 태우되 registry가
-# 플러그인을 못 찾는 경로(이 환경의 실제 동작)를 검증한다.
+# process_file needs real VST3 plugins (core/engine) and cannot run on this host.
+# These tests replace core.engine.process_file to observe only the CLI's batch
+# loop / JSONL / exit-code contract, while the batch worker (_process_one) runs the
+# real process_file and exercises the path where the registry cannot find the
+# plugin (what actually happens on this machine).
 
 from __future__ import annotations
 
@@ -32,7 +33,7 @@ def _result(input_path, output_path, plugin="fake-plugin", params=None, passes=1
 
 @pytest.fixture
 def stub_engine(monkeypatch):
-    """process.process_file을 기록형 페이크로 교체."""
+    """Replace process.process_file with a recording fake."""
     calls = []
 
     def _process_file(input_path, output_path, plugin_name, params=None, passes=1):
@@ -61,7 +62,7 @@ class TestSingleDryRun:
         assert plan["output"] == str(tmp_path / "out.wav")
         assert plan["plugin"] == "denoise"
         assert plan["params"] == {"threshold": -20.0}
-        assert stub_engine == []                       # dry-run은 엔진을 부르지 않는다
+        assert stub_engine == []                       # dry-run never calls the engine
         assert not (tmp_path / "out.wav").exists()
 
     def test_plain_dry_run_prints_plan(self, tmp_path, stub_engine):
@@ -76,12 +77,12 @@ class TestSingleDryRun:
         assert "params: {'x': 1.0}" in result.out
 
     def test_dry_run_tokens_survive_in_rich_mode(self, tmp_path, stub_engine):
-        """`[dry-run]`/`[denoise]` 토큰은 rich 모드에서도 그대로 보여야 한다.
+        """The `[dry-run]`/`[denoise]` tokens must survive in rich mode too.
 
-        예전에는 `output_console.print`로 문장을 그대로 넘겨 rich가 대괄호를
-        markup으로 해석했고, 태그가 통째로 지워져
-        `[dry-run] /in.wav → [denoise] → /out.wav`가 ` /in.wav →  → /out.wav`가
-        됐다 (AUD-1853: 조용한 정보 손실).
+        Previously the sentence went straight to `output_console.print`, rich
+        parsed the brackets as markup, and the tokens were deleted entirely:
+        `[dry-run] /in.wav → [denoise] → /out.wav` became
+        ` /in.wav →  → /out.wav` (AUD-1853: silent information loss).
         """
         src = write_wav(tmp_path / "in.wav")
         out = tmp_path / "out.wav"
@@ -92,7 +93,7 @@ class TestSingleDryRun:
         assert f"[dry-run] {src} → [denoise] → {out}" in result.out
 
     def test_plain_dry_run_keeps_the_tokens_and_the_plan(self, tmp_path, stub_engine):
-        """plain 모드도 같은 정보를 낸다 (마크업 제거는 태그에만 적용)."""
+        """Plain mode reports the same information (only tags are stripped)."""
         src = write_wav(tmp_path / "in.wav")
         out = tmp_path / "out.wav"
         result = run_command([
@@ -103,7 +104,7 @@ class TestSingleDryRun:
         assert "[" not in result.err
 
     def test_rich_dry_run_reaches_the_same_facts(self, tmp_path, stub_engine):
-        """rich 경로에서도 입력/출력/플러그인 정보가 나온다."""
+        """The rich path also reports input/output/plugin information."""
         src = write_wav(tmp_path / "in.wav")
         result = run_command([
             "process", str(src), "-p", "denoise", "-o", str(tmp_path / "out.wav"), "--dry-run",
@@ -139,7 +140,7 @@ class TestSingleRun:
         ])
         assert result.code == 0
         assert "Processing complete" in result.err
-        assert "완료" in result.err
+        assert "Done" in result.err
         assert "RMS:    0.3000 → 0.1500" in result.out
         assert "Peak:   0.5000 → 0.2500" in result.out
 
@@ -156,28 +157,28 @@ class TestSingleRun:
         src = write_wav(tmp_path / "in.wav")
 
         def _raise(input_path, output_path, plugin_name, params=None, passes=1):
-            raise ValueError(f"플러그인을 찾을 수 없습니다: '{plugin_name}'")
+            raise ValueError(f"Plugin not found: '{plugin_name}'")
 
         monkeypatch.setattr(process, "process_file", _raise)
         result = run_command([
             "--json", "process", str(src), "-p", "ghost", "-o", str(tmp_path / "out.wav"),
         ])
         assert result.code == 1
-        assert "플러그인을 찾을 수 없습니다" in result.err
+        assert "Plugin not found" in result.err
         assert result.out == ""
 
     def test_file_not_found_from_engine_exits_1(self, tmp_path, monkeypatch):
         src = write_wav(tmp_path / "in.wav")
 
         def _raise(input_path, output_path, plugin_name, params=None, passes=1):
-            raise FileNotFoundError(f"파일 없음: {input_path}")
+            raise FileNotFoundError(f"File not found: {input_path}")
 
         monkeypatch.setattr(process, "process_file", _raise)
         result = run_command([
             "--json", "process", str(src), "-p", "p", "-o", str(tmp_path / "out.wav"),
         ])
         assert result.code == 1
-        assert "파일 없음" in result.err
+        assert "File not found" in result.err
 
     def test_unexpected_engine_error_is_wrapped_with_prefix(self, tmp_path, monkeypatch):
         src = write_wav(tmp_path / "in.wav")
@@ -190,7 +191,7 @@ class TestSingleRun:
             "--json", "process", str(src), "-p", "p", "-o", str(tmp_path / "out.wav"),
         ])
         assert result.code == 1
-        assert "처리 실패: plugin exploded" in result.err
+        assert "Processing failed: plugin exploded" in result.err
 
     def test_missing_required_arguments_exit_2(self, tmp_path):
         src = write_wav(tmp_path / "in.wav")
@@ -228,7 +229,7 @@ class TestBatchDryRun:
             "--dry-run",
         ])
         assert result.code == 0
-        assert "배치: 1개 파일" in result.out
+        assert "batch: 1 files" in result.out
         assert str(tmp_path / "out") in result.out
 
     def test_rich_batch_dry_run_still_reports_the_count(self, tmp_path, stub_engine):
@@ -240,7 +241,7 @@ class TestBatchDryRun:
             "process", str(in_dir), "-p", "denoise", "-o", str(tmp_path / "out"), "--dry-run",
         ])
         assert result.code == 0
-        assert "배치: 1개 파일" in result.out
+        assert "batch: 1 files" in result.out
 
 
 class TestBatchRun:
@@ -270,7 +271,7 @@ class TestBatchRun:
             "--plain", "process", str(in_dir), "-p", "denoise", "-o", str(tmp_path / "out"),
         ])
         assert result.code == 0
-        assert "배치 완료: 2 성공, 0 실패 / 2 전체" in result.err
+        assert "Batch complete: 2 succeeded, 0 failed / 2 total" in result.err
 
     def test_parallel_json_uses_pool_and_emits_payloads(self, tmp_path, stub_engine, monkeypatch):
         import multiprocessing
@@ -336,7 +337,7 @@ class TestBatchRun:
         ])
         assert result.code == 1
         assert "warning:" in result.err and "bad plugin" in result.err
-        assert "배치 완료: 0 성공, 1 실패 / 1 전체" in result.err
+        assert "Batch complete: 0 succeeded, 1 failed / 1 total" in result.err
 
     def test_parallel_failure_exits_1(self, tmp_path, monkeypatch):
         import multiprocessing
@@ -365,7 +366,7 @@ class TestBatchRun:
             "--plain", "process", str(in_dir), "-p", "denoise", "-o", str(tmp_path / "out"),
         ])
         assert result.code == 1
-        assert "오디오 파일이 없습니다" in result.err
+        assert "No audio files found" in result.err
 
     def test_recursive_flag_includes_subdirectories(self, tmp_path, stub_engine):
         in_dir = tmp_path / "in"
@@ -383,7 +384,8 @@ class TestBatchRun:
 
 
 class TestProcessWorker:
-    """_process_one은 예외를 per-file 실패 결과로 바꾼다 (풀 밖으로 새면 안 된다)."""
+    """`_process_one` turns exceptions into per-file failure results (they must not
+    escape the pool)."""
 
     def test_success_result_shape(self, tmp_path, stub_engine):
         src = write_wav(tmp_path / "in.wav")

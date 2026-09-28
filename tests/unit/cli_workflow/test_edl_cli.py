@@ -113,14 +113,14 @@ class TestInit:
     def test_reinitializing_warns_but_succeeds(self, run_cli, initialized):
         result = run_cli(["edl", "init", str(initialized)])
         assert result.code == 0, result.stderr
-        assert "warning: 이미 초기화된 EDL이 있습니다" in result.stderr
+        assert "warning: EDL already initialized" in result.stderr
         # The workspace is re-created from the source, so the op list is reset.
         assert _edl_json(initialized)["ops"] == []
 
     def test_missing_input_exits_nonzero(self, run_cli, tmp_path):
         result = run_cli(["edl", "init", str(tmp_path / "missing.wav")])
         assert result.code == 1
-        assert "파일 없음" in result.stderr
+        assert "file not found" in result.stderr
 
 
 class TestAdd:
@@ -176,7 +176,7 @@ class TestAdd:
             ["edl", "add", "-s", str(initialized), "gain", "--param", "db=-3"],
         )
         assert result.code == 0, result.stderr
-        assert "op 추가: gain (총 1개)" in result.stderr
+        assert "op added: gain (total 1)" in result.stderr
         assert "db: -3" in result.stdout
 
     def test_splice_requires_a_clip_path(self, run_cli, initialized, tmp_path):
@@ -192,27 +192,27 @@ class TestAdd:
     def test_unknown_op_type_is_rejected_before_saving(self, run_cli, initialized):
         result = run_cli(["edl", "add", "-s", str(initialized), "not-an-op"])
         assert result.code == 1
-        assert "알 수 없는 op type" in result.stderr
+        assert "unknown op type" in result.stderr
         assert _edl_json(initialized)["ops"] == []
 
     def test_missing_required_param_is_rejected(self, run_cli, initialized):
         result = run_cli(["edl", "add", "-s", str(initialized), "gain"])
         assert result.code == 1
-        assert "필수 키 누락" in result.stderr
+        assert "missing required keys" in result.stderr
         assert _edl_json(initialized)["ops"] == []
 
     def test_add_without_init_exits_nonzero(self, run_cli, tmp_path):
         path = write_wav(tmp_path / "fresh.wav")
         result = run_cli(["edl", "add", "-s", str(path), "remove_dc"])
         assert result.code == 1
-        assert "EDL이 초기화되지 않았습니다" in result.stderr
+        assert "EDL not initialized" in result.stderr
 
 
 class TestList:
     def test_empty_edl_says_so(self, run_cli, initialized):
         result = run_cli(["edl", "list", "-s", str(initialized)])
         assert result.code == 0, result.stderr
-        assert "ops 없음" in result.stdout
+        assert "no ops" in result.stdout
 
     def test_table_lists_every_op_with_one_based_index(self, run_cli, initialized):
         run_cli(["edl", "add", "-s", str(initialized), "remove_dc"])
@@ -235,7 +235,7 @@ class TestList:
         path = write_wav(tmp_path / "fresh.wav")
         result = run_cli(["edl", "list", "-s", str(path)])
         assert result.code == 1
-        assert "EDL이 초기화되지 않았습니다" in result.stderr
+        assert "EDL not initialized" in result.stderr
 
 
 class TestUndoRedo:
@@ -246,14 +246,14 @@ class TestUndoRedo:
 
         result = run_cli(["edl", "undo", "-s", str(initialized)])
         assert result.code == 0, result.stderr
-        assert "undo 완료. 현재 op 수: 1" in result.stderr
+        assert "undo complete. Current op count: 1" in result.stderr
         assert _op_types(initialized) == ["remove_dc"]
         assert len(edl_core.list_redo(initialized)) == 1
 
     def test_undo_without_history_warns(self, run_cli, initialized):
         result = run_cli(["edl", "undo", "-s", str(initialized)])
         assert result.code == 0, result.stderr
-        assert "되돌릴 op이 없습니다" in result.stderr
+        assert "no ops to undo" in result.stderr
 
     def test_undo_json_payload_reports_both_outcomes(self, run_cli, initialized):
         empty = run_cli(["edl", "undo", "-s", str(initialized)], json_mode=True)
@@ -274,7 +274,7 @@ class TestUndoRedo:
 
         result = run_cli(["edl", "redo", "-s", str(initialized)])
         assert result.code == 0, result.stderr
-        assert "redo 완료. 현재 op 수: 2" in result.stderr
+        assert "redo complete. Current op count: 2" in result.stderr
         assert _op_types(initialized) == ["remove_dc", "gain"]
         assert edl_core.list_redo(initialized) == []
         # The redo snapshot was moved back into history, so the state is undoable again.
@@ -285,7 +285,7 @@ class TestUndoRedo:
     def test_redo_without_redo_state_warns(self, run_cli, initialized):
         result = run_cli(["edl", "redo", "-s", str(initialized)])
         assert result.code == 0, result.stderr
-        assert "redo할 op이 없습니다" in result.stderr
+        assert "no ops to redo" in result.stderr
 
     def test_redo_json_payload_reports_both_outcomes(self, run_cli, initialized):
         empty = run_cli(["edl", "redo", "-s", str(initialized)], json_mode=True)
@@ -315,14 +315,14 @@ class TestUndoRedo:
         path = write_wav(tmp_path / "fresh.wav")
         result = run_cli(["edl", "undo", "-s", str(path)])
         assert result.code == 1
-        assert "EDL이 초기화되지 않았습니다" in result.stderr
+        assert "EDL not initialized" in result.stderr
 
     def test_redo_without_init_warns_but_does_not_write_a_workspace(self, run_cli, tmp_path):
         """`redo` skips the initialized check that `undo` performs; it warns instead."""
         path = write_wav(tmp_path / "fresh.wav")
         result = run_cli(["edl", "redo", "-s", str(path)])
         assert result.code == 0, result.stderr
-        assert "redo할 op이 없습니다" in result.stderr
+        assert "no ops to redo" in result.stderr
         assert not edl_core.edl_path(path).exists()
 
     def test_undo_undo_walks_back_two_ops(self, run_cli, initialized):
@@ -416,7 +416,7 @@ class TestRender:
         result = run_cli(["edl", "render", "-s", str(initialized), "-o",
                           str(initialized.parent / "out.wav")])
         assert result.code == 1
-        assert "source 파일이 변경됨" in result.stderr
+        assert "source file changed" in result.stderr
 
     def test_no_verify_skips_the_hash_check(self, run_cli, initialized, tmp_path):
         run_cli(["edl", "add", "-s", str(initialized), "gain", "--param", "db=-1"])
@@ -435,14 +435,14 @@ class TestRender:
         assert result.code == 0, result.stderr
         render = run_cli(["edl", "render", "-s", str(initialized), "-o", str(tmp_path / "x.wav")])
         assert render.code == 1
-        assert "op #1 (splice) 실패" in render.stderr
-        assert "sample rate 불일치" in render.stderr
+        assert "op #1 (splice) failed" in render.stderr
+        assert "sample rate mismatch" in render.stderr
 
     def test_render_without_init_exits_nonzero(self, run_cli, tmp_path):
         path = write_wav(tmp_path / "fresh.wav")
         result = run_cli(["edl", "render", "-s", str(path), "-o", str(tmp_path / "o.wav")])
         assert result.code == 1
-        assert "EDL이 초기화되지 않았습니다" in result.stderr
+        assert "EDL not initialized" in result.stderr
 
 
 class TestStatus:
@@ -450,7 +450,7 @@ class TestStatus:
         path = write_wav(tmp_path / "fresh.wav")
         result = run_cli(["edl", "status", "-s", str(path)])
         assert result.code == 0, result.stderr
-        assert "초기화되지 않음" in result.stdout
+        assert "not initialized" in result.stdout
 
     def test_uninitialized_json_payload_is_machine_readable(self, run_cli, tmp_path):
         path = write_wav(tmp_path / "fresh.wav")
@@ -493,7 +493,7 @@ class TestClear:
 
         result = run_cli(["edl", "clear", "-s", str(initialized)])
         assert result.code == 0, result.stderr
-        assert "모든 op 삭제 (history는 유지)" in result.stderr
+        assert "Removed all ops (history kept)" in result.stderr
         assert _edl_json(initialized)["ops"] == []
         assert len(edl_core.list_history(initialized)) == history_before + 1
 
@@ -516,7 +516,7 @@ class TestClear:
         path = write_wav(tmp_path / "fresh.wav")
         result = run_cli(["edl", "clear", "-s", str(path)])
         assert result.code == 1
-        assert "EDL이 초기화되지 않았습니다" in result.stderr
+        assert "EDL not initialized" in result.stderr
 
 
 class TestBareInvocation:

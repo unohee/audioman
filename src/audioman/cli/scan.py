@@ -1,5 +1,5 @@
 # Created: 2026-03-21
-# Purpose: audioman scan 서브커맨드
+# Purpose: audioman scan subcommand
 
 import argparse
 
@@ -38,8 +38,8 @@ def run(args: argparse.Namespace) -> None:
         rows.append([p.short_name, p.name, p.format, aliases])
 
     print_table(
-        f"발견된 플러그인 ({len(plugins)}개)",
+        f"Plugins found ({len(plugins)})",
         ["Short Name", "Full Name", "Format", "Aliases"],
         rows,
     )
-    print_success(f"{len(plugins)}개 플러그인 스캔 완료 (캐시 저장됨)")
+    print_success(f"Scanned {len(plugins)} plugins (cache saved)")

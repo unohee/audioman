@@ -115,7 +115,7 @@ class TestUsageErrors:
     def test_no_inputs_stops_with_usage_error(self, run_cli, tmp_path):
         result = run_cli(["bounce", "-o", str(tmp_path / "m.wav")])
         assert result.code == 1
-        assert "입력 파일을 지정하세요" in result.stderr
+        assert "Specify input files" in result.stderr
         assert "--session" in result.stderr
 
     def test_no_inputs_returns_before_building_tracks(self, run_cli, tmp_path, silent_error):
@@ -128,7 +128,7 @@ class TestUsageErrors:
         result = run_cli(["bounce", "-o", str(tmp_path / "m.wav")])
 
         assert result.code == 0, result.stderr
-        assert seen and "입력 파일을 지정하세요" in seen[0]
+        assert seen and "Specify input files" in seen[0]
         assert not (tmp_path / "m.wav").exists()
 
     def test_malformed_gain_list_keeps_the_process_alive(self, run_cli, tracks, tmp_path, silent_error):
@@ -151,7 +151,7 @@ class TestUsageErrors:
         result = run_cli(["bounce", "-o", str(tmp_path / "m.wav"), "--session", str(bad)])
 
         assert result.code == 0
-        assert seen and "세션 파일 로드 실패" in seen[0]
+        assert seen and "Failed to load session file" in seen[0]
         assert not (tmp_path / "m.wav").exists()
 
     def test_bounce_failure_is_reported(self, run_cli, tmp_path, silent_error):
@@ -162,7 +162,7 @@ class TestUsageErrors:
         result = run_cli(["bounce", str(bogus), "-o", str(tmp_path / "m.wav")])
 
         assert result.code == 0
-        assert seen and "바운스 실패" in seen[0]
+        assert seen and "Bounce failed" in seen[0]
         assert "Bounce complete" not in result.stderr
 
 
@@ -202,7 +202,7 @@ class TestExecution:
         result = run_cli(["bounce", str(loud), str(loud), "-o", str(tmp_path / "m.wav")])
 
         assert result.code == 0, result.stderr
-        assert "클리핑 감지" in result.stderr
+        assert "Clipping detected" in result.stderr
         assert "Bounce complete" in result.stderr
 
     def test_gain_is_actually_applied_to_the_output(self, run_cli, tracks, tmp_path):
@@ -255,7 +255,7 @@ class TestExecution:
              "--chain=definitely-not-installed"],
         )
         assert result.code == 1
-        assert "바운스 실패" in result.stderr
+        assert "Bounce failed" in result.stderr
         assert "definitely-not-installed" in result.stderr
 
 
@@ -337,4 +337,4 @@ class TestSessionMode:
             ["bounce", "-o", str(tmp_path / "o.wav"), "--session", str(tmp_path / "nope.json")],
         )
         assert result.code == 1
-        assert "세션 파일 로드 실패" in result.stderr
+        assert "Failed to load session file" in result.stderr

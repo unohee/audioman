@@ -1,6 +1,6 @@
 # Created: 2026-04-27
-# Purpose: audioman fader-test — 멀티트랙 stem을 PyQt UI로 재생하며 fader로 mix balance 잡기.
-#          본인이 들으며 정한 gain → ground truth JSON으로 export → automix 알고리즘 평가에 사용.
+# Purpose: audioman fader-test — play multitrack stems in a PyQt UI and set the mix balance with faders.
+#          The gains chosen by ear are exported as ground-truth JSON and used to evaluate the automix algorithm.
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
 def run(args: argparse.Namespace) -> None:
     input_dir = Path(args.input).resolve()
     if not input_dir.is_dir():
-        print_error(f"디렉터리 아님: {input_dir}")
+        print_error(f"Not a directory: {input_dir}")
         return
 
     # PyQt + audio engine are heavy, so import them lazily.
@@ -52,11 +52,11 @@ def run(args: argparse.Namespace) -> None:
         native = "libEGL" in str(exc) or "cannot open shared object" in str(exc)
         if native:
             print_error(
-                f"PyQt6 의 네이티브 라이브러리를 로드할 수 없습니다: {exc} "
+                f"PyQt6 cannot load its native libraries: {exc} "
                 f"(Debian/Ubuntu: sudo apt-get install libegl1 libgl1)"
             )
         else:
-            print_error("PyQt6 미설치 — uv add PyQt6")
+            print_error("PyQt6 not installed — run: uv add PyQt6")
         return
 
     from audioman.cli._fader_test_ui import FaderTestWindow
@@ -68,7 +68,7 @@ def run(args: argparse.Namespace) -> None:
     try:
         player = MultitrackPlayer.from_directory(input_dir, block_size=args.block_size)
     except Exception as e:
-        print_error(f"로드 실패: {e}")
+        print_error(f"Load failed: {e}")
         return
 
     print_success(f"loaded {len(player.tracks)} tracks "
@@ -77,7 +77,7 @@ def run(args: argparse.Namespace) -> None:
     if args.load:
         with open(args.load) as f:
             data = json.load(f)
-        gains = data.get("gains", data)  # 두 형식 다 지원
+        gains = data.get("gains", data)  # both formats are supported
         if isinstance(gains, dict):
             n = player.import_gains(gains)
             print_success(f"loaded gains for {n} tracks from {args.load}")

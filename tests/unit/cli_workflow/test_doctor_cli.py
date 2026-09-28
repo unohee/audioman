@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 import numpy as np
 import pytest
@@ -182,7 +183,7 @@ class TestPluginResolution:
         _resolve_fake(monkeypatch)
         result = run_cli(["doctor", "-p", "not-installed", "--mode", "linear"])
         assert result.code == 1
-        assert "플러그인 없음: 'not-installed'" in result.stderr
+        assert "plugin not found: 'not-installed'" in result.stderr
 
     def test_directory_with_other_suffix_is_not_treated_as_a_bundle(self, run_cli, tmp_path, monkeypatch):
         _resolve_fake(monkeypatch)
@@ -190,7 +191,7 @@ class TestPluginResolution:
         other.write_bytes(b"x")
         result = run_cli(["doctor", "-p", str(other), "--mode", "linear"])
         assert result.code == 1
-        assert "플러그인 없음" in result.stderr
+        assert "plugin not found" in result.stderr
 
 
 class TestModes:
@@ -219,9 +220,9 @@ class TestModes:
         _resolve_fake(monkeypatch)
         result = run_cli(["doctor", "-p", "fake-eq", "--mode", "linear"])
         assert result.code == 0, result.stderr
-        assert "linear 분석 중..." in result.stdout
-        assert "주파수 응답: 6 bins" in result.stdout
-        assert "분석 완료" in result.stderr
+        assert "Analyzing linear..." in result.stdout
+        assert "Frequency response: 6 bins" in result.stdout
+        assert "Analysis complete" in result.stderr
 
     def test_thd_mode_payload_and_harmonics(self, run_cli, monkeypatch, fake_pa):
         _resolve_fake(monkeypatch)
@@ -239,7 +240,7 @@ class TestModes:
         assert result.code == 0, result.stderr
         assert "THD: 0.1234%" in result.stdout
         assert "Fundamental: 1000.0Hz @ -6.0dB" in result.stdout
-        assert result.stdout.count("차:") == 5
+        assert result.stdout.count("order ") == 5
 
     def test_imd_mode_payload(self, run_cli, monkeypatch, fake_pa):
         _resolve_fake(monkeypatch)
@@ -267,7 +268,7 @@ class TestModes:
         _resolve_fake(monkeypatch)
         result = run_cli(["doctor", "-p", "fake-eq", "--mode", "sweep"])
         assert result.code == 0, result.stderr
-        assert "스윕: 4 points" in result.stdout
+        assert "Sweep: 4 points" in result.stdout
         assert "THD range: 0.0000% ~ 0.3000%" in result.stdout
 
     def test_sweep_mode_with_empty_curves_reports_zero_ranges(self, run_cli, monkeypatch, fake_pa):
@@ -333,8 +334,8 @@ class TestModes:
         human = run_cli(["doctor", "-p", "fake-eq", "--mode", "waveshaper"])
         assert human.code == 0, human.stderr
         assert "Waveshaper v2: 8 points, 3 levels, coverage=75.0%" in human.stdout
-        assert "대칭: 예 (홀수 하모닉)" in human.stdout
-        assert "선형 플러그인" in human.stdout
+        assert "Symmetric: yes (odd harmonics)" in human.stdout
+        assert "linear plugin" in human.stdout
 
     def test_waveshaper_nonlinear_result_is_flagged(self, run_cli, monkeypatch, fake_pa):
         import audioman.core.plugin_analysis as real_pa
@@ -420,8 +421,8 @@ class TestModes:
             ["doctor", "-p", "fake-eq", "--mode", "waveshaper", "--legacy-waveshaper"]
         )
         assert result.code == 0, result.stderr
-        assert "비선형 (" in result.stdout
-        assert "선형 플러그인" not in result.stdout
+        assert "nonlinear (" in result.stdout
+        assert "linear plugin" not in result.stdout
 
     def test_legacy_waveshaper_human_output(self, run_cli, monkeypatch, fake_pa):
         _resolve_fake(monkeypatch)
@@ -430,7 +431,7 @@ class TestModes:
         )
         assert result.code == 0, result.stderr
         assert "Waveshaper (legacy): 5 points" in result.stdout
-        assert "선형 플러그인" in result.stdout
+        assert "linear plugin" in result.stdout
 
     def test_performance_mode_payload_and_table(self, run_cli, monkeypatch, fake_pa):
         _resolve_fake(monkeypatch)
@@ -509,7 +510,7 @@ class TestErrorContainment:
         _resolve_fake(monkeypatch)
         result = run_cli(["doctor", "-p", "fake-eq", "--mode", "all"])
         assert result.code == 0, result.stderr
-        assert "에러: bad params" in result.stdout
+        assert "error: bad params" in result.stdout
 
     def test_single_mode_failure_still_emits_the_envelope(self, run_cli, monkeypatch, fake_pa):
         import audioman.core.plugin_analysis as real_pa
@@ -576,7 +577,7 @@ class TestClap:
         _resolve_fake(monkeypatch)
         result = run_cli(["doctor", "-p", "fake-eq", "--mode", "linear", "--clap"])
         assert result.code == 0, result.stderr
-        assert "8개 설정 × 512dim 임베딩" in result.stdout
+        assert "8 settings × 512dim embeddings" in result.stdout
         assert "... +3 more" in result.stdout
 
     def test_clap_output_writes_npy_and_labels(self, run_cli, monkeypatch, fake_pa, tmp_path):
@@ -603,7 +604,7 @@ class TestClap:
             ["doctor", "-p", "fake-eq", "--mode", "linear", "--clap", "--clap-output", str(npy)]
         )
         assert result.code == 0, result.stderr
-        assert "CLAP 임베딩 저장" in result.stderr
+        assert "CLAP embeddings saved" in result.stderr
         assert "(5, 512)" in result.stderr
 
     def test_missing_laion_clap_is_reported_as_an_install_hint(self, run_cli, monkeypatch, fake_pa):
@@ -616,7 +617,7 @@ class TestClap:
         _resolve_fake(monkeypatch)
         result = run_cli(["doctor", "-p", "fake-eq", "--mode", "linear", "--clap"], json_mode=True)
         assert result.code == 0, result.stderr
-        assert result.payload["clap"] == {"error": "laion-clap 미설치: pip install laion-clap"}
+        assert result.payload["clap"] == {"error": "laion-clap not installed: pip install laion-clap"}
 
     def test_clap_human_mode_prints_the_install_hint(self, run_cli, monkeypatch, fake_pa):
         import audioman.core.plugin_analysis as real_pa
@@ -628,7 +629,7 @@ class TestClap:
         _resolve_fake(monkeypatch)
         result = run_cli(["doctor", "-p", "fake-eq", "--mode", "linear", "--clap"])
         assert result.code == 0, result.stderr
-        assert "laion-clap 미설치" in result.stdout
+        assert "laion-clap not installed" in result.stdout
 
     def test_other_clap_failure_is_contained(self, run_cli, monkeypatch, fake_pa):
         import audioman.core.plugin_analysis as real_pa
@@ -652,7 +653,7 @@ class TestClap:
         _resolve_fake(monkeypatch)
         result = run_cli(["doctor", "-p", "fake-eq", "--mode", "linear", "--clap"])
         assert result.code == 0, result.stderr
-        assert "에러: clap exploded" in result.stdout
+        assert "error: clap exploded" in result.stdout
 
     def test_clap_sweep_alone_triggers_profiling(self, run_cli, monkeypatch, fake_pa):
         _resolve_fake(monkeypatch)
@@ -678,8 +679,8 @@ class TestCompare:
         _resolve_fake(monkeypatch)
         result = run_cli(["doctor", "-p", "fake-eq", "--mode", "linear", "--compare", "fake-eq"])
         assert result.code == 0, result.stderr
-        assert "비교: fake-eq vs fake-eq" in result.stdout
-        assert "최대 차이: 13.50 dB" in result.stdout
+        assert "Comparing: fake-eq vs fake-eq" in result.stdout
+        assert "Max difference: 13.50 dB" in result.stdout
 
     def test_compare_failure_is_contained(self, run_cli, monkeypatch, fake_pa):
         import audioman.core.plugin_analysis as real_pa
@@ -700,7 +701,7 @@ class TestCompare:
             ["doctor", "-p", "fake-eq", "--mode", "linear", "--compare", "nope"],
         )
         assert result.code == 1
-        assert "플러그인 없음: 'nope'" in result.stderr
+        assert "plugin not found: 'nope'" in result.stderr
 
     def test_compare_parameters_are_forwarded(self, run_cli, monkeypatch, fake_pa):
         import audioman.core.plugin_analysis as real_pa
@@ -737,7 +738,7 @@ class TestOutputFile:
         assert saved["command"] == "doctor"
         assert saved["plugin"] == PLUGIN_PATH
         assert "linear" in saved
-        assert "결과 저장" in result.stderr
+        assert "Result saved" in result.stderr
 
     def test_output_with_json_prints_nothing_extra(self, run_cli, monkeypatch, fake_pa, tmp_path):
         _resolve_fake(monkeypatch)
@@ -748,3 +749,43 @@ class TestOutputFile:
         assert result.code == 0, result.stderr
         assert result.payload["command"] == "doctor"
         assert json.loads(out.read_text(encoding="utf-8"))["command"] == "doctor"
+
+
+class TestPlainModeTagLeaks:
+    """`--plain` binds a `markup=False` console, so a tagged string passed
+    straight to `console.print` prints its tags verbatim (AUD-1853).
+
+    `real_cli_console_binding` reproduces the console the real `--plain`
+    process binds at import time; without it these leaks stay invisible.
+    """
+
+    TAG_RE = re.compile(r"\[/?(?:dim|bold|red|green|yellow|cyan)[^\]]*\]")
+
+    @pytest.fixture(autouse=True)
+    def plain_console(self, real_cli_console_binding):
+        from audioman.cli import doctor
+
+        real_cli_console_binding(doctor)
+
+    def test_success_path_has_no_tag_text(self, run_cli, monkeypatch, fake_pa):
+        _resolve_fake(monkeypatch)
+        result = run_cli(["doctor", "-p", "fake-eq", "--mode", "linear"])
+        assert result.code == 0, result.stderr
+        combined = result.stdout + result.stderr
+        assert self.TAG_RE.search(combined) is None, combined
+        assert "[bold" not in combined, combined
+        # the user-visible text survives; only the tags disappear
+        assert "Analyzing linear" in result.stdout
+        assert "Frequency response: 6 bins" in result.stdout
+
+    def test_failure_path_has_no_tag_text(self, run_cli, monkeypatch, fake_pa):
+        import audioman.core.plugin_analysis as real_pa
+
+        monkeypatch.setattr(real_pa, "measure_thd",
+                            lambda *a, **k: (_ for _ in ()).throw(ValueError("bad params")))
+        _resolve_fake(monkeypatch)
+        result = run_cli(["doctor", "-p", "fake-eq", "--mode", "thd"])
+        assert result.code == 0, result.stderr
+        combined = result.stdout + result.stderr
+        assert self.TAG_RE.search(combined) is None, combined
+        assert "error: bad params" in result.stdout

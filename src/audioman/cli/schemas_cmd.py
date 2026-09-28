@@ -1,6 +1,6 @@
 # Created: 2026-05-11
-# Purpose: `audioman schemas {list,show}` — JSONSchema 발행.
-# LLM agent가 audioman --json 출력의 모양을 사전에 알 수 있게 한다.
+# Purpose: `audioman schemas {list,show}` — publish JSONSchemas.
+# Lets LLM agents learn the shape of audioman --json output up front.
 
 from __future__ import annotations
 
@@ -55,7 +55,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _run_default(args: argparse.Namespace) -> None:
-    # 서브명령 미지정 시 list와 동일하게 동작
+    # With no subcommand given, behave the same as list
     _run_list(args)
 
 
@@ -84,7 +84,7 @@ def _run_show(args: argparse.Namespace) -> None:
         print(f"error: invalid schema name: {args.name}", file=sys.stderr)
         sys.exit(2)
     if not target.is_file():
-        # fallback: name 기반 검색 ("finding" → "finding.v1.json")
+        # fallback: search by name ("finding" → "finding.v1.json")
         matches = sorted(_schemas_dir().glob(f"{args.name}*.json"))
         if not matches:
             print(f"error: schema not found: {args.name}", file=sys.stderr)
@@ -92,7 +92,7 @@ def _run_show(args: argparse.Namespace) -> None:
         target = matches[0].resolve()
 
     text = target.read_text(encoding="utf-8")
-    # 그대로 stdout (JSONSchema 자체가 JSON이므로 --json과 무관하게 valid JSON)
+    # Straight to stdout (a JSONSchema is itself JSON, so this is valid JSON regardless of --json)
     sys.stdout.write(text)
     if not text.endswith("\n"):
         sys.stdout.write("\n")

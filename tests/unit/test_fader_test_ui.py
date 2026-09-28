@@ -850,7 +850,7 @@ class TestLoadGains:
 
         window._load_gains()
 
-        assert warnings == [("Load failed", "JSON에 'gains' dict가 없습니다.")]
+        assert warnings == [("Load failed", "JSON has no 'gains' dict.")]
         assert player.tracks[0].gain_db == pytest.approx(0.0)
 
     def test_load_round_trips_what_save_wrote(self, window, player, monkeypatch, tmp_path):

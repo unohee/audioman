@@ -1,4 +1,4 @@
-# tests/unit/test_registry.py — 플러그인 레지스트리 단위 테스트
+# tests/unit/test_registry.py — plugin registry unit tests
 
 import json
 import plistlib
@@ -18,7 +18,7 @@ from audioman.plugins.parameter import PluginMeta
 
 
 class TestNameToShortName:
-    """플러그인 이름 → short_name 변환"""
+    """Plugin name → short_name conversion"""
 
     def test_rx10_prefix(self):
         assert _name_to_short_name("RX 10 Spectral De-noise") == "spectral-de-noise"
@@ -48,15 +48,15 @@ class TestNameToShortName:
         assert _name_to_short_name("Some   Plugin") == "some-plugin"
 
     def test_case_insensitive_vendor(self):
-        # "iZotope" 대소문자 무관 처리
+        # "iZotope" handled case-insensitively
         assert _name_to_short_name("IZOTOPE Trash") == "trash"
 
 
 class TestParseVst3Info:
-    """VST3 Info.plist 파싱"""
+    """VST3 Info.plist parsing"""
 
     def test_valid_plist(self, tmp_path):
-        """유효한 VST3 번들에서 PluginMeta 생성"""
+        """Build a PluginMeta from a valid VST3 bundle"""
         vst3_dir = tmp_path / "TestPlugin.vst3"
         contents_dir = vst3_dir / "Contents"
         contents_dir.mkdir(parents=True)
@@ -80,13 +80,13 @@ class TestParseVst3Info:
         assert "declick" in meta.aliases
 
     def test_missing_plist(self, tmp_path):
-        """Info.plist 없으면 None"""
+        """No Info.plist → None"""
         vst3_dir = tmp_path / "NoInfo.vst3"
         vst3_dir.mkdir()
         assert _parse_vst3_info(vst3_dir) is None
 
     def test_invalid_plist(self, tmp_path):
-        """손상된 plist → None"""
+        """Corrupted plist → None"""
         vst3_dir = tmp_path / "Bad.vst3"
         contents_dir = vst3_dir / "Contents"
         contents_dir.mkdir(parents=True)
@@ -94,7 +94,7 @@ class TestParseVst3Info:
         assert _parse_vst3_info(vst3_dir) is None
 
     def test_missing_bundle_name_uses_stem(self, tmp_path):
-        """CFBundleName 없으면 폴더명 사용"""
+        """No CFBundleName → use the folder name"""
         vst3_dir = tmp_path / "FallbackName.vst3"
         contents_dir = vst3_dir / "Contents"
         contents_dir.mkdir(parents=True)
@@ -109,7 +109,7 @@ class TestParseVst3Info:
 
 
 class TestParseAuInfo:
-    """AU Info.plist 파싱"""
+    """AU Info.plist parsing"""
 
     def test_valid_plist(self, tmp_path):
         au_dir = tmp_path / "TestAU.component"
@@ -131,11 +131,11 @@ class TestParseAuInfo:
 
 
 class TestPluginRegistry:
-    """PluginRegistry 클래스"""
+    """PluginRegistry class"""
 
     @pytest.fixture
     def registry(self):
-        """캐시/설정을 우회한 순수 레지스트리"""
+        """A bare registry that bypasses cache/settings"""
         reg = PluginRegistry.__new__(PluginRegistry)
         reg._plugins = {}
         reg._alias_map = {}
@@ -176,12 +176,12 @@ class TestPluginRegistry:
             path="/tmp/spectral.vst3", format="vst3",
         )
         registry._register(meta)
-        # 부분 매칭: "spectral" → unique match
+        # partial match: "spectral" → unique match
         result = registry.get("spectral")
         assert result == meta
 
     def test_get_partial_ambiguous(self, registry):
-        """부분 매칭 후보가 여러 개면 None"""
+        """None when several partial-match candidates exist"""
         for name in ["spectral-de-noise", "spectral-repair"]:
             registry._register(PluginMeta(
                 name=name, short_name=name,
@@ -226,7 +226,7 @@ class TestPluginRegistry:
         assert len(results) == 1
 
     def test_save_and_load_cache(self, tmp_path, registry):
-        """캐시 저장 → 로드 라운드트립"""
+        """Cache save → load round-trip"""
         registry._cache_path = tmp_path / "plugins.json"
 
         meta = PluginMeta(
@@ -234,13 +234,13 @@ class TestPluginRegistry:
             path=str(tmp_path / "cached.vst3"), format="vst3",
             vendor="test", aliases=["cache-test"],
         )
-        # 캐시 로드 시 경로 존재 확인하므로 더미 파일 생성
+        # the cache load checks that the path exists, so create a dummy file
         (tmp_path / "cached.vst3").mkdir()
 
         registry._register(meta)
         registry._save_cache()
 
-        # 새 레지스트리로 캐시 로드
+        # load the cache with a new registry
         reg2 = PluginRegistry.__new__(PluginRegistry)
         reg2._plugins = {}
         reg2._alias_map = {}
@@ -251,7 +251,7 @@ class TestPluginRegistry:
         assert reg2._alias_map["cache-test"] == "cached"
 
     def test_cache_skips_missing_paths(self, tmp_path, registry):
-        """캐시된 플러그인 경로가 없으면 건너뜀"""
+        """Skip cached plugins whose path is gone"""
         registry._cache_path = tmp_path / "plugins.json"
 
         meta = PluginMeta(
@@ -266,12 +266,12 @@ class TestPluginRegistry:
         reg2._alias_map = {}
         reg2._cache_path = registry._cache_path
 
-        # 경로가 없으므로 로드 실패
+        # the path is gone, so loading fails
         assert reg2._try_load_cache() is False
         assert len(reg2._plugins) == 0
 
     def test_cache_corrupt(self, tmp_path, registry):
-        """손상된 캐시 파일 → False"""
+        """Corrupted cache file → False"""
         registry._cache_path = tmp_path / "plugins.json"
         registry._cache_path.write_text("not json!!!")
 
@@ -279,16 +279,16 @@ class TestPluginRegistry:
 
 
 class TestAliases:
-    """ALIASES 매핑 일관성"""
+    """ALIASES mapping consistency"""
 
     def test_aliases_are_lowercase(self):
         for key, aliases in ALIASES.items():
-            assert key == key.lower(), f"key '{key}' 소문자 아님"
+            assert key == key.lower(), f"key '{key}' is not lowercase"
             for alias in aliases:
-                assert alias == alias.lower(), f"alias '{alias}' 소문자 아님"
+                assert alias == alias.lower(), f"alias '{alias}' is not lowercase"
 
     def test_no_duplicate_aliases(self):
-        """서로 다른 키에 같은 별칭이 없어야 함"""
+        """No two keys may share the same alias"""
         all_aliases = []
         for aliases in ALIASES.values():
             all_aliases.extend(aliases)

@@ -81,7 +81,7 @@ class TestApplyDenoise:
     def test_unknown_plugin_raises(self, monkeypatch):
         monkeypatch.setattr(voiceover, "get_registry",
                             lambda: type("R", (), {"get": lambda s, n: None})())
-        with pytest.raises(ValueError, match="플러그인을 찾을 수 없습니다"):
+        with pytest.raises(ValueError, match="Plugin not found"):
             voiceover._apply_denoise(np.ones((2, 100), dtype=np.float32), SR, "missing", None)
 
     def test_applies_wrapper_and_returns_full_name(self, monkeypatch):

@@ -1,5 +1,5 @@
 # Created: 2026-03-21
-# Purpose: 오디오 파일 I/O 추상화
+# Purpose: Audio file I/O abstraction
 
 import logging
 from dataclasses import dataclass
@@ -13,8 +13,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class AudioStats:
-    """오디오 파일 통계"""
-    duration: float  # 초
+    """Audio file statistics"""
+    duration: float  # seconds
     sample_rate: int
     channels: int
     frames: int
@@ -24,15 +24,15 @@ class AudioStats:
 
 
 def read_audio(path: str | Path) -> tuple[np.ndarray, int]:
-    """오디오 파일 읽기. 반환: (audio shape (channels, samples), sample_rate)"""
+    """Read an audio file. Returns: (audio shape (channels, samples), sample_rate)"""
     path = Path(path)
     if not path.exists():
-        raise FileNotFoundError(f"파일 없음: {path}")
+        raise FileNotFoundError(f"File not found: {path}")
 
     data, sr = sf.read(str(path), dtype="float32", always_2d=True)
     # soundfile: (samples, channels) → (channels, samples) for pedalboard
     audio = data.T
-    logger.debug(f"읽기: {path.name} ({audio.shape[0]}ch, {sr}Hz, {audio.shape[1]} samples)")
+    logger.debug(f"read: {path.name} ({audio.shape[0]}ch, {sr}Hz, {audio.shape[1]} samples)")
     return audio, sr
 
 
@@ -42,7 +42,7 @@ def write_audio(
     sample_rate: int,
     subtype: str = "PCM_24",
 ) -> None:
-    """오디오 파일 쓰기. audio shape: (channels, samples)"""
+    """Write an audio file. audio shape: (channels, samples)"""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -53,14 +53,14 @@ def write_audio(
         data = audio.T
 
     sf.write(str(path), data, sample_rate, subtype=subtype)
-    logger.debug(f"쓰기: {path.name} ({sample_rate}Hz, {subtype})")
+    logger.debug(f"write: {path.name} ({sample_rate}Hz, {subtype})")
 
 
 def get_file_info(path: str | Path) -> dict:
-    """파일 메타데이터만 빠르게 읽기 (오디오 로드 없이)"""
+    """Read file metadata only, quickly (without loading the audio)"""
     path = Path(path)
     if not path.exists():
-        raise FileNotFoundError(f"파일 없음: {path}")
+        raise FileNotFoundError(f"File not found: {path}")
     info = sf.info(str(path))
     return {
         "duration": info.duration,
@@ -80,11 +80,11 @@ def stream_process(
     chunk_seconds: float = 10.0,
     subtype: str = "PCM_24",
 ) -> dict:
-    """대용량 파일을 청크 단위로 스트리밍 처리
+    """Stream a large file through in chunks
 
     Args:
-        process_fn: (audio_chunk: ndarray, sr: int) → ndarray 처리 함수
-        chunk_seconds: 청크 크기 (초)
+        process_fn: (audio_chunk: ndarray, sr: int) → ndarray processing function
+        chunk_seconds: chunk size (seconds)
 
     Returns: {"frames_processed", "duration", "chunks"}
     """
@@ -117,7 +117,7 @@ def stream_process(
                 if len(data) == 0:
                     break
 
-                # (samples, channels) → (channels, samples) 변환
+                # (samples, channels) → (channels, samples) conversion
                 chunk = data.T
                 processed = np.asarray(process_fn(chunk, info.samplerate))
                 if processed.ndim == 1:
@@ -128,13 +128,13 @@ def stream_process(
                         f"expected {chunk.shape}, got {processed.shape}"
                     )
 
-                # (channels, samples) → (samples, channels) 저장
+                # (channels, samples) → (samples, channels) for writing
                 outfile.write(processed.T)
 
                 frames_done += len(data)
                 chunks += 1
 
-    logger.debug(f"스트리밍 처리: {chunks} chunks, {frames_done} frames")
+    logger.debug(f"streamed: {chunks} chunks, {frames_done} frames")
     return {
         "frames_processed": frames_done,
         "duration": frames_done / info.samplerate,
@@ -144,7 +144,7 @@ def stream_process(
 
 
 def get_audio_stats(audio: np.ndarray, sample_rate: int) -> AudioStats:
-    """오디오 데이터 통계 계산"""
+    """Compute audio data statistics"""
     if audio.ndim == 1:
         channels = 1
         samples = len(audio)

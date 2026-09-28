@@ -115,7 +115,7 @@ class TestNonGuiPaths:
     def test_missing_directory_is_reported(self, run_cli, tmp_path):
         result = run_cli(["fader-test", str(tmp_path / "nope")])
         assert result.code == 1
-        assert "디렉터리 아님" in result.stderr
+        assert "Not a directory" in result.stderr
 
     def test_missing_directory_returns_before_importing_qt(self, run_cli, tmp_path, silent_error):
         """The guard must return explicitly, not lean on print_error's exit.
@@ -127,7 +127,7 @@ class TestNonGuiPaths:
         result = run_cli(["fader-test", str(tmp_path / "nope")])
 
         assert result.code == 0, result.stderr
-        assert seen and "디렉터리 아님" in seen[0]
+        assert seen and "Not a directory" in seen[0]
         assert "loading stems" not in result.stdout
 
     def test_a_file_instead_of_a_directory_is_rejected(self, run_cli, tmp_path):
@@ -136,7 +136,7 @@ class TestNonGuiPaths:
         result = run_cli(["fader-test", str(a_file)])
 
         assert result.code == 1
-        assert "디렉터리 아님" in result.stderr
+        assert "Not a directory" in result.stderr
 
     def test_pyqt6_missing_is_reported(self, run_cli, stems, monkeypatch):
         """A machine without PyQt6 must get an actionable message, not a traceback."""
@@ -145,7 +145,7 @@ class TestNonGuiPaths:
         result = run_cli(["fader-test", str(stems)])
 
         assert result.code == 1
-        assert result.stderr.splitlines()[0] == "error: PyQt6 미설치 — uv add PyQt6"
+        assert result.stderr.splitlines()[0] == "error: PyQt6 not installed — run: uv add PyQt6"
         assert "loading stems" not in result.stdout
 
     def test_pyqt6_native_library_failure_names_the_real_cause(
@@ -189,7 +189,7 @@ class TestNonGuiPaths:
         result = run_cli(["fader-test", str(stems)])
 
         assert result.code == 0, result.stderr
-        assert seen and "PyQt6 미설치" in seen[0]
+        assert seen and "PyQt6 not installed" in seen[0]
         assert "loaded" not in result.stderr
 
     @needs_qt_native
@@ -201,8 +201,8 @@ class TestNonGuiPaths:
         result = run_cli(["fader-test", str(empty)])
 
         assert result.code == 1
-        assert "로드 실패" in result.stderr
-        assert "wav 파일 없음" in result.stderr
+        assert "Load failed" in result.stderr
+        assert "No wav files" in result.stderr
         assert "loaded" not in result.stderr
 
     @needs_qt_native
@@ -225,7 +225,7 @@ class TestNonGuiPaths:
         result = run_cli(["fader-test", str(empty)])
 
         assert result.code == 0, result.stderr
-        assert seen and "로드 실패" in seen[0]
+        assert seen and "Load failed" in seen[0]
         assert launched == []
 
     @needs_qt_native
@@ -237,7 +237,7 @@ class TestNonGuiPaths:
         result = run_cli(["fader-test", str(directory)])
 
         assert result.code == 1
-        assert "로드 실패" in result.stderr
+        assert "Load failed" in result.stderr
 
 
 @needs_qt_native

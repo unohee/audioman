@@ -34,14 +34,14 @@ class TestGate:
         t = np.linspace(0, 0.5, sample_rate // 2, dtype=np.float32)
         audio[:, sample_rate // 2:] = 0.5 * np.sin(2 * np.pi * 440 * t)
         result = gate(audio, sample_rate, threshold_db=-40.0)
-        # 앞 무음 구간의 RMS가 낮아야 함
+        # the RMS of the leading silence region must be low
         rms_first = np.sqrt(np.mean(result[:, :sample_rate // 4]**2))
         assert rms_first < 0.01
 
 
 class TestFade:
     def test_fade_in(self, test_audio, sample_rate):
-        fade_samples = sample_rate // 10  # 0.1초
+        fade_samples = sample_rate // 10  # 0.1 s
         result = fade_in(test_audio, fade_samples)
         assert abs(result[0, 0]) < 0.01
         np.testing.assert_allclose(result[:, -1000:], test_audio[:, -1000:], atol=1e-6)
@@ -86,8 +86,8 @@ class TestFadeCurves:
         from audioman.core.dsp import fade_in
         n = sample_rate // 10
         fi = fade_in(test_audio, n, curve="cosine")
-        # cosine S-curve: 시작과 끝 미분이 0이어야 부드럽다
-        # 첫 두 샘플의 차이 < 중간 두 샘플의 차이
+        # cosine S-curve: the derivative must be 0 at the start and end to be smooth
+        # the difference between the first two samples < that between the middle two samples
         diff_start = abs(fi[0, 1] - fi[0, 0])
         diff_mid = abs(fi[0, n // 2 + 1] - fi[0, n // 2])
         assert diff_start < diff_mid
@@ -96,15 +96,15 @@ class TestFadeCurves:
         from audioman.core.dsp import fade_in
         n = sample_rate // 10
         fi = fade_in(test_audio, n, curve="equal_power")
-        # equal_power 중간점: sqrt(0.5) ≈ 0.707 (linear는 0.5)
+        # equal_power midpoint: sqrt(0.5) ≈ 0.707 (linear gives 0.5)
         original_mid = test_audio[0, n // 2]
-        if abs(original_mid) > 0.01:  # silence 회피
+        if abs(original_mid) > 0.01:  # avoid silence
             ratio = fi[0, n // 2] / original_mid
             assert 0.65 < ratio < 0.75
 
     def test_unknown_curve_raises(self, test_audio):
         from audioman.core.dsp import fade_in
-        with pytest.raises(ValueError, match="알 수 없는 fade curve"):
+        with pytest.raises(ValueError, match="Unknown fade curve"):
             fade_in(test_audio, 100, curve="bouncy")
 
     def test_all_curves_accept(self, test_audio, sample_rate):
@@ -119,16 +119,16 @@ class TestPad:
     def test_pad_head_only(self, test_audio, sample_rate):
         from audioman.core.dsp import pad
         original_len = test_audio.shape[1]
-        result = pad(test_audio, head_samples=sample_rate // 2)  # 0.5초
+        result = pad(test_audio, head_samples=sample_rate // 2)  # 0.5 s
         assert result.shape[1] == original_len + sample_rate // 2
-        # 헤드 패딩은 무음
+        # the head padding is silent
         assert np.max(np.abs(result[:, :sample_rate // 2])) == 0.0
-        # 원본이 그 뒤에 보존됨
+        # the original is preserved after it
         np.testing.assert_allclose(result[:, sample_rate // 2:], test_audio, atol=1e-6)
 
     def test_pad_tail_only(self, test_audio, sample_rate):
         from audioman.core.dsp import pad
-        result = pad(test_audio, tail_samples=sample_rate)  # 1초
+        result = pad(test_audio, tail_samples=sample_rate)  # 1 s
         assert result.shape[1] == test_audio.shape[1] + sample_rate
         assert np.max(np.abs(result[:, -sample_rate:])) == 0.0
 
@@ -154,14 +154,14 @@ class TestPad:
 
     def test_pad_negative_raises(self, test_audio):
         from audioman.core.dsp import pad
-        with pytest.raises(ValueError, match="음수일 수 없"):
+        with pytest.raises(ValueError, match="cannot be negative"):
             pad(test_audio, head_samples=-1)
 
 
 class TestRemoveDC:
     def test_remove_dc_offset(self, sample_rate):
         from audioman.core.dsp import remove_dc, measure_dc_offset
-        # 채널별로 다른 DC bias
+        # a different DC bias per channel
         t = np.linspace(0, 1, sample_rate, dtype=np.float32)
         sine = 0.3 * np.sin(2 * np.pi * 440 * t)
         ch_l = sine + 0.1   # +0.1 DC
@@ -181,7 +181,7 @@ class TestRemoveDC:
         from audioman.core.dsp import remove_dc
         result = remove_dc(test_audio)
         assert result.shape == test_audio.shape
-        # 원래 DC가 거의 0이므로 신호는 거의 그대로
+        # the original DC is nearly 0, so the signal is nearly unchanged
         np.testing.assert_allclose(result, test_audio, atol=1e-3)
 
     def test_remove_dc_mono(self, test_audio_mono):
@@ -197,21 +197,21 @@ class TestTrim:
         assert result.shape[1] == 100
 
     def test_trim_silence(self, sample_rate):
-        # 0.2초 무음 + 0.6초 톤 + 0.2초 무음
+        # 0.2 s silence + 0.6 s tone + 0.2 s silence
         audio = np.zeros((2, sample_rate), dtype=np.float32)
         start = int(0.2 * sample_rate)
         end = int(0.8 * sample_rate)
         t = np.linspace(0, 0.6, end - start, dtype=np.float32)
         audio[:, start:end] = 0.5 * np.sin(2 * np.pi * 440 * t)
         result = trim_silence(audio, sample_rate, threshold_db=-40.0)
-        # 트리밍 후 길이가 줄어야 함
+        # the length must shrink after trimming
         assert result.shape[1] < audio.shape[1]
-        # 시작 부분에 소리가 있어야 함
+        # there must be sound at the start
         assert np.max(np.abs(result[:, :100])) > 0.01
 
 
 class TestCutRegion:
-    """cut_region: 구간 삭제 + 앞뒤 이어붙임."""
+    """cut_region: delete a region + join the remaining sides."""
 
     def test_removes_middle_segment(self):
         from audioman.core.dsp import cut_region
@@ -335,13 +335,13 @@ class TestSplice:
         from audioman.core.dsp import splice
         base = np.ones((2, 10), dtype=np.float32)
         ins = np.ones(5, dtype=np.float32)
-        with pytest.raises(ValueError, match="채널 수 불일치"):
+        with pytest.raises(ValueError, match="(?i)channel count mismatch"):
             splice(base, ins, position=0)
 
     def test_unknown_mode_raises(self):
         from audioman.core.dsp import splice
         base = np.ones(5, dtype=np.float32)
-        with pytest.raises(ValueError, match="알 수 없는 splice mode"):
+        with pytest.raises(ValueError, match="Unknown splice mode"):
             splice(base, np.ones(2, dtype=np.float32), position=0, mode="bogus")
 
     def test_insert_with_crossfade_left_and_right(self):
@@ -426,7 +426,7 @@ class TestConcat:
 
     def test_channel_mismatch_raises(self):
         from audioman.core.dsp import concat
-        with pytest.raises(ValueError, match="clips\\[1\\] 채널 수 불일치"):
+        with pytest.raises(ValueError, match="clips\\[1\\] channel count mismatch"):
             concat([np.ones(5, dtype=np.float32), np.ones((2, 5), dtype=np.float32)])
 
     def test_crossfade_concatenation(self):

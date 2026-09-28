@@ -1,5 +1,5 @@
 # Created: 2026-04-26
-# Purpose: audioman edl 서브커맨드 — 비파괴 편집 워크플로우
+# Purpose: audioman edl subcommand — non-destructive edit workflow
 
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
                           help="Skip source SHA-256 verification")
     p_render.set_defaults(func=run_render)
 
-    # status (= 워크스페이스 상태)
+    # status (= workspace state)
     p_status = sub.add_parser("status", help="Show workspace status")
     p_status.add_argument("--source", "-s", required=True)
     p_status.set_defaults(func=run_status)
@@ -86,7 +86,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _parse_value(raw: str):
-    """문자열을 적절한 타입으로 변환. process plugin 같은 문자열은 그대로."""
+    """Convert a string to a sensible type. Strings such as process plugin stay as-is."""
     if raw.startswith("json:"):
         return json.loads(raw[5:])
     low = raw.lower()
@@ -108,7 +108,7 @@ def _parse_params(raw_list: list[str]) -> dict:
     out: dict = {}
     for item in raw_list:
         if "=" not in item:
-            print_error(f"--param 형식 오류 (key=value 필요): {item}")
+            print_error(f"invalid --param format (expected key=value): {item}")
         k, v = item.split("=", 1)
         out[k.strip()] = _parse_value(v.strip())
     return out
@@ -126,11 +126,11 @@ def _ensure_workspace(source: Path) -> None:
 def run_init(args: argparse.Namespace) -> None:
     src = Path(args.input).resolve()
     if not src.exists():
-        print_error(f"파일 없음: {src}")
+        print_error(f"file not found: {src}")
 
     edl_path = edl_core.edl_path(src)
     if edl_path.exists():
-        print_warning(f"이미 초기화된 EDL이 있습니다: {edl_path}")
+        print_warning(f"EDL already initialized: {edl_path}")
 
     edl = edl_core.init_edl(src)
     _ensure_workspace(src)
@@ -153,7 +153,7 @@ def run_init(args: argparse.Namespace) -> None:
         ))
         return
 
-    print_success(f"EDL 초기화: {edl_path}")
+    print_success(f"EDL initialized: {edl_path}")
     output_console.print(f"  Source:    {src}")
     output_console.print(f"  Duration:  {edl.duration_sec:.2f}s")
     output_console.print(f"  SR / CH:   {edl.sample_rate} Hz / {edl.channels} ch")
@@ -164,7 +164,7 @@ def run_add(args: argparse.Namespace) -> None:
     src = Path(args.source).resolve()
     edl_path = edl_core.edl_path(src)
     if not edl_path.exists():
-        print_error(f"EDL이 초기화되지 않았습니다. 먼저 'audioman edl init {src}' 실행")
+        print_error(f"EDL not initialized. Run 'audioman edl init {src}' first")
 
     edl = edl_core.load_edl(edl_path)
     params = _parse_params(args.param)
@@ -190,7 +190,7 @@ def run_add(args: argparse.Namespace) -> None:
         ))
         return
 
-    print_success(f"op 추가: {op['type']} (총 {len(edl.ops)}개)")
+    print_success(f"op added: {op['type']} (total {len(edl.ops)})")
     for k, v in op.items():
         if k != "type":
             output_console.print(f"  {k}: {v}")
@@ -200,7 +200,7 @@ def run_list(args: argparse.Namespace) -> None:
     src = Path(args.source).resolve()
     edl_path = edl_core.edl_path(src)
     if not edl_path.exists():
-        print_error(f"EDL이 초기화되지 않았습니다: {src}")
+        print_error(f"EDL not initialized: {src}")
     edl = edl_core.load_edl(edl_path)
 
     if args.json:
@@ -212,7 +212,7 @@ def run_list(args: argparse.Namespace) -> None:
         return
 
     if not edl.ops:
-        output_console.print("  (ops 없음 — 'edl add'로 추가)")
+        output_console.print("  (no ops — add one with 'edl add')")
         return
     rows = []
     for i, op in enumerate(edl.ops):
@@ -225,7 +225,7 @@ def run_undo(args: argparse.Namespace) -> None:
     src = Path(args.source).resolve()
     edl_path = edl_core.edl_path(src)
     if not edl_path.exists():
-        print_error(f"EDL이 초기화되지 않았습니다: {src}")
+        print_error(f"EDL not initialized: {src}")
     new_edl = edl_core.undo(src)
     if new_edl is None:
         if args.json:
@@ -235,7 +235,7 @@ def run_undo(args: argparse.Namespace) -> None:
                 schema=schema_uri("edl"),
             ))
             return
-        print_warning("되돌릴 op이 없습니다.")
+        print_warning("no ops to undo.")
         return
     if args.json:
         print_json(json_envelope(
@@ -244,7 +244,7 @@ def run_undo(args: argparse.Namespace) -> None:
             schema=schema_uri("edl"),
         ))
         return
-    print_success(f"undo 완료. 현재 op 수: {len(new_edl.ops)}")
+    print_success(f"undo complete. Current op count: {len(new_edl.ops)}")
 
 
 def run_redo(args: argparse.Namespace) -> None:
@@ -258,7 +258,7 @@ def run_redo(args: argparse.Namespace) -> None:
                 schema=schema_uri("edl"),
             ))
             return
-        print_warning("redo할 op이 없습니다.")
+        print_warning("no ops to redo.")
         return
     if args.json:
         print_json(json_envelope(
@@ -267,14 +267,14 @@ def run_redo(args: argparse.Namespace) -> None:
             schema=schema_uri("edl"),
         ))
         return
-    print_success(f"redo 완료. 현재 op 수: {len(new_edl.ops)}")
+    print_success(f"redo complete. Current op count: {len(new_edl.ops)}")
 
 
 def run_render(args: argparse.Namespace) -> None:
     src = Path(args.source).resolve()
     edl_path = edl_core.edl_path(src)
     if not edl_path.exists():
-        print_error(f"EDL이 초기화되지 않았습니다: {src}")
+        print_error(f"EDL not initialized: {src}")
     edl = edl_core.load_edl(edl_path)
 
     try:
@@ -292,8 +292,8 @@ def run_render(args: argparse.Namespace) -> None:
         ))
         return
 
-    print_success(f"render 완료: {args.output}")
-    output_console.print(f"  ops 적용:  {result.n_ops}")
+    print_success(f"render complete: {args.output}")
+    output_console.print(f"  ops applied: {result.n_ops}")
     output_console.print(f"  Duration:  {result.input_duration_sec:.2f}s → {result.output_duration_sec:.2f}s")
     output_console.print(f"  Time:      {result.elapsed_sec:.2f}s")
 
@@ -313,7 +313,7 @@ def run_status(args: argparse.Namespace) -> None:
                 schema=schema_uri("edl"),
             ))
             return
-        output_console.print(f"  (초기화되지 않음. 'audioman edl init {src}')")
+        output_console.print(f"  (not initialized. 'audioman edl init {src}')")
         return
 
     edl = edl_core.load_edl(edl_path)
@@ -343,7 +343,7 @@ def run_clear(args: argparse.Namespace) -> None:
     src = Path(args.source).resolve()
     edl_path = edl_core.edl_path(src)
     if not edl_path.exists():
-        print_error(f"EDL이 초기화되지 않았습니다: {src}")
+        print_error(f"EDL not initialized: {src}")
     edl = edl_core.load_edl(edl_path)
     edl.ops = []
     edl_core.save_edl(edl, edl_path)
@@ -355,4 +355,4 @@ def run_clear(args: argparse.Namespace) -> None:
             schema=schema_uri("edl"),
         ))
         return
-    print_success("모든 op 삭제 (history는 유지)")
+    print_success("Removed all ops (history kept)")

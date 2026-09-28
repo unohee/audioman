@@ -1,5 +1,5 @@
 # Created: 2026-04-05
-# Purpose: 멀티트랙 믹싱 엔진 — bounce / mixdown
+# Purpose: Multitrack mixing engine — bounce / mixdown
 
 import logging
 import time
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class TrackConfig:
-    """개별 트랙 설정"""
+    """Settings for a single track"""
     path: str
     gain_db: float = 0.0
     pan: float = 0.0              # -1.0 (L) ~ 0.0 (C) ~ 1.0 (R)
@@ -48,7 +48,7 @@ class TrackConfig:
 
 @dataclass
 class BounceResult:
-    """바운스 결과"""
+    """Bounce result"""
     output_path: str
     track_count: int
     tracks: list[dict]
@@ -63,7 +63,7 @@ class BounceResult:
 
 @dataclass
 class MixdownResult:
-    """믹스다운 결과 (bounce + 마스터 체인)"""
+    """Mixdown result (bounce + master chain)"""
     output_path: str
     track_count: int
     tracks: list[dict]
@@ -79,17 +79,17 @@ class MixdownResult:
 
 
 def apply_pan(audio_stereo: np.ndarray, pan: float) -> np.ndarray:
-    """Equal Power Pan Law 적용
+    """Apply the Equal Power Pan Law
 
     Args:
-        audio_stereo: (2, samples) 스테레오 오디오
+        audio_stereo: (2, samples) stereo audio
         pan: -1.0 (L) ~ 0.0 (C) ~ 1.0 (R)
 
     Returns:
-        (2, samples) 패닝 적용된 스테레오
+        (2, samples) stereo with panning applied
     """
     pan = float(np.clip(pan, -1.0, 1.0))
-    # pan 값을 0~pi/2 각도로 변환
+    # map the pan value to an angle in 0~pi/2
     angle = (pan + 1.0) * 0.25 * np.pi
     gain_l = float(np.cos(angle))
     gain_r = float(np.sin(angle))
@@ -101,15 +101,15 @@ def apply_pan(audio_stereo: np.ndarray, pan: float) -> np.ndarray:
 
 
 def _ensure_stereo(audio: np.ndarray) -> np.ndarray:
-    """모노를 스테레오로 변환, 이미 스테레오면 그대로"""
+    """Convert mono to stereo; return it unchanged if already stereo"""
     if audio.ndim == 1:
         return np.stack([audio, audio])
     if audio.shape[0] == 1:
         return np.concatenate([audio, audio], axis=0)
     if audio.shape[0] == 2:
         return audio
-    # 3ch 이상 → 처음 2채널만 사용
-    logger.warning(f"{audio.shape[0]}ch 오디오 → 처음 2채널만 사용")
+    # 3 or more channels → use only the first 2 channels
+    logger.warning(f"{audio.shape[0]}ch audio → using only the first 2 channels")
     return audio[:2]
 
 
@@ -118,13 +118,13 @@ def _resample_if_needed(
     current_sr: int,
     target_sr: int,
 ) -> np.ndarray:
-    """샘플레이트 불일치 시 soxr로 리샘플링"""
+    """Resample with soxr on a sample-rate mismatch"""
     if current_sr == target_sr:
         return audio
 
     import soxr
 
-    # soxr는 (samples, channels) 형태를 기대
+    # soxr expects (samples, channels)
     if audio.ndim == 2:
         data = audio.T  # (channels, samples) → (samples, channels)
         resampled = soxr.resample(data, current_sr, target_sr, quality="HQ")
@@ -138,13 +138,13 @@ def _apply_track_chain(
     sr: int,
     chain: list[PipelineStep],
 ) -> np.ndarray:
-    """트랙별 플러그인 체인 적용 (인메모리, 파일 I/O 없음)"""
+    """Apply a per-track plugin chain (in memory, no file I/O)"""
     registry = get_registry()
 
     for step in chain:
         meta = registry.get(step.plugin_name)
         if not meta:
-            raise ValueError(f"플러그인을 찾을 수 없습니다: '{step.plugin_name}'")
+            raise ValueError(f"Plugin not found: '{step.plugin_name}'")
 
         wrapper = VST3PluginWrapper(meta.path)
         wrapper.load()
@@ -160,20 +160,20 @@ def mix_tracks(
     sample_rate: Optional[int] = None,
     apply_chain: bool = True,
 ) -> tuple[np.ndarray, int]:
-    """여러 트랙을 스테레오로 믹스
+    """Mix several tracks into stereo
 
     Args:
-        tracks: 트랙 설정 리스트
-        sample_rate: 목표 샘플레이트 (None이면 첫 트랙 기준)
-        apply_chain: 트랙별 플러그인 체인 적용 여부
+        tracks: list of track settings
+        sample_rate: target sample rate (None → use the first track's)
+        apply_chain: whether to apply each track's plugin chain
 
     Returns:
         (audio (2, samples), sample_rate)
     """
     if not tracks:
-        raise ValueError("트랙이 없습니다")
+        raise ValueError("No tracks provided")
 
-    # Solo 필터링: solo 트랙이 하나라도 있으면 solo만 재생
+    # Solo filtering: if any track is soloed, play only the soloed tracks
     has_solo = any(t.solo for t in tracks)
     active_tracks = []
     for t in tracks:
@@ -184,49 +184,49 @@ def mix_tracks(
         active_tracks.append(t)
 
     if not active_tracks:
-        logger.warning("모든 트랙이 mute 상태, silence 출력")
-        # 첫 트랙의 정보로 빈 오디오 생성
+        logger.warning("All tracks are muted; outputting silence")
+        # build empty audio using the first track's information
         sr = sample_rate or 48000
         return np.zeros((2, sr), dtype=np.float32), sr
 
-    # 각 트랙 로드
+    # load each track
     loaded: list[tuple[np.ndarray, int, TrackConfig]] = []
     for t in active_tracks:
         audio, sr = read_audio(t.path)
         loaded.append((audio, sr, t))
 
-    # 목표 SR 결정
+    # determine the target sample rate
     if sample_rate is None:
         sample_rate = loaded[0][1]
 
-    # 각 트랙 처리
+    # process each track
     processed: list[np.ndarray] = []
     for audio, sr, track_cfg in loaded:
-        # 리샘플링
+        # resampling
         audio = _resample_if_needed(audio, sr, sample_rate)
 
-        # 트랙별 플러그인 체인
+        # per-track plugin chain
         if apply_chain and track_cfg.chain:
             audio = _apply_track_chain(audio, sample_rate, track_cfg.chain)
 
-        # 스테레오 변환
+        # convert to stereo
         audio = _ensure_stereo(audio)
 
-        # 게인 적용
+        # apply gain
         if track_cfg.gain_db != 0.0:
             audio = apply_gain(audio, track_cfg.gain_db)
 
-        # 패닝 적용 (center에서도 equal power law로 ~0.707 gain)
+        # apply panning (even at center the equal power law gives ~0.707 gain)
         audio = apply_pan(audio, track_cfg.pan)
 
-        # 오프셋 적용 (앞에 silence 삽입)
+        # apply offset (insert silence at the front)
         if track_cfg.offset_samples > 0:
             pad = np.zeros((2, track_cfg.offset_samples), dtype=audio.dtype)
             audio = np.concatenate([pad, audio], axis=1)
 
         processed.append(audio)
 
-    # 길이 정렬 (가장 긴 트랙 기준 zero-pad)
+    # align lengths (zero-pad to the longest track)
     max_len = max(a.shape[1] for a in processed)
     aligned = []
     for a in processed:
@@ -235,15 +235,15 @@ def mix_tracks(
             a = np.pad(a, ((0, 0), (0, pad_len)), mode="constant")
         aligned.append(a)
 
-    # 합산
+    # sum
     mix = np.sum(np.stack(aligned), axis=0).astype(np.float32)
 
-    # 클리핑 체크
+    # clipping check
     peak = float(np.max(np.abs(mix)))
     if peak > 1.0:
         logger.warning(
-            f"클리핑 감지: peak={peak:.3f} ({20 * np.log10(peak):.1f} dBFS). "
-            f"마스터 체인에 리미터를 추가하거나 트랙 볼륨을 낮추세요."
+            f"Clipping detected: peak={peak:.3f} ({20 * np.log10(peak):.1f} dBFS). "
+            f"Add a limiter to the master chain or lower the track volumes."
         )
 
     return mix, sample_rate
@@ -255,13 +255,13 @@ def bounce(
     sample_rate: Optional[int] = None,
     subtype: str = "PCM_24",
 ) -> BounceResult:
-    """멀티트랙 바운스 — 여러 트랙을 하나의 스테레오 파일로 합산
+    """Multitrack bounce — sum several tracks into one stereo file
 
     Args:
-        tracks: 트랙 설정 리스트
-        output_path: 출력 파일 경로
-        sample_rate: 목표 SR (None이면 첫 트랙 기준)
-        subtype: 출력 포맷 (PCM_16, PCM_24, FLOAT 등)
+        tracks: list of track settings
+        output_path: output file path
+        sample_rate: target sample rate (None → use the first track's)
+        subtype: output format (PCM_16, PCM_24, FLOAT, etc.)
 
     Returns:
         BounceResult
@@ -294,15 +294,15 @@ def mixdown(
     subtype: str = "PCM_24",
     compensate_latency: bool = True,
 ) -> MixdownResult:
-    """멀티트랙 믹스다운 — bounce + 마스터 체인 적용
+    """Multitrack mixdown — bounce + master chain applied
 
     Args:
-        tracks: 트랙 설정 리스트
-        output_path: 출력 파일 경로
-        master_chain: 마스터 버스 플러그인 체인
-        sample_rate: 목표 SR
-        subtype: 출력 포맷
-        compensate_latency: 마스터 체인의 delay compensation 적용 여부
+        tracks: list of track settings
+        output_path: output file path
+        master_chain: master bus plugin chain
+        sample_rate: target sample rate
+        subtype: output format
+        compensate_latency: whether to apply delay compensation for the master chain
     """
     start = time.monotonic()
 
@@ -310,7 +310,7 @@ def mixdown(
     master_latency = 0
 
     if master_chain:
-        # 마스터 체인 적용
+        # apply the master chain
         if compensate_latency:
             from audioman.core.latency import measure_chain_latency, apply_delay_compensation
             measurements, master_latency = measure_chain_latency(

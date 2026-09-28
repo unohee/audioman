@@ -1,5 +1,5 @@
 # Created: 2026-04-05
-# Purpose: YAML/JSON 세션 파일 로더 — 멀티트랙 설정 파싱
+# Purpose: YAML/JSON session file loader - parses multitrack configuration
 
 import json
 import logging
@@ -65,7 +65,7 @@ def validate_subtype(value: Any) -> str:
 
 @dataclass
 class SessionConfig:
-    """세션 파일 설정"""
+    """Configuration loaded from a session file."""
     tracks: list[TrackConfig]
     output: str
     sample_rate: Optional[int] = None
@@ -86,10 +86,10 @@ class SessionConfig:
 
 
 def _parse_track(raw: dict, base_dir: Path) -> TrackConfig:
-    """개별 트랙 딕셔너리를 TrackConfig로 변환"""
+    """Convert a single track dict into a ``TrackConfig``."""
     path = raw.get("path", "")
     if not path:
-        raise ValueError("트랙에 'path' 필드가 없습니다")
+        raise ValueError("track is missing the 'path' field")
 
     # Relative path -> absolute path under the session directory (never escaping it)
     track_path = _resolve_within_base(path, base_dir, "track")
@@ -100,7 +100,7 @@ def _parse_track(raw: dict, base_dir: Path) -> TrackConfig:
         if isinstance(chain_raw, str):
             chain = parse_chain_string(chain_raw)
         elif isinstance(chain_raw, list):
-            # 이미 구조화된 형태: [{"plugin": "denoise", "params": {...}}, ...]
+            # Already-structured form: [{"plugin": "denoise", "params": {...}}, ...]
             chain = []
             for step_raw in chain_raw:
                 if isinstance(step_raw, str):
@@ -123,9 +123,9 @@ def _parse_track(raw: dict, base_dir: Path) -> TrackConfig:
 
 
 def load_session(path: str | Path) -> SessionConfig:
-    """YAML 또는 JSON 세션 파일 로드 (확장자로 자동 판별)
+    """Load a YAML or JSON session file (the extension selects the parser).
 
-    YAML 예시:
+    YAML example:
         output: mix.wav
         format: PCM_24
         tracks:
@@ -141,25 +141,25 @@ def load_session(path: str | Path) -> SessionConfig:
     """
     path = Path(path)
     if not path.exists():
-        raise FileNotFoundError(f"세션 파일 없음: {path}")
+        raise FileNotFoundError(f"Session file not found: {path}")
 
     text = path.read_text(encoding="utf-8")
     base_dir = path.parent
 
-    # 확장자로 포맷 판별
+    # Pick the parser from the file extension
     if path.suffix.lower() in (".yaml", ".yml"):
         try:
             import yaml
         except ImportError:
             raise ImportError(
-                "YAML 세션 파일을 사용하려면 pyyaml이 필요합니다: "
+                "pyyaml is required to use a YAML session file: "
                 "uv add pyyaml"
             )
         data = yaml.safe_load(text)
     elif path.suffix.lower() == ".json":
         data = json.loads(text)
     else:
-        # 확장자 불명 → YAML 시도 → JSON 폴백
+        # Unknown extension -> try YAML, fall back to JSON
         try:
             import yaml
             data = yaml.safe_load(text)
@@ -167,16 +167,16 @@ def load_session(path: str | Path) -> SessionConfig:
             data = json.loads(text)
 
     if not isinstance(data, dict):
-        raise ValueError(f"세션 파일이 딕셔너리가 아닙니다: {type(data)}")
+        raise ValueError(f"session file is not a mapping: {type(data)}")
 
-    # tracks 파싱
+    # Parse tracks
     raw_tracks = data.get("tracks", [])
     if not raw_tracks:
-        raise ValueError("세션 파일에 'tracks' 항목이 없습니다")
+        raise ValueError("session file has no 'tracks' entry")
 
     tracks = [_parse_track(t, base_dir) for t in raw_tracks]
 
-    # 마스터 체인 파싱
+    # Parse the master chain
     master_chain = None
     master_raw = data.get("master")
     if master_raw:
@@ -194,10 +194,10 @@ def load_session(path: str | Path) -> SessionConfig:
                         params=step_raw.get("params", {}),
                     ))
 
-    # 출력 경로
+    # Output path
     output = data.get("output", "")
     if not output:
-        raise ValueError("세션 파일에 'output' 항목이 없습니다")
+        raise ValueError("session file has no 'output' entry")
 
     output_path = _resolve_within_base(output, base_dir, "output")
 

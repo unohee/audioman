@@ -1,4 +1,4 @@
-# tests/unit/test_test_signal.py — 테스트 신호 생성기 단위 테스트
+# tests/unit/test_test_signal.py — test signal generator unit tests
 
 import numpy as np
 import pytest
@@ -33,9 +33,9 @@ class TestGenerateImpulse:
 
     def test_impulse_at_sample_zero(self):
         audio = generate_impulse(level_db=0.0)
-        # sample 0에 1.0 (0dB)
+        # 1.0 (0 dB) at sample 0
         assert audio[0, 0] == pytest.approx(1.0, abs=1e-6)
-        # 나머지는 0
+        # the rest are 0
         assert np.all(audio[:, 1:] == 0.0)
 
     def test_level_db(self):
@@ -46,7 +46,7 @@ class TestGenerateImpulse:
     def test_multichannel(self):
         audio = generate_impulse(channels=5)
         assert audio.shape[0] == 5
-        # 모든 채널에 동일한 임펄스
+        # the same impulse in every channel
         for ch in range(5):
             assert audio[ch, 0] == pytest.approx(1.0, abs=1e-6)
 
@@ -63,7 +63,7 @@ class TestGenerateSine:
         assert peak == pytest.approx(1.0, abs=0.01)
 
     def test_frequency_content(self):
-        """FFT 피크가 목표 주파수 근처에 위치"""
+        """The FFT peak is near the target frequency"""
         sr = 44100
         audio = generate_sine(frequency=1000.0, sample_rate=sr, duration_sec=1.0)
         spectrum = np.abs(np.fft.rfft(audio[0]))
@@ -85,7 +85,7 @@ class TestGenerateTwoTone:
         assert audio.dtype == np.float32
 
     def test_two_frequency_peaks(self):
-        """FFT에 60Hz, 7kHz 두 피크가 존재"""
+        """Two peaks at 60 Hz and 7 kHz in the FFT"""
         sr = 44100
         audio = generate_two_tone(
             freq_low=60.0, freq_high=7000.0, sample_rate=sr, duration_sec=1.0,
@@ -93,7 +93,7 @@ class TestGenerateTwoTone:
         spectrum = np.abs(np.fft.rfft(audio[0]))
         freqs = np.fft.rfftfreq(sr, 1.0 / sr)
 
-        # 각 주파수 주변에서 피크 확인
+        # check for a peak around each frequency
         low_band = spectrum[(freqs > 50) & (freqs < 70)]
         high_band = spectrum[(freqs > 6900) & (freqs < 7100)]
         noise_band = spectrum[(freqs > 2000) & (freqs < 3000)]
@@ -132,7 +132,7 @@ class TestGenerateSweep:
     def test_exponential_vs_linear(self):
         exp = generate_sweep(exponential=True, duration_sec=1.0)
         lin = generate_sweep(exponential=False, duration_sec=1.0)
-        # 같은 shape이지만 다른 내용
+        # the same shape but different content
         assert exp.shape == lin.shape
         assert not np.allclose(exp, lin)
 
@@ -166,7 +166,7 @@ class TestGenerateDynamicsRamp:
         assert audio.shape == (2, expected_length)
 
     def test_amplitude_increases(self):
-        """레벨이 올라가면 RMS도 증가"""
+        """Raising the level raises the RMS too"""
         sr = 44100
         audio, levels = generate_dynamics_ramp(
             sample_rate=sr, step_duration_sec=0.5,
@@ -178,7 +178,7 @@ class TestGenerateDynamicsRamp:
             start = i * step_samples
             segment = audio[0, start:start + step_samples]
             rms_values.append(float(np.sqrt(np.mean(segment ** 2))))
-        # 각 단계의 RMS가 단조 증가
+        # the RMS of each step increases monotonically
         for i in range(1, len(rms_values)):
             assert rms_values[i] > rms_values[i - 1]
 
@@ -191,7 +191,7 @@ class TestGenerateDynamicsAttackRelease:
         assert audio.dtype == np.float32
 
     def test_three_segments(self):
-        """중간 구간(above)의 RMS가 앞뒤(below)보다 높음"""
+        """The RMS of the middle (above) region is higher than the surrounding (below) regions"""
         sr = 44100
         audio = generate_dynamics_attack_release(
             sample_rate=sr, t1_sec=0.5, t2_sec=1.0, t3_sec=0.5,
@@ -222,7 +222,7 @@ class TestGenerateLogSweepDeconv:
         assert inverse.shape == (1, 44100)
 
     def test_inverse_filter_different(self):
-        """역필터는 sweep의 단순 반전이 아님 (envelope 보상 포함)"""
+        """The inverse filter is not a simple reversal of the sweep (includes envelope compensation)"""
         sweep, inverse = generate_log_sweep_deconv(duration_sec=1.0, channels=1)
         reversed_sweep = sweep[0, ::-1].copy()
         assert not np.allclose(inverse[0], reversed_sweep)
@@ -234,7 +234,7 @@ class TestGenerateMultitone:
         assert audio.shape == (2, 44100)
 
     def test_multiple_spectral_peaks(self):
-        """여러 주파수에 에너지 분포"""
+        """Energy spread across several frequencies"""
         sr = 44100
         audio = generate_multitone(
             n_tones=16, freq_start=100.0, freq_end=10000.0,
@@ -242,7 +242,7 @@ class TestGenerateMultitone:
         )
         spectrum = np.abs(np.fft.rfft(audio[0]))
         freqs = np.fft.rfftfreq(sr, 1.0 / sr)
-        # 100-10000Hz 범위에 에너지가 DC보다 훨씬 큼
+        # the energy in 100-10000 Hz is far greater than at DC
         in_band = spectrum[(freqs >= 100) & (freqs <= 10000)]
         dc_region = spectrum[freqs < 10]
         assert np.mean(in_band) > 5 * np.mean(dc_region)
@@ -254,7 +254,7 @@ class TestGeneratePinkNoise:
         assert audio.shape == (2, 44100)
 
     def test_spectral_slope(self):
-        """핑크 노이즈: 저주파 에너지 > 고주파 에너지"""
+        """Pink noise: low-frequency energy > high-frequency energy"""
         sr = 44100
         audio = generate_pink_noise(sample_rate=sr, duration_sec=3.0)
         spectrum = np.abs(np.fft.rfft(audio[0]))
@@ -275,7 +275,7 @@ class TestGenerateBandLimitedNoise:
         assert audio.shape == (2, 44100)
 
     def test_energy_in_band(self):
-        """밴드 내 에너지 > 밴드 외 에너지"""
+        """Energy inside the band > energy outside the band"""
         sr = 44100
         audio = generate_band_limited_noise(
             freq_low=1000.0, freq_high=3000.0,
@@ -296,13 +296,13 @@ class TestGenerateImpulseTrain:
         assert audio.shape == (2, 44100)
 
     def test_impulse_spacing(self):
-        """rate_hz에 맞는 간격으로 임펄스 배치"""
+        """Impulses spaced to match rate_hz"""
         sr = 44100
         rate = 10.0
         audio = generate_impulse_train(rate_hz=rate, sample_rate=sr, duration_sec=1.0)
         mono = audio[0]
         nonzero = np.nonzero(mono)[0]
-        # 10Hz → 4410 샘플 간격
+        # 10 Hz → 4410 sample spacing
         expected_period = int(sr / rate)
         for i in range(1, len(nonzero)):
             assert nonzero[i] - nonzero[i - 1] == expected_period
@@ -310,7 +310,7 @@ class TestGenerateImpulseTrain:
 
 class TestMidSide:
     def test_round_trip(self):
-        """L/R → M/S → L/R 왕복"""
+        """L/R → M/S → L/R round-trip"""
         original = np.random.randn(2, 1000).astype(np.float32)
         ms = to_mid_side(original)
         restored = from_mid_side(ms)
@@ -330,10 +330,10 @@ class TestMidSide:
 
     def test_mono_raises(self):
         mono = np.random.randn(1, 100).astype(np.float32)
-        with pytest.raises(ValueError, match="스테레오"):
+        with pytest.raises(ValueError, match="stereo"):
             to_mid_side(mono)
 
     def test_from_mid_side_mono_raises(self):
         mono = np.random.randn(1, 100).astype(np.float32)
-        with pytest.raises(ValueError, match="스테레오"):
+        with pytest.raises(ValueError, match="stereo"):
             from_mid_side(mono)

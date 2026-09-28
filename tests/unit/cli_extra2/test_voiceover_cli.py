@@ -51,7 +51,7 @@ class TestAnalyze:
     def test_missing_file_is_a_usage_error(self, run_cli, tmp_path):
         result = run_cli(["vo", "analyze", str(tmp_path / "absent.wav")])
         assert result.code == 1
-        assert "파일이 없습니다" in result.stderr
+        assert "File not found" in result.stderr
 
     def test_missing_file_is_reported_twice_and_never_crashes(self, run_cli, tmp_path, silent_error):
         """The existence check has no bare `else` around the analysis call.
@@ -60,15 +60,15 @@ class TestAnalyze:
         missing path and raises `FileNotFoundError`, which the surrounding
         `except Exception` converts into a second, more specific report. The
         contract asserted here is that this stays a *report* — the user sees
-        "파일이 없습니다" and, if the first report were ever bypassed, still gets a
-        clean "분석 실패: ..." instead of a traceback.
+        "File not found" and, if the first report were ever bypassed, still gets a
+        clean "Analysis failed: ..." instead of a traceback.
         """
         seen = silent_error("audioman.cli.voiceover")
         result = run_cli(["vo", "analyze", str(tmp_path / "absent.wav")])
 
         assert result.code == 0, result.stderr
-        assert seen and "파일이 없습니다" in seen[0]
-        assert "분석 실패" in seen[-1]
+        assert seen and "File not found" in seen[0]
+        assert "Analysis failed" in seen[-1]
         assert "Traceback" not in result.stdout
 
     def test_analysis_failure_is_reported(self, run_cli, speech_wav, monkeypatch):
@@ -82,7 +82,7 @@ class TestAnalyze:
         result = run_cli(["vo", "analyze", str(speech_wav)])
 
         assert result.code == 1
-        assert "분석 실패" in result.stderr
+        assert "Analysis failed" in result.stderr
         assert "vad exploded" in result.stderr
 
     def test_json_summary_omits_segment_lists(self, run_cli, speech_wav, stubbed_vad):
@@ -114,7 +114,7 @@ class TestAnalyze:
         result = run_cli(["vo", "analyze", str(speech_wav)])
 
         assert result.code == 0, result.stderr
-        assert "보이스오버 분석" in result.stdout
+        assert "Voiceover analysis" in result.stdout
         assert f"Duration: 2.0s @ {SR}Hz" in result.stdout
         assert "Speech segments: 1" in result.stdout
         assert "Speech: 0.8s (40.0%) | Noise: 1.2s" in result.stdout
@@ -171,7 +171,7 @@ class TestProcess:
             ["vo", "process", str(tmp_path / "absent.wav"), "-o", str(tmp_path / "out.wav")],
         )
         assert result.code == 1
-        assert "파일이 없습니다" in result.stderr
+        assert "File not found" in result.stderr
 
     def test_processing_failure_is_reported(self, run_cli, speech_wav, monkeypatch, tmp_path):
         import audioman.core.voiceover as core_voiceover
@@ -186,7 +186,7 @@ class TestProcess:
         )
 
         assert result.code == 1
-        assert "처리 실패" in result.stderr
+        assert "Processing failed" in result.stderr
         assert "leveling exploded" in result.stderr
         assert "Voiceover complete" not in result.stderr
         assert not (tmp_path / "o.wav").exists()
@@ -210,7 +210,7 @@ class TestProcess:
         result = run_cli(["vo", "process", str(speech_wav), "-o", str(tmp_path / "o.wav")])
 
         assert result.code == 0, result.stderr
-        assert seen and "처리 실패" in seen[0]
+        assert seen and "Processing failed" in seen[0]
         assert "Voiceover complete" not in result.stderr
 
     def test_human_success_report_is_reachable(self, run_cli, speech_wav, stubbed_vad, tmp_path):
@@ -312,7 +312,7 @@ class TestProcess:
              "--denoise-plugin", "definitely-not-installed"],
         )
         assert result.code == 1
-        assert "처리 실패" in result.stderr
+        assert "Processing failed" in result.stderr
         assert "definitely-not-installed" in result.stderr
 
     def test_leveling_parameters_are_forwarded(self, run_cli, speech_wav, stubbed_vad, tmp_path, monkeypatch):

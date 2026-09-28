@@ -14,7 +14,7 @@ class TestReadAudio:
         assert sr == sample_rate
         assert audio.ndim == 2
         assert audio.shape[0] == 2  # stereo
-        assert audio.shape[1] == sample_rate  # 1초
+        assert audio.shape[1] == sample_rate  # 1 s
 
     def test_read_dtype_float32(self, test_wav):
         audio, _ = read_audio(test_wav)
@@ -34,7 +34,7 @@ class TestWriteAudio:
         audio, sr = read_audio(path)
         assert sr == sample_rate
         assert audio.shape == test_audio.shape
-        # PCM_24 양자화 오차 허용
+        # allow for PCM_24 quantization error
         np.testing.assert_allclose(audio, test_audio, atol=1e-4)
 
     def test_write_creates_parent_dirs(self, tmp_path, test_audio, sample_rate):
