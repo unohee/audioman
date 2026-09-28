@@ -21,6 +21,11 @@ dependencies = [
     "sounddevice>=0.5.5",
     "silero-vad>=5.1",
     "torch>=2.2",
+    # Imported at module scope by core/gpu_spectral.py (torchaudio.transforms), so it is
+    # a real dependency. It appeared to work without being declared only because
+    # silero-vad happens to pull it in transitively; that is not a contract. CI caught
+    # the gap: `pip install -e ".[dev]"` does not reproduce the local environment.
+    "torchaudio>=2.2",
 ]
 
 [project.optional-dependencies]

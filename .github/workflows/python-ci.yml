@@ -46,6 +46,13 @@ jobs:
           cache: pip
       - name: Install project and test tooling
         run: python -m pip install -e ".[dev]"
+      # PyQt6 dlopens libEGL/libGL; the bare runner image does not ship them, so the
+      # GUI tests would skip and coverage would fall below 100%. The library is an
+      # environment prerequisite, not a project dependency, so it is installed here.
+      - name: Install Qt's native dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libegl1 libgl1
       # ── Coverage gate ─────────────────────────────────────────────────────────
       #
       # AUD-1851 reached 100% (`TOTAL 8255 0 100%`, 2355 passed), so the threshold is

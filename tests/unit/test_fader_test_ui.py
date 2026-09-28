@@ -24,8 +24,19 @@ import pytest
 # is set here and in the session-scoped fixture below.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import Qt  # noqa: E402
-from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox  # noqa: E402
+# PyQt6 links libEGL/libGL, which bare container images (including the GitHub
+# runner) do not ship. Without this guard the whole module fails to *collect*,
+# which reads as a broken gate rather than a missing system library. Skipping is
+# correct here: the library, not the code, is unavailable.
+try:  # pragma: no cover - exercised only where libEGL is absent (CI image)
+    from PyQt6.QtCore import Qt  # noqa: E402
+    from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox  # noqa: E402
+except ImportError as exc:  # pragma: no cover - see above
+    pytest.skip(
+        f"PyQt6 cannot load its native Qt libraries ({exc}); "
+        f"install libegl1 (Debian/Ubuntu) to run the GUI tests.",
+        allow_module_level=True,
+    )
 
 # --- import-time stub for the audio backend ---------------------------------
 _sd_stub = types.ModuleType("sounddevice")
