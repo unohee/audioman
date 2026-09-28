@@ -91,7 +91,7 @@ def run(args: argparse.Namespace) -> None:
         print_json(json_envelope("commit", result.to_dict(), schema=schema_uri("commit")))
         return
 
-    output_console.print(f"\n[bold]커밋 완료[/bold]")
+    print_success("Commit complete")
     output_console.print(f"  Input:  {result.input_path}")
     output_console.print(f"  Output: {result.output_path}")
     output_console.print(f"  Chain:  {len(result.steps)} steps")

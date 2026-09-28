@@ -49,6 +49,51 @@ def run_cxt(*args: str) -> str:
     return proc.stdout
 
 
+# `cxt` builds are not interchangeable. The 0.2.x line does not report the
+# `fake_execution` category at all — it misses an f-string markup success print
+# (`console.print(f"\n[bold]...[/bold]")`, the pattern in this project's own sources)
+# outright. A gate running on that build reports zero criticals for a file full of them:
+# the "did not run" shape Art. VI names, arriving as a pass. So the tool is checked for
+# the capability before it is trusted, using the pattern from the real sources.
+_CAPABILITY_PROBE = (
+    "def _constitution_gate_probe():\n"
+    '    console.print(f"\\n[bold]Done[/bold]")\n'
+)
+_CAPABILITY_TIMEOUT_S = 25
+
+
+def cxt_reports_fake_execution() -> bool:
+    import os
+    import tempfile
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, "probe.py"), "w", encoding="utf-8") as fh:
+                fh.write(_CAPABILITY_PROBE)
+            try:
+                # `cwd=tmp` with `--dir .`: cxt only scans paths inside the tree it is
+                # pointed at, so an absolute directory outside the repo would scan zero
+                # files and report no criticals — failing open in the exact way this
+                # check exists to prevent.
+                proc = subprocess.run(
+                    ["cxt", "bs", "--json", "--dir", "."],
+                    capture_output=True, text=True, check=False, cwd=tmp,
+                    timeout=_CAPABILITY_TIMEOUT_S,
+                )
+            except FileNotFoundError:
+                print("gate: `cxt` is not installed (npm i -g @intrect/cxt)", file=sys.stderr)
+                sys.exit(2)
+            except subprocess.TimeoutExpired:
+                return False
+        report = json.loads(proc.stdout)
+    except (json.JSONDecodeError, OSError):
+        return False
+    return any(
+        i.get("severity") == "critical" and i.get("category") == "fake_execution"
+        for i in report.get("issues", [])
+    )
+
+
 def gate_loc(ceiling: int) -> int:
     out = ANSI.sub("", run_cxt("loc", "--no-blank", "--no-comments", "--ext", "py"))
     breaches: list[tuple[str, int]] = []
@@ -65,6 +110,14 @@ def gate_loc(ceiling: int) -> int:
 
 
 def gate_bs() -> int:
+    if not cxt_reports_fake_execution():
+        print(
+            "gate: this `cxt` build does not report the `fake_execution` category "
+            "(probe missed a known positive), so its 'zero criticals' would be a pass "
+            "without a check. Install @intrect/cxt@0.3.0.",
+            file=sys.stderr,
+        )
+        return 2
     try:
         report = json.loads(run_cxt("bs", "--json", "--dir", "src"))
     except json.JSONDecodeError as exc:

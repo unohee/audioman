@@ -174,6 +174,6 @@ def _run_batch(args: argparse.Namespace) -> None:
             out_file.close()
 
     if out_file is not sys.stdout or args.output_file:
-        output_console.print(f"\n덤프 완료: {ok} 성공, {fail} 실패 / {len(plugins)} 전체")
+        print_success(f"Dump complete: {ok} ok, {fail} failed / {len(plugins)} total")
         if args.output_file:
             output_console.print(f"출력: {args.output_file}")

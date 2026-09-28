@@ -122,7 +122,7 @@ def run(args: argparse.Namespace) -> None:
         print_json(json_envelope("bounce", result.to_dict(), schema=schema_uri("bounce")))
         return
 
-    output_console.print(f"\n[bold]바운스 완료[/bold]")
+    print_success("Bounce complete")
     output_console.print(f"  Tracks: {result.track_count}")
     output_console.print(f"  Output: {result.output_path}")
     output_console.print(f"  SR:     {result.sample_rate} Hz")

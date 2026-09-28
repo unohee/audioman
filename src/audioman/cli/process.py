@@ -80,7 +80,7 @@ def _run_single(args: argparse.Namespace, params: dict) -> None:
         print_json(json_envelope("process", result.to_dict(), schema=schema_uri("process")))
         return
 
-    output_console.print(f"\n[bold]처리 완료[/bold]")
+    print_success("Processing complete")
     output_console.print(f"  Plugin: {result.plugin_name}")
     output_console.print(f"  Input:  {result.input_path}")
     output_console.print(f"  Output: {result.output_path}")

@@ -212,7 +212,7 @@ def run(args: argparse.Namespace) -> None:
                 }
 
                 if not args.json:
-                    output_console.print(f"  {len(eq_results)}개 설정 측정 완료")
+                    print_success(f"Measured {len(eq_results)} setting(s)")
                     for s in sweep_summary[:5]:
                         p_str = ", ".join(f"{k}={v}" for k, v in s["params"].items())
                         output_console.print(

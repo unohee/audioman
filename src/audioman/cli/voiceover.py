@@ -165,7 +165,7 @@ def _run_process(args: argparse.Namespace) -> None:
         print_json(json_envelope("vo process", data, schema=schema_uri("voiceover")))
         return
 
-    output_console.print(f"\n[bold green]Voiceover 처리 완료[/bold green]")
+    print_success("Voiceover complete")
     output_console.print(f"  Input:  {data['input']}")
     output_console.print(f"  Output: {data['output']}")
     output_console.print(

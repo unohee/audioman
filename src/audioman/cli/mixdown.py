@@ -191,7 +191,7 @@ def run(args: argparse.Namespace) -> None:
         print_json(json_envelope("mixdown", result.to_dict(), schema=schema_uri("mixdown")))
         return
 
-    output_console.print(f"\n[bold]믹스다운 완료[/bold]")
+    print_success("Mixdown complete")
     output_console.print(f"  Tracks: {result.track_count}")
     output_console.print(f"  Output: {result.output_path}")
     output_console.print(f"  SR:     {result.sample_rate} Hz")

@@ -260,7 +260,7 @@ def _run_single(args: argparse.Namespace, input_path: Path) -> None:
         ))
         return
 
-    output_console.print(f"\n[bold]{args.effect}[/bold] 완료")
+    print_success(f"{args.effect} complete")
     output_console.print(f"  Input:  {input_path} ({input_stats.duration:.2f}s)")
     output_console.print(f"  Output: {args.output} ({output_stats.duration:.2f}s)")
     output_console.print(f"  RMS: {input_stats.rms:.4f} → {output_stats.rms:.4f}")

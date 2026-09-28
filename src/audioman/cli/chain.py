@@ -81,7 +81,7 @@ def _run_single(args: argparse.Namespace, steps) -> None:
         print_json(json_envelope("chain", result.to_dict(), schema=schema_uri("chain")))
         return
 
-    output_console.print(f"\n[bold]체인 처리 완료[/bold]")
+    print_success("Chain complete")
     output_console.print(f"  Steps: {len(result.steps)}")
     for i, s in enumerate(result.steps, 1):
         output_console.print(f"    {i}. {s['plugin']}")
