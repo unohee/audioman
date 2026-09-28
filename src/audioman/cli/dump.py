@@ -5,7 +5,7 @@ import argparse
 import json
 import sys
 
-from audioman.cli.output import print_error, print_json, print_warning, output_console
+from audioman.cli.output import print_error, print_json, print_success, print_warning, output_console
 from audioman.core.findings import json_envelope, schema_uri
 from audioman.core.registry import get_registry
 from audioman.core.engine import parse_params
