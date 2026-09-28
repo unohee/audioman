@@ -243,8 +243,15 @@ class TestMeasureLinear:
         assert len(result.frequencies) == 1024 // 2 + 1
         assert len(result.magnitude_db) == len(result.frequencies)
         assert len(result.phase_deg) == len(result.frequencies)
-        # Hanning(0) == 0: the delta is multiplied away, so every bin is at the floor.
-        assert max(result.magnitude_db) == pytest.approx(-200.0, abs=1e-6)
+        # Hanning(0) == 0: the delta is multiplied away, so every bin is at the
+        # floor. The tolerance is derived from float32 spacing rather than picked:
+        # these spectra are computed in float32, and `np.spacing(np.float32(200.0))`
+        # is 1.526e-5, so demanding 1e-6 here asks for more precision than the
+        # arithmetic has. It passed on the dev box only because that NumPy/BLAS
+        # build rounded the intermediate differently — CI caught the difference.
+        assert max(result.magnitude_db) == pytest.approx(
+            -200.0, abs=10 * float(np.spacing(np.float32(200.0)))
+        )
         assert all(abs(p) < 1e-6 for p in result.phase_deg)
 
     def test_impulse_into_the_window_is_flat(self, monkeypatch):
@@ -477,7 +484,11 @@ class TestMeasureImd:
         _install(monkeypatch, _FakePlugin(lambda audio, sample_rate: np.zeros_like(audio)))
         silent = pa.measure_imd("p")
         assert silent.imd_percent == 0.0
-        assert silent.fundamental_db == pytest.approx(-200.0, abs=1e-6)
+        # Same float32-spacing reasoning as the linear case: 1e-6 is below the
+        # resolution of a float32 computation near 200.
+        assert silent.fundamental_db == pytest.approx(
+            -200.0, abs=10 * float(np.spacing(np.float32(200.0)))
+        )
 
 
 # ---------------------------------------------------------------------------
