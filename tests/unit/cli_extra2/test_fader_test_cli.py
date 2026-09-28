@@ -38,6 +38,30 @@ from audioman.cli import fader_test  # noqa: E402
 from audioman.cli.fader_test import run  # noqa: E402
 from audioman.core import multitrack_player  # noqa: E402  (must precede stub removal)
 
+
+def _qt_native_libs_loadable() -> bool:
+    """Whether PyQt6's native Qt libraries can actually be dlopened.
+
+    PyQt6 ships its own Qt build but still dlopens system libEGL/libGL. On a bare
+    container image (including the GitHub runner's default) those are absent, so
+    `import PyQt6.QtWidgets` raises `libEGL.so.1: cannot open shared object file`.
+    Tests that need Qt are skipped there: the library is missing, not the behaviour
+    under test. The CI coverage job installs libegl1/libgl1, so the coverage gate
+    still measures these paths.
+    """
+    try:
+        from PyQt6.QtWidgets import QApplication  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+QT_NATIVE_OK = _qt_native_libs_loadable()
+needs_qt_native = pytest.mark.skipif(
+    not QT_NATIVE_OK,
+    reason="PyQt6 native libs unavailable (libEGL/libGL) — install libegl1 libgl1",
+)
+
 if not _had_sd:
     del sys.modules["sounddevice"]
 
@@ -124,6 +148,37 @@ class TestNonGuiPaths:
         assert result.stderr.splitlines()[0] == "error: PyQt6 미설치 — uv add PyQt6"
         assert "loading stems" not in result.stdout
 
+    def test_pyqt6_native_library_failure_names_the_real_cause(
+        self, run_cli, stems, monkeypatch,
+    ):
+        """A dlopen failure must not be reported as a missing package.
+
+        PyQt6 is present but its native Qt libraries are not, which is an OS-level
+        gap (`libEGL.so.1: cannot open shared object file`). Saying "PyQt6 not
+        installed" sends the reader to the wrong fix, so the message must name the
+        library and the package to install.
+        """
+        import builtins
+
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "PyQt6.QtWidgets":
+                raise ImportError(
+                    "libEGL.so.1: cannot open shared object file: "
+                    "No such file or directory"
+                )
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+
+        result = run_cli(["fader-test", str(stems)])
+
+        assert result.code == 1
+        assert "libEGL" in result.stderr
+        assert "libegl1" in result.stderr
+        assert "loading stems" not in result.stdout
+
     def test_pyqt6_missing_returns_before_reading_the_stems(
         self, run_cli, stems, monkeypatch, silent_error,
     ):
@@ -137,6 +192,7 @@ class TestNonGuiPaths:
         assert seen and "PyQt6 미설치" in seen[0]
         assert "loaded" not in result.stderr
 
+    @needs_qt_native
     def test_empty_stem_directory_load_failure_is_reported(self, run_cli, tmp_path):
         """A directory with no wav files surfaces as a load error, not a crash."""
         empty = tmp_path / "empty"
@@ -149,6 +205,7 @@ class TestNonGuiPaths:
         assert "wav 파일 없음" in result.stderr
         assert "loaded" not in result.stderr
 
+    @needs_qt_native
     def test_load_failure_returns_before_launching_a_window(
         self, run_cli, tmp_path, monkeypatch, silent_error,
     ):
@@ -171,6 +228,7 @@ class TestNonGuiPaths:
         assert seen and "로드 실패" in seen[0]
         assert launched == []
 
+    @needs_qt_native
     def test_unreadable_stem_surfaces_as_a_load_error(self, run_cli, tmp_path):
         directory = tmp_path / "broken"
         directory.mkdir()
@@ -182,6 +240,7 @@ class TestNonGuiPaths:
         assert "로드 실패" in result.stderr
 
 
+@needs_qt_native
 class TestGuiLaunch:
     """The GUI branch: Qt runs offscreen and `exec` returns immediately."""
 

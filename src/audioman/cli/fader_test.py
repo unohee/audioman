@@ -40,11 +40,23 @@ def run(args: argparse.Namespace) -> None:
         print_error(f"디렉터리 아님: {input_dir}")
         return
 
-    # PyQt + audio engine은 무거우니 lazy import
+    # PyQt + audio engine are heavy, so import them lazily.
+    #
+    # `ImportError` alone is not enough to describe this failure: PyQt6 also fails
+    # when its *native* libraries cannot be dlopened (`libEGL.so.1: cannot open
+    # shared object file`), which is an OS-level gap rather than a missing package.
+    # Reporting that as "PyQt6 not installed" sends the reader to the wrong fix.
     try:
         from PyQt6.QtWidgets import QApplication
-    except ImportError:
-        print_error("PyQt6 미설치 — uv add PyQt6")
+    except ImportError as exc:
+        native = "libEGL" in str(exc) or "cannot open shared object" in str(exc)
+        if native:
+            print_error(
+                f"PyQt6 의 네이티브 라이브러리를 로드할 수 없습니다: {exc} "
+                f"(Debian/Ubuntu: sudo apt-get install libegl1 libgl1)"
+            )
+        else:
+            print_error("PyQt6 미설치 — uv add PyQt6")
         return
 
     from audioman.cli._fader_test_ui import FaderTestWindow
