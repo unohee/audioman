@@ -4,6 +4,7 @@
 import argparse
 
 from audioman.cli.output import print_error, print_json, print_success, print_table, output_console
+from audioman.cli.output import print_markup
 from audioman.config.paths import ensure_app_dirs
 from audioman.core.engine import parse_params
 from audioman.core.findings import json_envelope, schema_uri
@@ -85,7 +86,7 @@ def run_load(args: argparse.Namespace) -> None:
             schema=schema_uri("preset"),
         ))
     else:
-        output_console.print(f"\n[bold]{preset.name}[/bold] ({preset.plugin})")
+        print_markup(f"\n[bold]{preset.name}[/bold] ({preset.plugin})")
         if preset.description:
             output_console.print(f"  {preset.description}")
         output_console.print(f"  Created: {preset.created}")

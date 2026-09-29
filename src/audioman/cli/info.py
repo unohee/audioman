@@ -4,6 +4,7 @@
 import argparse
 
 from audioman.cli.output import print_error, print_json, print_table, output_console
+from audioman.cli.output import print_markup
 from audioman.core.findings import json_envelope, schema_uri
 from audioman.core.registry import get_registry
 from audioman.plugins.vst3 import VST3PluginWrapper
@@ -39,7 +40,7 @@ def run(args: argparse.Namespace) -> None:
         return
 
     # Basic info
-    output_console.print(f"\n[bold]{meta.name}[/bold]")
+    print_markup(f"\n[bold]{meta.name}[/bold]")
     output_console.print(f"  Short name: {meta.short_name}")
     output_console.print(f"  Path: {meta.path}")
     output_console.print(f"  Format: {meta.format}")

@@ -15,6 +15,7 @@ from audioman.cli.output import (
     print_info,
     print_json,
     print_table,
+    print_markup,
 )
 from audioman.core import obs as obs_core
 from audioman.core.findings import json_envelope, schema_uri
@@ -200,4 +201,4 @@ def _run_dry_run(args: argparse.Namespace) -> None:
         rows=summary_rows,
     )
     if out_dir is not None:
-        output_console.print(f"\n[dim]Detailed JSON: {out_dir}/[/dim]")
+        print_markup(f"\n[dim]Detailed JSON: {out_dir}/[/dim]")

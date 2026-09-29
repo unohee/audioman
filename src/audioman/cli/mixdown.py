@@ -4,6 +4,7 @@
 import argparse
 
 from audioman.cli.output import print_error, print_json, print_success, print_warning, output_console
+from audioman.cli.output import print_markup
 from audioman.core.findings import json_envelope, schema_uri
 
 
@@ -147,7 +148,7 @@ def run(args: argparse.Namespace) -> None:
         if args.json:
             print_json(json_envelope("mixdown", plan, schema=schema_uri("mixdown")))
         else:
-            output_console.print(f"\n[bold]Mixdown Plan[/bold] — {len(tracks)} tracks → {output_path}")
+            print_markup(f"\n[bold]Mixdown Plan[/bold] — {len(tracks)} tracks → {output_path}")
             for i, t in enumerate(tracks, 1):
                 chain_str = f" → [{', '.join(s.plugin_name for s in t.chain)}]" if t.chain else ""
                 output_console.print(
@@ -157,11 +158,11 @@ def run(args: argparse.Namespace) -> None:
                 master_str = " → ".join(s.plugin_name for s in master_chain)
                 output_console.print(f"\n  Master: [{master_str}]")
             if automix_result:
-                output_console.print(f"\n  [bold]Automix[/bold] (target: {automix_result.target_profile.get('type', 'pink_noise')})")
+                print_markup(f"\n  [bold]Automix[/bold] (target: {automix_result.target_profile.get('type', 'pink_noise')})")
                 if automix_result.groups:
                     from pathlib import Path as _P
                     for group, indices in automix_result.groups.items():
-                        output_console.print(f"    [bold]{group}[/bold]")
+                        print_markup(f"    [bold]{group}[/bold]")
                         for idx in indices:
                             fname = _P(automix_result.band_analysis[idx]["path"]).name
                             gain = automix_result.gains_db[idx]
@@ -202,7 +203,7 @@ def run(args: argparse.Namespace) -> None:
             output_console.print(f"  Master latency compensation: {result.master_latency_samples} samples")
 
     if automix_result:
-        output_console.print(f"\n  [bold]Automix Applied[/bold]")
+        print_markup(f"\n  [bold]Automix Applied[/bold]")
         if automix_result.groups:
             from pathlib import Path as _P
             for group, indices in automix_result.groups.items():

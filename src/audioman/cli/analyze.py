@@ -8,6 +8,7 @@ from pathlib import Path
 
 from audioman import __version__
 from audioman.cli.output import print_error, print_json, print_table, print_success, output_console
+from audioman.cli.output import print_markup
 from audioman.core.audio_file import read_audio, get_audio_stats
 from audioman.core.findings import json_envelope, schema_uri
 from audioman.core.analysis import (
@@ -160,17 +161,17 @@ def _run_single(args: argparse.Namespace, path: Path) -> None:
         return
 
     # human-readable output
-    output_console.print(f"\n[bold]{result['file']}[/bold]")
+    print_markup(f"\n[bold]{result['file']}[/bold]")
     output_console.print(f"  Duration: {result['duration']}s | SR: {result['sample_rate']}Hz | CH: {result['channels']}")
     output_console.print(f"  RMS: {result['rms']:.4f} | Peak: {result['peak']:.4f}")
 
     # Waveform
     if waveform_text:
-        output_console.print(f"\n[bold]Waveform[/bold]")
+        print_markup(f"\n[bold]Waveform[/bold]")
         output_console.print(waveform_text, highlight=False)
-        output_console.print(f"\n[bold]RMS Envelope[/bold]")
+        print_markup(f"\n[bold]RMS Envelope[/bold]")
         output_console.print(envelope_text, highlight=False)
-        output_console.print(f"\n[bold]Spectral[/bold]")
+        print_markup(f"\n[bold]Spectral[/bold]")
         output_console.print(spectral_text, highlight=False)
 
     output_console.print()
@@ -190,7 +191,7 @@ def _run_single(args: argparse.Namespace, path: Path) -> None:
     # spectrum diagnostics
     if "spectrum" in result:
         spec = result["spectrum"]
-        output_console.print(f"\n[bold]Spectrum diagnostics[/bold] (FFT={spec['fft_size']}, frames={spec['frames_analyzed']})")
+        print_markup(f"\n[bold]Spectrum diagnostics[/bold] (FFT={spec['fft_size']}, frames={spec['frames_analyzed']})")
         band_rows = [[b["band"], f"{b['freq_low']:.0f}-{b['freq_high']:.0f}",
                       f"{b['percent']:.2f}%", f"{b['db_rel_total']:+.1f}"]
                      for b in spec["band_energy"]]
@@ -202,7 +203,7 @@ def _run_single(args: argparse.Namespace, path: Path) -> None:
         hum_flags = [h for h in spec["hum_check"] if h["is_hum"]]
         if hum_flags:
             for h in hum_flags:
-                output_console.print(f"  [red]HUM detected[/red] @ {h['frequency_hz']} Hz (SNR {h['snr_db']:+.1f} dB)")
+                print_markup(f"  [red]HUM detected[/red] @ {h['frequency_hz']} Hz (SNR {h['snr_db']:+.1f} dB)")
         else:
             output_console.print("  Mains hum: not detected")
         sl = spec["hf_slope"]

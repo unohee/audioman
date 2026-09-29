@@ -7,6 +7,7 @@ import argparse
 from pathlib import Path
 
 from audioman.cli.output import output_console, print_error, print_json, print_table, print_warning
+from audioman.cli.output import print_markup
 from audioman.core.aesthetic import DEFAULT_ISSUES, screen_file
 from audioman.core.batch import collect_audio_files
 from audioman.core.findings import json_envelope, schema_uri
@@ -78,7 +79,7 @@ def _screen_one(path: Path, issues: list[str], backend: str) -> dict:
 
 
 def _print_single(report: dict) -> None:
-    output_console.print(f"\n[bold]{report['file']}[/bold]")
+    print_markup(f"\n[bold]{report['file']}[/bold]")
     output_console.print(
         f"  Duration: {report['duration']}s | SR: {report['sample_rate']}Hz | CH: {report['channels']}"
     )

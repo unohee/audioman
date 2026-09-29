@@ -14,6 +14,7 @@ from audioman.cli.output import (
     print_error,
     print_json,
     print_table,
+    print_markup,
 )
 from audioman.core.findings import json_envelope, schema_uri
 
@@ -160,7 +161,7 @@ def run(args: argparse.Namespace) -> None:
         return
 
     # Human-readable
-    output_console.print(f"\n[bold]Fader-test vs Automix ({args.target})[/bold]")
+    print_markup(f"\n[bold]Fader-test vs Automix ({args.target})[/bold]")
     output_console.print(f"  matched tracks: {n}")
     output_console.print(f"  mean |error|:   {mean_abs_err:.2f} dB")
     output_console.print(f"  max |error|:    {max_abs_err:.2f} dB")
@@ -188,7 +189,7 @@ def run(args: argparse.Namespace) -> None:
 
     # The closest matches
     rows_close = sorted(rows, key=lambda r: abs(r["diff_db"]))[:5]
-    output_console.print("\n[bold]Closest matches[/bold]")
+    print_markup("\n[bold]Closest matches[/bold]")
     for r in rows_close:
         output_console.print(
             f"  {r['track']:<25s}  gt={r['ground_truth_db']:+.1f}  "

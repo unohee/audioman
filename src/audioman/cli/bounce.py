@@ -4,6 +4,7 @@
 import argparse
 
 from audioman.cli.output import print_error, print_json, print_success, print_warning, output_console
+from audioman.cli.output import print_markup
 from audioman.core.findings import json_envelope, schema_uri
 
 
@@ -99,7 +100,7 @@ def run(args: argparse.Namespace) -> None:
         if args.json:
             print_json(json_envelope("bounce", plan, schema=schema_uri("bounce")))
         else:
-            output_console.print(f"\n[bold]Bounce Plan[/bold] — {len(tracks)} tracks → {output_path}")
+            print_markup(f"\n[bold]Bounce Plan[/bold] — {len(tracks)} tracks → {output_path}")
             for i, t in enumerate(tracks, 1):
                 chain_str = f" → [{', '.join(s.plugin_name for s in t.chain)}]" if t.chain else ""
                 output_console.print(

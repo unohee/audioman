@@ -11,6 +11,7 @@ from audioman.cli.output import (
     print_error,
     print_json,
     print_success,
+    print_markup,
 )
 from audioman.core import voiceover
 from audioman.core.engine import parse_params
@@ -102,7 +103,7 @@ def _run_analyze(args: argparse.Namespace) -> None:
         print_json(json_envelope("vo analyze", result, schema=schema_uri("voiceover")))
         return
 
-    output_console.print(f"\n[bold]Voiceover analysis[/bold]: {result['input']}")
+    print_markup(f"\n[bold]Voiceover analysis[/bold]: {result['input']}")
     output_console.print(f"  Duration: {result['duration_sec']}s @ {result['sample_rate']}Hz")
     output_console.print(f"  Speech segments: {result['n_speech_segments']}")
     output_console.print(
@@ -117,14 +118,14 @@ def _run_analyze(args: argparse.Namespace) -> None:
         f"LRA: {loud.get('loudness_range_lu')} LU"
     )
     if args.segments:
-        output_console.print("\n  [dim]Speech segments:[/dim]")
+        print_markup("\n  [dim]Speech segments:[/dim]")
         for s in result["speech_segments"][:30]:
             output_console.print(
                 f"    {s['start_sec']:>7.2f}s - {s['end_sec']:>7.2f}s  ({s['duration_sec']:.2f}s)"
             )
         more = len(result["speech_segments"]) - 30
         if more > 0:
-            output_console.print(f"    [dim]... +{more} more[/dim]")
+            print_markup(f"    [dim]... +{more} more[/dim]")
 
 
 def _run_process(args: argparse.Namespace) -> None:

@@ -19,6 +19,7 @@ from audioman.cli.output import (
     print_success,
     print_warning,
     print_table,
+    print_markup,
 )
 from audioman.core import dsp, edl as edl_core, qc
 from audioman.core.findings import json_envelope, schema_uri
@@ -263,7 +264,7 @@ def run_qc(args: argparse.Namespace) -> None:
         ))
         return
 
-    output_console.print(f"\n[bold]{src.name}[/bold]")
+    print_markup(f"\n[bold]{src.name}[/bold]")
     if report.get("format"):
         f = report["format"]
         output_console.print(
@@ -333,7 +334,7 @@ def run_verify(args: argparse.Namespace) -> None:
         return
 
     print_success(f"prep complete ({args.profile}) — {result.input_duration_sec:.2f}s → {result.output_duration_sec:.2f}s in {prep_elapsed:.2f}s")
-    output_console.print(f"\n[bold]{Path(args.output).name}[/bold]  (QC target: {qc_target})")
+    print_markup(f"\n[bold]{Path(args.output).name}[/bold]  (QC target: {qc_target})")
     if qc_report.get("format"):
         f = qc_report["format"]
         output_console.print(

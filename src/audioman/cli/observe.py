@@ -16,6 +16,7 @@ from audioman.cli.output import (
     print_success,
     print_table,
     print_warning,
+    print_markup,
 )
 from audioman.core.analysis import detect_silence, spectrum_diagnostics
 from audioman.core.audio_file import get_audio_stats, read_audio
@@ -212,7 +213,7 @@ def run(args: argparse.Namespace) -> None:
 
 
 def _print_human(payload: dict) -> None:
-    output_console.print(f"\n[bold]{payload['file']}[/bold]")
+    print_markup(f"\n[bold]{payload['file']}[/bold]")
     output_console.print(
         f"  {payload['duration_sec']}s @ {payload['sample_rate']}Hz, "
         f"{payload['channels']} ch, {payload['total_samples']} samples"
@@ -226,7 +227,7 @@ def _print_human(payload: dict) -> None:
     )
 
     if not payload["findings"]:
-        output_console.print("  [green]No findings at requested severity.[/green]")
+        print_markup("  [green]No findings at requested severity.[/green]")
         return
 
     rows = []

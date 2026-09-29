@@ -4,6 +4,7 @@
 import argparse
 
 from audioman.cli.output import print_error, print_json, print_success, print_warning, output_console
+from audioman.cli.output import print_markup
 from audioman.core.findings import json_envelope, schema_uri
 
 
@@ -57,7 +58,7 @@ def run(args: argparse.Namespace) -> None:
                 schema=schema_uri("commit"),
             ))
         else:
-            output_console.print(f"\n[bold]Latency Measurement (dry-run)[/bold]")
+            print_markup(f"\n[bold]Latency Measurement (dry-run)[/bold]")
             for m in measurements:
                 conf_str = f"{m.confidence:.0%}"
                 match = "✓" if abs(m.reported_latency - m.measured_latency) <= 1 else "≠"
@@ -99,7 +100,7 @@ def run(args: argparse.Namespace) -> None:
         output_console.print(f"    {i}. {s['plugin']}")
 
     if result.total_latency_samples > 0:
-        output_console.print(f"\n  [bold]Delay Compensation[/bold]")
+        print_markup(f"\n  [bold]Delay Compensation[/bold]")
         for m in result.latency_compensation:
             output_console.print(
                 f"    {m['plugin_name']}: {m['used_latency']} samples "
