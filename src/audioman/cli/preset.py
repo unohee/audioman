@@ -45,14 +45,21 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
 def run_save(args: argparse.Namespace) -> None:
     ensure_app_dirs()
     manager = PresetManager()
-    params = parse_params(args.param) if args.param else {}
 
-    path = manager.save(
-        name=args.name,
-        plugin=args.plugin,
-        params=params,
-        description=args.description,
-    )
+    # Both of these reject bad user input (a malformed `--param`, a preset name that
+    # is not a single path component). Letting the ValueError escape printed a
+    # traceback for what is an ordinary usage error.
+    try:
+        params = parse_params(args.param) if args.param else {}
+        path = manager.save(
+            name=args.name,
+            plugin=args.plugin,
+            params=params,
+            description=args.description,
+        )
+    except ValueError as e:
+        print_error(str(e))
+        return
 
     if args.json:
         print_json(json_envelope(

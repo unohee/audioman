@@ -277,38 +277,69 @@ class TestSplice:
         assert audio.shape[0] == 2
         assert np.allclose(audio[0], audio[1])
 
-    def test_stereo_clip_against_mono_input_is_refused_by_dsp(self, tmp_path):
-        """A mono input with a stereo clip is downmixed by the CLI but refused by dsp.
+    def test_stereo_clip_against_mono_input_is_downmixed_and_spliced(self, tmp_path):
+        """A stereo clip against a mono input must splice, not crash.
 
-        `read_audio` reads even a mono file as a (1, n) 2-D array, while the downmix
-        result is 1-D, so the shapes disagree. Pin this crash as the contract (an
-        explicit ValueError, not a silent misbehaviour).
+        The CLI downmixes the clip. It previously produced a 1-D array while the base
+        stayed (1, n), so dsp.splice failed on a dimension mismatch — the old test
+        pinned that crash as the contract. The downmix now keeps the channel axis, so
+        the right assertion is that the splice succeeds.
         """
         src = write_wav(tmp_path / "base.wav", channels=1)
         clip = write_wav(tmp_path / "clip.wav", duration=0.1, channels=2)
-        with pytest.raises(ValueError):
-            run_command([
-                "--json", "fx", str(src), "splice", "--clip", str(clip),
-                "--position", "0", "-o", str(tmp_path / "down.wav"),
-            ])
+        out = tmp_path / "down.wav"
 
-    def test_unsupported_channel_conversion_raises(self, tmp_path):
+        result = run_command([
+            "--json", "fx", str(src), "splice", "--clip", str(clip),
+            "--position", "0", "-o", str(out),
+        ])
+
+        assert result.code == 0
+        assert out.exists()
+        audio, _ = read_wav(out)
+        assert audio.shape[0] == 1, "a mono base stays mono after splicing"
+
+    def test_unsupported_channel_conversion_is_reported_with_exit_1(self, tmp_path):
         src = write_wav(tmp_path / "base.wav", channels=2)
         clip = write_wav(tmp_path / "clip.wav", duration=0.1, channels=3)
-        with pytest.raises(ValueError, match="Cannot convert channels"):
-            run_command([
-                "--json", "fx", str(src), "splice", "--clip", str(clip),
-                "--position", "0", "-o", str(tmp_path / "x.wav"),
-            ])
 
-    def test_sample_rate_mismatch_raises(self, tmp_path):
+        result = run_command([
+            "--json", "fx", str(src), "splice", "--clip", str(clip),
+            "--position", "0", "-o", str(tmp_path / "x.wav"),
+        ])
+
+        assert result.code == 1
+        assert "Cannot convert channels" in result.err
+        assert "Traceback" not in result.err
+
+    def test_sample_rate_mismatch_is_reported_with_exit_1(self, tmp_path):
         src = write_wav(tmp_path / "base.wav", sample_rate=44100)
         clip = write_wav(tmp_path / "clip.wav", sample_rate=22050, duration=0.1)
-        with pytest.raises(ValueError, match="Sample rate mismatch"):
-            run_command([
-                "--json", "fx", str(src), "splice", "--clip", str(clip),
-                "--position", "0", "-o", str(tmp_path / "x.wav"),
-            ])
+
+        result = run_command([
+            "--json", "fx", str(src), "splice", "--clip", str(clip),
+            "--position", "0", "-o", str(tmp_path / "x.wav"),
+        ])
+
+        assert result.code == 1
+        assert "Sample rate mismatch" in result.err
+        assert "Traceback" not in result.err
+
+    def test_cut_region_removing_the_whole_file_is_a_usage_error(self, tmp_path):
+        """With no --start/--end, cut-region would delete every sample.
+
+        That used to reach the stats call on an empty array and surface as a numpy
+        reduction error; it must be a usage error naming the fix.
+        """
+        src = write_wav(tmp_path / "base.wav")
+
+        result = run_command([
+            "--json", "fx", str(src), "cut-region", "-o", str(tmp_path / "cut.wav"),
+        ])
+
+        assert result.code == 1
+        assert "remove the entire file" in result.err
+        assert "Traceback" not in result.err
 
     def test_directory_input_is_refused_with_exit_1(self, tmp_path):
         write_wav(tmp_path / "in" / "a.wav")

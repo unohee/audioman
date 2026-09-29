@@ -168,6 +168,15 @@ def _apply_effect(audio: np.ndarray, sr: int, args: argparse.Namespace) -> np.nd
         cf = args.crossfade
         if args.crossfade_ms is not None:
             cf = int(args.crossfade_ms / 1000.0 * sr)
+        # With no --start/--end this removes every sample, which leaves nothing to
+        # write and makes the downstream stats call fail on the empty array. Say so
+        # here instead of surfacing a numpy reduction error.
+        total = audio.shape[-1]
+        if start <= 0 and end >= total:
+            raise ValueError(
+                f"cut-region would remove the entire file ({total} samples); "
+                f"pass --start/--end (or --start-sec/--end-sec) to keep a region"
+            )
         return dsp.cut_region(audio, start=start, end=end, crossfade_samples=cf)
 
     elif effect == "splice":
@@ -184,7 +193,10 @@ def _apply_effect(audio: np.ndarray, sr: int, args: argparse.Namespace) -> np.nd
                 src = clip_audio if clip_audio.ndim == 1 else clip_audio[0]
                 clip_audio = np.stack([src, src], axis=0)
             elif in_ch == 1 and clip_ch == 2:
-                clip_audio = clip_audio.mean(axis=0)
+                # Keep the channel axis: the mono base arrives 2-D as (1, N), so a
+                # 1-D clip here would make dsp.splice fail on a dimension mismatch
+                # (this was reachable with `--clip` stereo against a mono input).
+                clip_audio = clip_audio.mean(axis=0, keepdims=True)
             else:
                 raise ValueError(f"Cannot convert channels: input={in_ch}ch, clip={clip_ch}ch")
         position = args.position or 0
@@ -235,10 +247,21 @@ def _run_single(args: argparse.Namespace, input_path: Path) -> None:
         audio, sr = read_audio(input_path)
     except FileNotFoundError as e:
         print_error(str(e))
+        return
 
     input_stats = get_audio_stats(audio, sr)
-    result = _apply_effect(audio, sr, args)
-    output_stats = get_audio_stats(result, sr)
+
+    # An effect can reject its input (a stereo clip against a mono base, a cut that
+    # removes every sample, an unknown curve). Those are user errors, not internal
+    # failures, so they must reach the CLI as a message — an uncaught ValueError here
+    # printed a traceback and, in the empty-result case, crashed inside the stats
+    # call before the CLI ever saw the real cause.
+    try:
+        result = _apply_effect(audio, sr, args)
+        output_stats = get_audio_stats(result, sr)
+    except ValueError as e:
+        print_error(f"{args.effect} failed: {e}")
+        return
 
     write_audio(args.output, result, sr)
     elapsed = round(time.monotonic() - start_time, 3)

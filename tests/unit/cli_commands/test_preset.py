@@ -47,17 +47,23 @@ class TestPresetSave:
         assert result.out == ""
 
     def test_rejects_path_traversal_name(self):
-        # PresetManager rejects an invalid name with ValueError. The CLI does not catch
-        # it (= in a real run this exits 1 with a traceback). Pin which exception it is
-        # rather than flattening the crash into an 'exit code' assertion.
-        with pytest.raises(ValueError, match="single path component"):
-            run_command(["--json", "preset", "save", "../escape", "-p", "plug"])
+        # A traversal name is rejected by PresetManager. This used to escape the CLI as
+        # a raw traceback; it must now be reported as a usage error with a non-zero
+        # exit, so assert the message and the exit rather than the exception type.
+        result = run_command(["--json", "preset", "save", "../escape", "-p", "plug"])
 
-    def test_invalid_param_string_raises_before_writing(self, tmp_path):
-        with pytest.raises(ValueError, match="key=value"):
-            run_command([
-                "--json", "preset", "save", "bad", "-p", "plug", "--param", "not-a-pair",
-            ])
+        assert result.code == 1
+        assert "single path component" in result.err
+        assert "Traceback" not in result.err
+
+    def test_invalid_param_string_is_reported_before_writing(self, tmp_path):
+        result = run_command([
+            "--json", "preset", "save", "bad", "-p", "plug", "--param", "not-a-pair",
+        ])
+
+        assert result.code == 1
+        assert "key=value" in result.err
+        assert "Traceback" not in result.err
         assert not (tmp_path / "presets" / "plug" / "bad.json").exists()
 
 
