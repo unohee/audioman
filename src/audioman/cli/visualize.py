@@ -138,7 +138,12 @@ def _run_vamp(args: argparse.Namespace, input_path: Path) -> None:
         result_to_matrix,
     )
 
-    audio, sr = read_audio(input_path)
+    try:
+        audio, sr = read_audio(input_path)
+    except (OSError, RuntimeError, ValueError) as e:
+        # `soundfile.LibsndfileError` derives from RuntimeError, not OSError.
+        print_error(str(e))
+        return
     print_info(f"Running Vamp plugin: {args.plugin}")
 
     result = run_plugin(
@@ -227,7 +232,12 @@ def _run_vamp(args: argparse.Namespace, input_path: Path) -> None:
 def _run_builtin(args: argparse.Namespace, input_path: Path) -> None:
     from audioman.core.analysis import compute_frame_metrics
 
-    audio, sr = read_audio(input_path)
+    try:
+        audio, sr = read_audio(input_path)
+    except (OSError, RuntimeError, ValueError) as e:
+        # `soundfile.LibsndfileError` derives from RuntimeError, not OSError.
+        print_error(str(e))
+        return
     builtin = args.builtin
     frame_size = args.frame_size
     hop = args.hop

@@ -127,8 +127,13 @@ def _run_single(args: argparse.Namespace, path: Path) -> None:
             spectrum=args.spectrum, spectrum_fft=args.spectrum_fft,
             spectrum_min_rms=args.spectrum_min_rms,
         )
-    except FileNotFoundError as e:
+    except (FileNotFoundError, OSError, RuntimeError, ValueError) as e:
+        # A missing file raises FileNotFoundError; an undecodable one raises
+        # `soundfile.LibsndfileError`, whose MRO is RuntimeError (not OSError — checked,
+        # because catching OSError here silently misses it). Both are user-facing input
+        # problems and must not reach the user as a traceback.
         print_error(str(e))
+        return
 
     # Waveform rendering (also included as the ascii_waveform field in JSON mode)
     waveform_text = None

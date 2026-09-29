@@ -180,7 +180,10 @@ def _apply_effect(audio: np.ndarray, sr: int, args: argparse.Namespace) -> np.nd
         return dsp.cut_region(audio, start=start, end=end, crossfade_samples=cf)
 
     elif effect == "splice":
-        clip_audio, clip_sr = read_audio(args.clip)
+        try:
+            clip_audio, clip_sr = read_audio(args.clip)
+        except (OSError, RuntimeError, ValueError) as e:
+            raise ValueError(f"cannot read clip {args.clip}: {e}") from e
         if clip_sr != sr:
             raise ValueError(
                 f"Sample rate mismatch: input={sr}Hz, clip={clip_sr}Hz. Resample the clip first."
@@ -245,7 +248,8 @@ def _run_single(args: argparse.Namespace, input_path: Path) -> None:
 
     try:
         audio, sr = read_audio(input_path)
-    except FileNotFoundError as e:
+    except (OSError, RuntimeError, ValueError) as e:
+        # `soundfile.LibsndfileError` derives from RuntimeError, not OSError.
         print_error(str(e))
         return
 

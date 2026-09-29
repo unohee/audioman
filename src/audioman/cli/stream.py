@@ -125,7 +125,13 @@ def _load_input(args: argparse.Namespace):
     p = Path(spec)
     if not p.exists():
         print_error(f"input not found (and not 'sine'/'impulse'): {spec}")
-    audio, file_sr = read_audio(p)
+        raise SystemExit(1)
+    try:
+        audio, file_sr = read_audio(p)
+    except (OSError, RuntimeError, ValueError) as e:
+        # `soundfile.LibsndfileError` derives from RuntimeError, not OSError.
+        print_error(f"cannot read {spec}: {e}")
+        raise SystemExit(1)
     return audio, file_sr
 
 
