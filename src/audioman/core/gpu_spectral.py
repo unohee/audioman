@@ -277,7 +277,10 @@ class GPUSpectralExtractor:
             # 상위 10% / 하위 10% 중 각각 하나씩 랜덤
             valid_vals = rms_i[valid_wins]
             n_valid = int(valid_vals.numel())
-            if n_valid == 0:
+            # Unreachable: `valid_wins.any()` was checked above and `valid_vals`
+            # selects exactly that non-empty set, so it holds at least one window.
+            # Kept as a guard in case the selection above is ever changed.
+            if n_valid == 0:  # pragma: no cover - mask selection of a non-empty mask
                 per_sample_meta.append(None)
                 continue
 

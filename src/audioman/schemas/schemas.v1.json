@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audioman://schema/schemas.v1.json",
+  "title": "Audioman Schema Index",
+  "description": "Output envelope for `audioman schemas list --json`. Lists every published JSONSchema shipped with this audioman version.",
+  "type": "object",
+  "required": ["$schema", "audioman_version", "command", "schemas"],
+  "properties": {
+    "$schema": {"const": "audioman://schema/schemas.v1.json"},
+    "audioman_version": {"type": "string"},
+    "command": {"const": "schemas"},
+    "schemas": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "id", "title", "path"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Schema name without the .json extension, e.g. \"observe.v1\"."
+          },
+          "id": {
+            "type": "string",
+            "description": "The schema $id, which is the same URI that --json output carries in $schema."
+          },
+          "title": {"type": "string"},
+          "path": {"type": "string"}
+        }
+      }
+    }
+  }
+}

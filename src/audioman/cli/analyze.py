@@ -1,13 +1,16 @@
 # Created: 2026-03-21
-# Purpose: audioman analyze 서브커맨드 — 오디오 분석
+# Purpose: audioman analyze subcommand — audio analysis
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from audioman import __version__
 from audioman.cli.output import print_error, print_json, print_table, print_success, output_console
+from audioman.cli.output import print_markup
 from audioman.core.audio_file import read_audio, get_audio_stats
+from audioman.core.findings import json_envelope, schema_uri
 from audioman.core.analysis import (
     compute_frame_metrics,
     compute_summary,
@@ -63,12 +66,12 @@ def _analyze_file(
     summary = compute_summary(metrics)
     silence = detect_silence(audio, sr, threshold_db=silence_threshold)
 
-    # Findings: signal + (optional) spectral. LLM agent 후기 대응.
+    # Findings: signal + (optional) spectral. Addresses LLM agent feedback.
     findings = detect_signal_findings(audio, sr, file=str(path))
     findings.extend(silence_to_findings(silence, audio_length, sr, file=str(path)))
 
-    # LLM agent 후기 #3 대응: duration/total_samples를 명시적으로 보장.
-    # `frames`는 채널당 샘플 수, `total_samples`는 그 별칭(명시적 이름).
+    # Addresses LLM agent feedback #3: guarantee duration/total_samples explicitly.
+    # `frames` is the sample count per channel, `total_samples` is its alias (explicit name).
     result = {
         "file": str(path),
         "sample_rate": sr,
@@ -124,10 +127,15 @@ def _run_single(args: argparse.Namespace, path: Path) -> None:
             spectrum=args.spectrum, spectrum_fft=args.spectrum_fft,
             spectrum_min_rms=args.spectrum_min_rms,
         )
-    except FileNotFoundError as e:
+    except (FileNotFoundError, OSError, RuntimeError, ValueError) as e:
+        # A missing file raises FileNotFoundError; an undecodable one raises
+        # `soundfile.LibsndfileError`, whose MRO is RuntimeError (not OSError — checked,
+        # because catching OSError here silently misses it). Both are user-facing input
+        # problems and must not reach the user as a traceback.
         print_error(str(e))
+        return
 
-    # 웨이브폼 렌더링 (JSON 모드에서도 ascii_waveform 필드로 포함)
+    # Waveform rendering (also included as the ascii_waveform field in JSON mode)
     waveform_text = None
     envelope_text = None
     spectral_text = None
@@ -149,12 +157,7 @@ def _run_single(args: argparse.Namespace, path: Path) -> None:
         )
 
     if args.json:
-        out = {
-            "$schema": "audioman://schema/analyze.v1.json",
-            "audioman_version": __version__,
-            "command": "analyze",
-            **result,
-        }
+        out = json_envelope("analyze", result, schema=schema_uri("analyze"))
         if waveform_text:
             out["ascii_waveform"] = waveform_text
             out["ascii_envelope"] = envelope_text
@@ -162,23 +165,23 @@ def _run_single(args: argparse.Namespace, path: Path) -> None:
         print_json(out)
         return
 
-    # human-readable 출력
-    output_console.print(f"\n[bold]{result['file']}[/bold]")
+    # human-readable output
+    print_markup(f"\n[bold]{result['file']}[/bold]")
     output_console.print(f"  Duration: {result['duration']}s | SR: {result['sample_rate']}Hz | CH: {result['channels']}")
     output_console.print(f"  RMS: {result['rms']:.4f} | Peak: {result['peak']:.4f}")
 
-    # 웨이브폼
+    # Waveform
     if waveform_text:
-        output_console.print(f"\n[bold]Waveform[/bold]")
+        print_markup(f"\n[bold]Waveform[/bold]")
         output_console.print(waveform_text, highlight=False)
-        output_console.print(f"\n[bold]RMS Envelope[/bold]")
+        print_markup(f"\n[bold]RMS Envelope[/bold]")
         output_console.print(envelope_text, highlight=False)
-        output_console.print(f"\n[bold]Spectral[/bold]")
+        print_markup(f"\n[bold]Spectral[/bold]")
         output_console.print(spectral_text, highlight=False)
 
     output_console.print()
 
-    # summary 테이블
+    # summary table
     rows = []
     for metric, stats in result["summary"].items():
         rows.append([
@@ -193,7 +196,7 @@ def _run_single(args: argparse.Namespace, path: Path) -> None:
     # spectrum diagnostics
     if "spectrum" in result:
         spec = result["spectrum"]
-        output_console.print(f"\n[bold]Spectrum diagnostics[/bold] (FFT={spec['fft_size']}, frames={spec['frames_analyzed']})")
+        print_markup(f"\n[bold]Spectrum diagnostics[/bold] (FFT={spec['fft_size']}, frames={spec['frames_analyzed']})")
         band_rows = [[b["band"], f"{b['freq_low']:.0f}-{b['freq_high']:.0f}",
                       f"{b['percent']:.2f}%", f"{b['db_rel_total']:+.1f}"]
                      for b in spec["band_energy"]]
@@ -205,7 +208,7 @@ def _run_single(args: argparse.Namespace, path: Path) -> None:
         hum_flags = [h for h in spec["hum_check"] if h["is_hum"]]
         if hum_flags:
             for h in hum_flags:
-                output_console.print(f"  [red]HUM detected[/red] @ {h['frequency_hz']} Hz (SNR {h['snr_db']:+.1f} dB)")
+                print_markup(f"  [red]HUM detected[/red] @ {h['frequency_hz']} Hz (SNR {h['snr_db']:+.1f} dB)")
         else:
             output_console.print("  Mains hum: not detected")
         sl = spec["hf_slope"]
@@ -226,8 +229,9 @@ def _run_single(args: argparse.Namespace, path: Path) -> None:
 def _run_batch(args: argparse.Namespace, input_dir: Path) -> None:
     files = collect_audio_files(input_dir, recursive=args.recursive)
     if not files:
-        print_error(f"오디오 파일이 없습니다: {input_dir}")
+        print_error(f"No audio files found: {input_dir}")
 
+    fail = 0
     for i, fpath in enumerate(files):
         try:
             result = _analyze_file(
@@ -236,12 +240,10 @@ def _run_batch(args: argparse.Namespace, input_dir: Path) -> None:
                 spectrum_min_rms=args.spectrum_min_rms,
             )
             if args.json:
-                print(json.dumps({
-                    "$schema": "audioman://schema/analyze.v1.json",
-                    "audioman_version": __version__,
-                    "command": "analyze",
-                    **result,
-                }, ensure_ascii=False, default=str))
+                print(json.dumps(
+                    json_envelope("analyze", result, schema=schema_uri("analyze")),
+                    ensure_ascii=False, default=str,
+                ))
             else:
                 output_console.print(
                     f"  [{i+1}/{len(files)}] {fpath.name}: "
@@ -250,10 +252,17 @@ def _run_batch(args: argparse.Namespace, input_dir: Path) -> None:
                     f"Centroid={result['summary']['spectral_centroid']['mean']:.0f}Hz"
                 )
         except Exception as e:
+            fail += 1
             if args.json:
-                print(json.dumps({"command": "analyze", "file": str(fpath), "error": str(e)}, ensure_ascii=False))
+                print(json.dumps(
+                    json_envelope("analyze", {"file": str(fpath), "error": str(e)},
+                                  schema=schema_uri("analyze")),
+                    ensure_ascii=False,
+                ))
             else:
                 output_console.print(f"  [{i+1}/{len(files)}] {fpath.name}: ERROR {e}")
 
     if not args.json:
-        print_success(f"분석 완료: {len(files)}개 파일")
+        print_success(f"Analysis complete: {len(files)} files")
+    if fail:
+        sys.exit(1)

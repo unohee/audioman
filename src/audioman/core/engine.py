@@ -1,5 +1,5 @@
 # Created: 2026-03-21
-# Purpose: 단일 플러그인 오디오 처리 엔진
+# Purpose: Single-plugin audio processing engine
 
 import logging
 import time
@@ -7,9 +7,8 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Optional
 
-import numpy as np
-
-from audioman.core.audio_file import AudioStats, get_audio_stats, get_file_info, read_audio, stream_process, write_audio
+from audioman.config.settings import get_settings
+from audioman.core.audio_file import get_audio_stats, get_file_info, read_audio, stream_process, write_audio
 from audioman.core.registry import get_registry
 from audioman.plugins.vst3 import VST3PluginWrapper
 
@@ -18,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ProcessResult:
-    """처리 결과"""
+    """Processing result"""
     input_path: str
     output_path: str
     plugin_name: str
@@ -32,21 +31,21 @@ class ProcessResult:
 
 
 def parse_params(param_strings: list[str]) -> dict[str, Any]:
-    """CLI 파라미터 문자열 파싱: ["threshold=-20", "reduction=12"] → dict
+    """Parse CLI parameter strings: ["threshold=-20", "reduction=12"] → dict
 
-    Value가 따옴표로 감싸져 있으면(`key="4.00"` 또는 `key='4.00'`) 강제로
-    문자열로 유지한다. UAD 플러그인처럼 enum 라벨이 `"4.00"`, `"0.97"` 같은
-    2-자리 소수 문자열인 경우에 필요하다 — float 변환하면 `"4.0"`이 되어
-    enum 리스트와 매칭 실패.
+    A value wrapped in quotes (`key="4.00"` or `key='4.00'`) is forced to
+    stay a string. This is needed for plugins like UAD whose enum labels are
+    two-decimal strings such as `"4.00"`, `"0.97"` — converting to float
+    turns `"4.00"` into `"4.0"` and fails to match the enum list.
     """
     params = {}
     for s in param_strings:
         if "=" not in s:
-            raise ValueError(f"잘못된 파라미터 형식 (key=value 필요): '{s}'")
+            raise ValueError(f"Invalid parameter format (expected key=value): '{s}'")
         key, value = s.split("=", 1)
         key = key.strip()
 
-        # 명시적 문자열: 따옴표 감싸면 원본 보존.
+        # explicit string: preserve the original when wrapped in quotes.
         if len(value) >= 2 and (
             (value.startswith('"') and value.endswith('"'))
             or (value.startswith("'") and value.endswith("'"))
@@ -54,19 +53,47 @@ def parse_params(param_strings: list[str]) -> dict[str, Any]:
             params[key] = value[1:-1]
             continue
 
-        # 타입 추론
+        # type inference
         if value.lower() in ("true", "false"):
             params[key] = value.lower() == "true"
         else:
             try:
                 params[key] = float(value)
             except ValueError:
-                params[key] = value  # 문자열 (enum 등)
+                params[key] = value  # string (enum, etc.)
 
     return params
 
 
-STREAM_THRESHOLD_MB = 500  # 이 크기 이상이면 자동 스트리밍
+def _stream_threshold_mb() -> int:
+    """Auto-streaming threshold in MB (settings.large_file_threshold_mb)."""
+    try:
+        return get_settings().large_file_threshold_mb
+    except Exception:
+        return 500
+
+
+def _auto_stream_enabled() -> bool:
+    """Whether large files may switch to streaming automatically (settings.auto_stream)."""
+    try:
+        return get_settings().auto_stream
+    except Exception:
+        return True
+
+
+def _stream_chunk_seconds(sample_rate: int) -> float:
+    """Streaming chunk length in seconds, from settings.default_chunk_size.
+
+    ``default_chunk_size`` is a frame count (441000 ≈ 10 s at 44.1 kHz), so the
+    chunk length depends on the file's sample rate.
+    """
+    try:
+        chunk_frames = get_settings().default_chunk_size
+    except Exception:
+        return 10.0
+    if sample_rate <= 0 or chunk_frames <= 0:
+        return 10.0
+    return chunk_frames / sample_rate
 
 
 def process_file(
@@ -77,43 +104,47 @@ def process_file(
     passes: int = 1,
     stream: bool | None = None,
 ) -> ProcessResult:
-    """단일 플러그인으로 오디오 파일 처리
+    """Process an audio file with a single plugin
 
     Args:
-        passes: 처리 횟수. 2 이상이면 첫 패스는 학습용, 마지막 패스만 출력.
-                adaptive 모드 플러그인에서 노이즈 프로파일 학습에 유용.
+        passes: number of processing passes. With 2 or more, the first pass is for
+                learning and only the last pass is written out. Useful for learning
+                the noise profile on plugins in adaptive mode.
     """
     start = time.monotonic()
 
-    # 플러그인 검색
+    # look up the plugin
     registry = get_registry()
     meta = registry.get(plugin_name)
     if not meta:
-        raise ValueError(f"플러그인을 찾을 수 없습니다: '{plugin_name}'")
+        raise ValueError(f"Plugin not found: '{plugin_name}'")
 
-    # 대용량 파일 → 자동 스트리밍
+    # large file → automatic streaming
     if stream is None:
-        try:
-            info = get_file_info(input_path)
-            stream = info["file_size_mb"] > STREAM_THRESHOLD_MB
-        except Exception:
+        if _auto_stream_enabled():
+            try:
+                info = get_file_info(input_path)
+                stream = info["file_size_mb"] > _stream_threshold_mb()
+            except Exception:
+                stream = False
+        else:
             stream = False
 
     if stream:
         return _process_file_streaming(input_path, output_path, meta, params, start)
 
-    # 오디오 읽기
+    # read the audio
     audio, sr = read_audio(input_path)
     input_stats = get_audio_stats(audio, sr)
 
-    # 플러그인 로드 + 파라미터 설정
+    # load the plugin + set parameters
     wrapper = VST3PluginWrapper(meta.path)
     wrapper.load()
 
     if params:
         wrapper.set_parameters(params)
 
-    # 멀티패스 처리
+    # multi-pass processing
     output = audio
     for i in range(passes):
         logger.info(f"Pass {i+1}/{passes}")
@@ -121,7 +152,7 @@ def process_file(
 
     output_stats = get_audio_stats(output, sr)
 
-    # 출력 저장
+    # write the output
     write_audio(output_path, output, sr)
 
     elapsed = time.monotonic() - start
@@ -137,7 +168,7 @@ def process_file(
 
 
 def _process_file_streaming(input_path, output_path, meta, params, start) -> ProcessResult:
-    """대용량 파일 스트리밍 처리 — 메모리에 전체 로드하지 않음"""
+    """Stream a large file — do not load the whole thing into memory"""
     wrapper = VST3PluginWrapper(meta.path)
     wrapper.load()
     if params:
@@ -147,10 +178,13 @@ def _process_file_streaming(input_path, output_path, meta, params, start) -> Pro
         return wrapper.process(chunk, sr)
 
     info = get_file_info(input_path)
-    result = stream_process(input_path, output_path, process_chunk)
+    result = stream_process(
+        input_path, output_path, process_chunk,
+        chunk_seconds=_stream_chunk_seconds(info["sample_rate"]),
+    )
 
     elapsed = time.monotonic() - start
-    logger.info(f"스트리밍 처리 완료: {result['chunks']} chunks, {elapsed:.1f}s")
+    logger.info(f"streaming finished: {result['chunks']} chunks, {elapsed:.1f}s")
 
     return ProcessResult(
         input_path=str(input_path),

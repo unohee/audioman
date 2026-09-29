@@ -1,4 +1,4 @@
-# tests/unit/test_pipeline.py — 파이프라인 파싱 + 데이터 구조 테스트
+# tests/unit/test_pipeline.py — pipeline parsing + data structure tests
 
 import pytest
 
@@ -22,7 +22,7 @@ class TestPipelineStep:
 
 
 class TestParseChainString:
-    """체인 문자열 파싱"""
+    """Chain string parsing"""
 
     def test_single_plugin(self):
         steps = parse_chain_string("denoise")
@@ -90,3 +90,78 @@ class TestPipelineResult:
         assert d["input_path"] == "/in.wav"
         assert d["duration_seconds"] == 1.23
         assert isinstance(d["steps"], list)
+
+
+# ---------------------------------------------------------------------------
+# run_pipeline — plugin chain execution with a fake registry/wrapper (no VST3 host).
+# ---------------------------------------------------------------------------
+
+
+class TestRunPipeline:
+    def _env(self, monkeypatch, gain=0.5):
+        from types import SimpleNamespace
+        from audioman.core import pipeline as pipeline_mod
+
+        made = []
+        meta = {"denoise": SimpleNamespace(short_name="denoise", path="/d.vst3"),
+                "dehum": SimpleNamespace(short_name="dehum", path="/h.vst3")}
+
+        class _W:
+            def __init__(self, path):
+                self.path = path
+                self.params = None
+                made.append(self)
+
+            def load(self):
+                pass
+
+            def set_parameters(self, p):
+                self.params = p
+
+            def process(self, audio, sr):
+                return (audio * gain).astype(audio.dtype)
+
+        monkeypatch.setattr(pipeline_mod, "get_registry",
+                            lambda: SimpleNamespace(get=lambda n: meta.get(n)))
+        monkeypatch.setattr(pipeline_mod, "VST3PluginWrapper", _W)
+        return made
+
+    def _src(self, tmp_path):
+        import numpy as np
+        import soundfile as sf
+        path = tmp_path / "in.wav"
+        sf.write(str(path), np.full(200, 0.8, dtype=np.float32), 48000, subtype="FLOAT")
+        return path
+
+    def test_runs_all_steps_in_order(self, monkeypatch, tmp_path):
+        from audioman.core.pipeline import PipelineStep, run_pipeline
+        made = self._env(monkeypatch, gain=0.5)
+        out = tmp_path / "out.wav"
+        result = run_pipeline(
+            self._src(tmp_path), out,
+            [PipelineStep("denoise", {"threshold": -20.0}), PipelineStep("dehum", {})],
+        )
+        assert out.exists()
+        assert result.output_path == str(out)
+        assert len(result.steps) == 2
+        assert made[0].params == {"threshold": -20.0}
+        assert made[1].params is None
+
+        import numpy as np
+        import soundfile as sf
+        rendered, _ = sf.read(str(out))
+        np.testing.assert_allclose(rendered, 0.8 * 0.25, atol=1e-5)
+
+    def test_empty_step_list_writes_source(self, monkeypatch, tmp_path):
+        from audioman.core.pipeline import run_pipeline
+        self._env(monkeypatch)
+        out = tmp_path / "out.wav"
+        result = run_pipeline(self._src(tmp_path), out, [])
+        assert result.steps == []
+        assert out.exists()
+
+    def test_unknown_plugin_raises_with_step_number(self, monkeypatch, tmp_path):
+        from audioman.core.pipeline import PipelineStep, run_pipeline
+        self._env(monkeypatch)
+        with pytest.raises(ValueError, match="step 1"):
+            run_pipeline(self._src(tmp_path), tmp_path / "o.wav", [PipelineStep("missing", {})])

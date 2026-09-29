@@ -44,7 +44,7 @@ class TestObserveEnvelope:
         assert payload["total_samples"] == SR
         assert payload["sample_rate"] == SR
         assert payload["channels"] == 1
-        assert payload["$schema"] == "audioman://schema/finding.v1.json"
+        assert payload["$schema"] == "audioman://schema/observe.v1.json"
         assert "audioman_version" in payload
         assert payload["command"] == "observe"
 

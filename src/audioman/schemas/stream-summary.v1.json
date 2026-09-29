@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audioman://schema/stream-summary.v1.json",
+  "title": "Audioman Stream Render Summary",
+  "description": "Audio-free metric summary of a block render (StreamResult.to_summary). Used by `audioman stream triage` for the offline and streamed renders.",
+  "type": "object",
+  "required": [
+    "mode",
+    "block_size",
+    "reset_per_block",
+    "sample_rate",
+    "blocks",
+    "audio_seconds",
+    "total_process_sec",
+    "realtime_factor"
+  ],
+  "properties": {
+    "mode": {"type": "string"},
+    "block_size": {"type": "integer"},
+    "reset_per_block": {"type": "boolean"},
+    "sample_rate": {"type": "integer"},
+    "blocks": {"type": "integer"},
+    "audio_seconds": {"type": "number"},
+    "total_process_sec": {"type": "number"},
+    "realtime_factor": {
+      "type": ["number", "null"],
+      "description": "Null when the rendered audio has zero length."
+    }
+  }
+}

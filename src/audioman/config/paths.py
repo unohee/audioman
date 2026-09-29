@@ -1,12 +1,12 @@
 # Created: 2026-03-21
-# Purpose: 플랫폼별 VST3/AU 플러그인 경로 및 앱 디렉토리 해석
+# Purpose: Platform-specific VST3/AU plugin paths and app directory resolution
 
 import platform
 from pathlib import Path
 
 
 def get_app_dir() -> Path:
-    """~/.audioman 앱 설정 디렉토리"""
+    """~/.audioman app settings directory"""
     return Path.home() / ".audioman"
 
 
@@ -19,13 +19,13 @@ def get_preset_dir() -> Path:
 
 
 def ensure_app_dirs() -> None:
-    """앱 디렉토리 구조 생성"""
+    """Create the app directory structure"""
     for d in [get_app_dir(), get_cache_dir(), get_preset_dir()]:
         d.mkdir(parents=True, exist_ok=True)
 
 
 def get_vst3_search_paths() -> list[Path]:
-    """플랫폼별 VST3 플러그인 기본 검색 경로"""
+    """Default VST3 plugin search paths per platform"""
     system = platform.system()
 
     if system == "Darwin":
@@ -47,7 +47,7 @@ def get_vst3_search_paths() -> list[Path]:
 
 
 def get_au_search_paths() -> list[Path]:
-    """macOS AU 플러그인 기본 검색 경로"""
+    """Default macOS AU plugin search paths"""
     if platform.system() != "Darwin":
         return []
 

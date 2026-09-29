@@ -1,10 +1,10 @@
 # Created: 2026-04-26
-# Purpose: audioman master 서브커맨드 — 마스터링 납품 워크플로
+# Purpose: audioman master subcommand — mastering delivery workflow
 #
-# 3개 서브커맨드:
-#   prep   : remove_dc → pad → fade_in/out → loudness_normalize 한 번에 적용
-#   qc     : 결과물 검수 리포트 (target profile별 PASS/WARN/FAIL)
-#   verify : prep + qc를 연쇄 (납품 전 한 줄 검증)
+# Three subcommands:
+#   prep   : remove_dc → pad → fade_in/out → loudness_normalize in one pass
+#   qc     : delivery QC report (PASS/WARN/FAIL per target profile)
+#   verify : prep + qc chained (one-line check before delivery)
 
 from __future__ import annotations
 
@@ -19,11 +19,13 @@ from audioman.cli.output import (
     print_success,
     print_warning,
     print_table,
+    print_markup,
 )
 from audioman.core import dsp, edl as edl_core, qc
+from audioman.core.findings import json_envelope, schema_uri
 
 
-# 마스터링 프로파일별 권장 prep 파라미터
+# Recommended prep parameters per mastering profile
 PREP_PROFILES = {
     "spotify": {
         "head_pad_ms": 200, "tail_pad_sec": 2.0,
@@ -53,7 +55,7 @@ PREP_PROFILES = {
         "head_pad_ms": 0, "tail_pad_sec": 3.0,
         "fade_in_ms": 0, "fade_out_ms": 500,
         "fade_curve": "cosine",
-        "target_lufs": None, "max_true_peak_dbtp": -0.3,  # CD는 LUFS norm 안 함
+        "target_lufs": None, "max_true_peak_dbtp": -0.3,  # CD does not use LUFS normalization
     },
 }
 
@@ -114,7 +116,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _build_prep_params(args: argparse.Namespace) -> dict:
-    """profile + CLI override 병합. 결과는 prep 단일 파라미터 dict."""
+    """Merge profile with CLI overrides. The result is a single prep parameter dict."""
     base = dict(PREP_PROFILES[args.profile])
     overrides = {
         "head_pad_ms": args.head_pad_ms,
@@ -132,7 +134,7 @@ def _build_prep_params(args: argparse.Namespace) -> dict:
 
 
 def _build_prep_edl(source: Path, params: dict, skip_dc: bool) -> edl_core.EDL:
-    """prep 시퀀스를 EDL ops로 표현. 동일 입력 → 동일 EDL 보장."""
+    """Express the prep sequence as EDL ops. Same input always yields the same EDL."""
     edl = edl_core.init_edl(source)
     if not skip_dc:
         edl_core.add_op(edl, {"type": "remove_dc"})
@@ -165,7 +167,7 @@ def _build_prep_edl(source: Path, params: dict, skip_dc: bool) -> edl_core.EDL:
 def run_prep(args: argparse.Namespace) -> None:
     src = Path(args.input).resolve()
     if not src.exists():
-        print_error(f"파일 없음: {src}")
+        print_error(f"File not found: {src}")
 
     params = _build_prep_params(args)
     edl = _build_prep_edl(src, params, skip_dc=args.no_dc_remove)
@@ -184,20 +186,23 @@ def run_prep(args: argparse.Namespace) -> None:
     elapsed = time.monotonic() - start
 
     if args.json:
-        print_json({
-            "command": "master prep",
-            "profile": args.profile,
-            "params": params,
-            "input": str(src),
-            "output": args.output,
-            "input_duration_sec": result.input_duration_sec,
-            "output_duration_sec": result.output_duration_sec,
-            "ops_applied": [op["type"] for op in edl.ops],
-            "elapsed_sec": round(elapsed, 3),
-        })
+        print_json(json_envelope(
+            "master prep",
+            {
+                "profile": args.profile,
+                "params": params,
+                "input": str(src),
+                "output": args.output,
+                "input_duration_sec": result.input_duration_sec,
+                "output_duration_sec": result.output_duration_sec,
+                "ops_applied": [op["type"] for op in edl.ops],
+                "elapsed_sec": round(elapsed, 3),
+            },
+            schema=schema_uri("master"),
+        ))
         return
 
-    print_success(f"master prep 완료 ({args.profile})")
+    print_success(f"master prep complete ({args.profile})")
     output_console.print(f"  Output:    {args.output}")
     output_console.print(f"  Duration:  {result.input_duration_sec:.2f}s → {result.output_duration_sec:.2f}s")
     output_console.print(f"  Ops:       {', '.join(op['type'] for op in edl.ops)}")
@@ -237,7 +242,7 @@ def _print_qc_human(report: dict) -> None:
         ])
     print_table("Checks", ["Category", "Check", "Value", "Target", "Status"], rows)
 
-    # WARN/FAIL 항목의 detail
+    # detail for WARN/FAIL checks
     for c in report["checks"]:
         if c["status"] in ("WARN", "FAIL") and "detail" in c:
             output_console.print(f"  [{c['status']}] {c['name']}: {c['detail']}")
@@ -246,7 +251,7 @@ def _print_qc_human(report: dict) -> None:
 def run_qc(args: argparse.Namespace) -> None:
     src = Path(args.input).resolve()
     if not src.exists():
-        print_error(f"파일 없음: {src}")
+        print_error(f"File not found: {src}")
 
     try:
         report = qc.evaluate_file(src, target=args.target, click_sensitivity=args.click_sensitivity)
@@ -254,10 +259,12 @@ def run_qc(args: argparse.Namespace) -> None:
         print_error(str(e))
 
     if args.json:
-        print_json({"command": "master qc", "input": str(src), **report})
+        print_json(json_envelope(
+            "master qc", {"input": str(src), **report}, schema=schema_uri("master")
+        ))
         return
 
-    output_console.print(f"\n[bold]{src.name}[/bold]")
+    print_markup(f"\n[bold]{src.name}[/bold]")
     if report.get("format"):
         f = report["format"]
         output_console.print(
@@ -287,7 +294,7 @@ def run_verify(args: argparse.Namespace) -> None:
     # prep
     src = Path(args.input).resolve()
     if not src.exists():
-        print_error(f"파일 없음: {src}")
+        print_error(f"File not found: {src}")
     params = _build_prep_params(args)
     edl = _build_prep_edl(src, params, skip_dc=False)
 
@@ -301,30 +308,33 @@ def run_verify(args: argparse.Namespace) -> None:
     # qc
     qc_target = args.target or args.profile
     if qc_target not in qc.list_targets():
-        print_warning(f"{qc_target!r}는 QC 프로파일에 없음. 'spotify'로 fallback")
+        print_warning(f"{qc_target!r} is not a QC profile. Falling back to 'spotify'")
         qc_target = "spotify"
     qc_report = qc.evaluate_file(args.output, target=qc_target)
 
     if args.json:
-        print_json({
-            "command": "master verify",
-            "profile": args.profile,
-            "qc_target": qc_target,
-            "input": str(src),
-            "output": args.output,
-            "prep": {
-                "params": params,
-                "input_duration_sec": result.input_duration_sec,
-                "output_duration_sec": result.output_duration_sec,
-                "ops_applied": [op["type"] for op in edl.ops],
-                "elapsed_sec": round(prep_elapsed, 3),
+        print_json(json_envelope(
+            "master verify",
+            {
+                "profile": args.profile,
+                "qc_target": qc_target,
+                "input": str(src),
+                "output": args.output,
+                "prep": {
+                    "params": params,
+                    "input_duration_sec": result.input_duration_sec,
+                    "output_duration_sec": result.output_duration_sec,
+                    "ops_applied": [op["type"] for op in edl.ops],
+                    "elapsed_sec": round(prep_elapsed, 3),
+                },
+                "qc": qc_report,
             },
-            "qc": qc_report,
-        })
+            schema=schema_uri("master"),
+        ))
         return
 
-    print_success(f"prep 완료 ({args.profile}) — {result.input_duration_sec:.2f}s → {result.output_duration_sec:.2f}s in {prep_elapsed:.2f}s")
-    output_console.print(f"\n[bold]{Path(args.output).name}[/bold]  (QC target: {qc_target})")
+    print_success(f"prep complete ({args.profile}) — {result.input_duration_sec:.2f}s → {result.output_duration_sec:.2f}s in {prep_elapsed:.2f}s")
+    print_markup(f"\n[bold]{Path(args.output).name}[/bold]  (QC target: {qc_target})")
     if qc_report.get("format"):
         f = qc_report["format"]
         output_console.print(
@@ -340,11 +350,14 @@ def run_verify(args: argparse.Namespace) -> None:
 
 def run_list_profiles(args: argparse.Namespace) -> None:
     if args.json:
-        print_json({
-            "command": "master list-profiles",
-            "prep_profiles": PREP_PROFILES,
-            "qc_targets": qc.list_targets(),
-        })
+        print_json(json_envelope(
+            "master list-profiles",
+            {
+                "prep_profiles": PREP_PROFILES,
+                "qc_targets": qc.list_targets(),
+            },
+            schema=schema_uri("master"),
+        ))
         return
 
     rows = []

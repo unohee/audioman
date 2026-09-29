@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audioman://schema/bounce.v1.json",
+  "title": "Audioman Bounce Result",
+  "description": "Output envelope for `audioman bounce --json`. The plan variant (`--dry-run`) reports the resolved track list and output path; the execution variant adds rendered stats. `track_count` and `tracks` are present in both.",
+  "type": "object",
+  "required": [
+    "$schema",
+    "audioman_version",
+    "command",
+    "track_count",
+    "tracks"
+  ],
+  "properties": {
+    "$schema": {"const": "audioman://schema/bounce.v1.json"},
+    "audioman_version": {"type": "string"},
+    "command": {"const": "bounce"},
+    "track_count": {"type": "integer"},
+    "tracks": {
+      "type": "array",
+      "items": {"type": "object"}
+    },
+    "dry_run": {
+      "type": ["boolean", "null"],
+      "description": "Plan variant (`--dry-run`) only; always true when present."
+    },
+    "output": {
+      "type": ["string", "null"],
+      "description": "Plan variant only."
+    },
+    "output_path": {
+      "type": ["string", "null"],
+      "description": "Execution variant only."
+    },
+    "output_stats": {
+      "type": ["object", "null"],
+      "description": "Execution variant only."
+    },
+    "sample_rate": {
+      "type": ["integer", "null"],
+      "description": "Execution variant only."
+    },
+    "duration_seconds": {
+      "type": ["number", "null"],
+      "description": "Execution variant only."
+    },
+    "clipping_detected": {
+      "type": ["boolean", "null"],
+      "description": "Execution variant only."
+    }
+  }
+}

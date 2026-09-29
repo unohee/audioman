@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audioman://schema/screen.v1.json",
+  "title": "Audioman Screen Result",
+  "description": "Output envelope for `audioman screen --json`. Directory input emits `input` + `files`; single-file input spreads the flat `screen_file()` report.",
+  "type": "object",
+  "required": ["$schema", "audioman_version", "command"],
+  "properties": {
+    "$schema": {"const": "audioman://schema/screen.v1.json"},
+    "audioman_version": {"type": "string"},
+    "command": {"const": "screen"},
+    "input": {
+      "type": "string",
+      "description": "Directory variant only: screened input directory."
+    },
+    "files": {
+      "type": "array",
+      "description": "Directory variant only: one report per screened file.",
+      "items": {
+        "type": "object",
+        "required": [
+          "file",
+          "sample_rate",
+          "channels",
+          "duration",
+          "issues",
+          "backends",
+          "essentia_available",
+          "unsupported_issues",
+          "events",
+          "summary"
+        ],
+        "properties": {
+          "file": {"type": "string"},
+          "sample_rate": {"type": "integer"},
+          "channels": {"type": "integer"},
+          "duration": {"type": "number"},
+          "issues": {"type": "array", "items": {"type": "string"}},
+          "backends": {"type": "object", "additionalProperties": {"type": "string"}},
+          "essentia_available": {"type": ["boolean", "null"]},
+          "unsupported_issues": {"type": "array", "items": {"type": "string"}},
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["type", "start_sec", "end_sec", "severity", "backend"],
+              "properties": {
+                "type": {"type": "string"},
+                "start_sec": {"type": "number"},
+                "end_sec": {"type": "number"},
+                "severity": {"type": "string"},
+                "backend": {"type": "string"},
+                "confidence": {"type": ["number", "null"]}
+              },
+              "additionalProperties": true
+            }
+          },
+          "summary": {"type": "object", "additionalProperties": {"type": "integer"}}
+        }
+      }
+    },
+    "file": {
+      "type": "string",
+      "description": "Single-file variant only: path of the screened file."
+    },
+    "sample_rate": {"type": "integer"},
+    "channels": {"type": "integer"},
+    "duration": {"type": "number"},
+    "issues": {"type": "array", "items": {"type": "string"}},
+    "backends": {"type": "object", "additionalProperties": {"type": "string"}},
+    "essentia_available": {"type": ["boolean", "null"]},
+    "unsupported_issues": {"type": "array", "items": {"type": "string"}},
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "start_sec", "end_sec", "severity", "backend"],
+        "properties": {
+          "type": {"type": "string"},
+          "start_sec": {"type": "number"},
+          "end_sec": {"type": "number"},
+          "severity": {"type": "string"},
+          "backend": {"type": "string"},
+          "confidence": {"type": ["number", "null"]}
+        },
+        "additionalProperties": true
+      }
+    },
+    "summary": {"type": "object", "additionalProperties": {"type": "integer"}}
+  }
+}

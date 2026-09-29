@@ -223,3 +223,14 @@ class TestWriteDense3d:
     def test_rejects_non_2d_matrix(self, tmp_path, matrix):
         with pytest.raises(ValueError, match="two-dimensional"):
             write_dense3d(tmp_path / "bad.svl", matrix)
+
+
+class TestRequireSameLength:
+    def test_mismatched_lengths_raise(self):
+        from audioman.core.svl import _require_same_length
+        with pytest.raises(ValueError, match="SVL series lengths must match"):
+            _require_same_length(frames=[1, 2], labels=["a"])
+
+    def test_matching_lengths_pass(self):
+        from audioman.core.svl import _require_same_length
+        _require_same_length(frames=[1, 2], labels=["a", "b"])

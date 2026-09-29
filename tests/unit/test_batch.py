@@ -1,4 +1,4 @@
-# tests/unit/test_batch.py — 배치 유틸리티 테스트
+# tests/unit/test_batch.py — batch utility tests
 
 import pytest
 from pathlib import Path
@@ -7,7 +7,7 @@ from audioman.core.batch import collect_audio_files, resolve_output_path, AUDIO_
 
 
 class TestCollectAudioFiles:
-    """오디오 파일 수집"""
+    """Collect audio files"""
 
     def test_single_file(self, tmp_path):
         wav = tmp_path / "song.wav"
@@ -18,7 +18,7 @@ class TestCollectAudioFiles:
     def test_directory_flat(self, tmp_path):
         for name in ["a.wav", "b.flac", "c.mp3"]:
             (tmp_path / name).touch()
-        # 비오디오 파일
+        # non-audio files
         (tmp_path / "readme.txt").touch()
 
         result = collect_audio_files(tmp_path)
@@ -53,7 +53,7 @@ class TestCollectAudioFiles:
         assert names == sorted(names)
 
     def test_all_extensions(self, tmp_path):
-        """지원하는 모든 확장자 수집"""
+        """Collect every supported extension"""
         for ext in AUDIO_EXTENSIONS:
             (tmp_path / f"test{ext}").touch()
         result = collect_audio_files(tmp_path)
@@ -101,5 +101,5 @@ class TestResolveOutputPath:
 
         output_dir = tmp_path / "output"
         result = resolve_output_path(input_path, input_dir, output_dir)
-        # parent가 생성됨
+        # the parent is created
         assert result.parent.exists()

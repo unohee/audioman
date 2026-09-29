@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audioman://schema/stream.v1.json",
+  "title": "Audioman Stream Result",
+  "description": "Output envelope for `audioman stream bench|triage|compare --json`. `triage` additionally carries a finding[] array plus per-render summaries; `bench` and `compare` emit performance/comparison metrics instead.",
+  "type": "object",
+  "required": ["$schema", "audioman_version", "command"],
+  "anyOf": [
+    {
+      "required": ["input", "plugin", "sample_rate", "reports"]
+    },
+    {
+      "required": ["file", "findings", "summary", "stream"]
+    },
+    {
+      "required": ["input", "plugin", "sample_rate", "vs_offline_db", "cross_block_db"]
+    }
+  ],
+  "properties": {
+    "$schema": {"const": "audioman://schema/stream.v1.json"},
+    "audioman_version": {"type": "string"},
+    "command": {"enum": ["stream bench", "stream triage", "stream compare"]},
+    "input": {
+      "type": "string",
+      "description": "Audio file path, or a synthetic signal name such as \"sine\"."
+    },
+    "plugin": {"type": "string"},
+    "sample_rate": {"type": "integer"},
+    "reports": {
+      "type": "array",
+      "description": "stream bench only: one real-time performance report per block size.",
+      "items": {
+        "type": "object",
+        "required": [
+          "block_size",
+          "sample_rate",
+          "blocks",
+          "audio_seconds",
+          "rt_factor_mean",
+          "rt_factor_p50",
+          "rt_factor_p95",
+          "rt_factor_p99",
+          "rt_factor_max",
+          "block_ms_mean",
+          "block_ms_max",
+          "deadline_ms",
+          "xruns",
+          "xrun_ratio",
+          "est_max_tracks"
+        ],
+        "properties": {
+          "block_size": {"type": "integer"},
+          "sample_rate": {"type": "integer"},
+          "blocks": {"type": "integer"},
+          "audio_seconds": {"type": "number"},
+          "rt_factor_mean": {"type": "number"},
+          "rt_factor_p50": {"type": "number"},
+          "rt_factor_p95": {"type": "number"},
+          "rt_factor_p99": {"type": "number"},
+          "rt_factor_max": {"type": "number"},
+          "block_ms_mean": {"type": "number"},
+          "block_ms_max": {"type": "number"},
+          "deadline_ms": {"type": "number"},
+          "xruns": {"type": "integer"},
+          "xrun_ratio": {"type": "number"},
+          "est_max_tracks": {"type": "integer"}
+        }
+      }
+    },
+    "vs_offline_db": {
+      "type": "object",
+      "description": "stream compare only: max divergence from the offline render, keyed by block size as a string.",
+      "additionalProperties": {"type": "number"}
+    },
+    "cross_block_db": {
+      "type": "object",
+      "description": "stream compare only: max divergence between adjacent block sizes, keyed as \"<a>_vs_<b>\".",
+      "additionalProperties": {"type": "number"}
+    },
+    "file": {
+      "type": "string",
+      "description": "stream triage only: input path as passed on the command line."
+    },
+    "findings": {
+      "type": "array",
+      "description": "stream triage only.",
+      "items": {"$ref": "audioman://schema/finding.v1.json"}
+    },
+    "summary": {
+      "$ref": "audioman://schema/findings-summary.v1.json"
+    },
+    "stream": {
+      "type": "object",
+      "description": "stream triage only: the block-rendering configuration and its offline/streamed metric summaries.",
+      "required": [
+        "block_size",
+        "reset_per_block",
+        "reset_first",
+        "offline_summary",
+        "streamed_summary"
+      ],
+      "properties": {
+        "block_size": {"type": "integer"},
+        "reset_per_block": {"type": "boolean"},
+        "reset_first": {"type": "boolean"},
+        "offline_summary": {"$ref": "audioman://schema/stream-summary.v1.json"},
+        "streamed_summary": {"$ref": "audioman://schema/stream-summary.v1.json"}
+      }
+    }
+  }
+}

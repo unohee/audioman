@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audioman://schema/doctor.v1.json",
+  "title": "Audioman Doctor Result",
+  "description": "Output envelope for `audioman doctor --json`. Reports one entry per executed analysis mode (linear, thd, imd, sweep, dynamics, attack_release, waveshaper, performance, clap, compare); a mode that fails stores {\"error\": \"...\"} instead of its measurement result. Mode keys are open-ended, so they are modelled via additionalProperties.",
+  "type": "object",
+  "required": [
+    "$schema",
+    "audioman_version",
+    "command",
+    "plugin",
+    "mode"
+  ],
+  "properties": {
+    "$schema": {"const": "audioman://schema/doctor.v1.json"},
+    "audioman_version": {"type": "string"},
+    "command": {"const": "doctor"},
+    "plugin": {"type": "string"},
+    "mode": {"type": "string"}
+  },
+  "additionalProperties": {
+    "description": "One executed analysis mode: its measurement result, or {\"error\": ...} on failure.",
+    "anyOf": [
+      {
+        "type": "object",
+        "required": ["error"],
+        "properties": {"error": {"type": "string"}},
+        "additionalProperties": true
+      },
+      {
+        "type": "object",
+        "additionalProperties": true
+      }
+    ]
+  }
+}

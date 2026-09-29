@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audioman://schema/preset.v1.json",
+  "title": "Audioman Preset Result",
+  "description": "Output envelope for `audioman preset save|load|list|delete --json`. Only the envelope keys are common to all four subcommands; the remaining properties are emitted per subcommand (save: name/path, load: name/plugin/parameters/description/created, list: count/presets, delete: name).",
+  "type": "object",
+  "required": ["$schema", "audioman_version", "command"],
+  "properties": {
+    "$schema": {"const": "audioman://schema/preset.v1.json"},
+    "audioman_version": {"type": "string"},
+    "command": {
+      "enum": [
+        "preset save",
+        "preset load",
+        "preset list",
+        "preset delete"
+      ]
+    },
+    "name": {"type": "string"},
+    "path": {"type": "string"},
+    "plugin": {"type": "string"},
+    "parameters": {"type": "object"},
+    "description": {"type": "string"},
+    "created": {"type": "string"},
+    "count": {"type": "integer"},
+    "presets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "plugin",
+          "parameters",
+          "description",
+          "created"
+        ],
+        "properties": {
+          "name": {"type": "string"},
+          "plugin": {"type": "string"},
+          "parameters": {"type": "object"},
+          "description": {"type": "string"},
+          "created": {"type": "string"}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audioman://schema/voiceover.v1.json",
+  "title": "Audioman Voiceover Result",
+  "description": "Output envelope for `audioman vo analyze --json` and `audioman vo process --json`. Both share the common file/segment/loudness statistics; analyze adds `speech_ratio`/`loudness`/segment lists (segment lists only with --segments), process adds output/denoise/leveling fields.",
+  "type": "object",
+  "required": [
+    "$schema",
+    "audioman_version",
+    "command",
+    "input",
+    "sample_rate",
+    "duration_sec",
+    "n_speech_segments",
+    "speech_total_sec",
+    "noise_total_sec"
+  ],
+  "properties": {
+    "$schema": {"const": "audioman://schema/voiceover.v1.json"},
+    "audioman_version": {"type": "string"},
+    "command": {"enum": ["vo analyze", "vo process"]},
+    "input": {"type": "string"},
+    "sample_rate": {"type": "integer"},
+    "duration_sec": {"type": "number"},
+    "n_speech_segments": {"type": "integer"},
+    "speech_total_sec": {"type": "number"},
+    "noise_total_sec": {"type": "number"},
+    "speech_ratio": {"type": "number"},
+    "loudness": {
+      "description": "LoudnessReport.to_dict — null metrics when not finite.",
+      "type": "object",
+      "additionalProperties": true
+    },
+    "speech_segments": {
+      "description": "Only emitted by `vo analyze` with --segments.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["start", "end", "start_sec", "end_sec", "duration_sec", "kind"],
+        "properties": {
+          "start": {"type": "integer"},
+          "end": {"type": "integer"},
+          "start_sec": {"type": "number"},
+          "end_sec": {"type": "number"},
+          "duration_sec": {"type": "number"},
+          "kind": {"type": "string"}
+        }
+      }
+    },
+    "noise_segments": {
+      "description": "Only emitted by `vo analyze` with --segments.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["start", "end", "start_sec", "end_sec", "duration_sec", "kind"],
+        "properties": {
+          "start": {"type": "integer"},
+          "end": {"type": "integer"},
+          "start_sec": {"type": "number"},
+          "end_sec": {"type": "number"},
+          "duration_sec": {"type": "number"},
+          "kind": {"type": "string"}
+        }
+      }
+    },
+    "output": {
+      "description": "Only emitted by `vo process`.",
+      "type": "string"
+    },
+    "denoise_plugin": {
+      "description": "Only emitted by `vo process`; null when denoise was skipped.",
+      "type": ["string", "null"]
+    },
+    "leveling": {
+      "description": "Only emitted by `vo process`. In JSON mode `per_segment` is replaced by `per_segment_count`.",
+      "type": ["object", "null"],
+      "properties": {
+        "target_lufs": {"type": "number"},
+        "max_true_peak_dbtp": {"type": "number"},
+        "noise_attenuation_db": {"type": "number"},
+        "tp_limit_attenuation_db": {"type": "number"},
+        "n_speech_segments": {"type": "integer"},
+        "per_segment_count": {"type": "integer"}
+      },
+      "additionalProperties": true
+    },
+    "measured_in": {
+      "description": "Only emitted by `vo process` (LoudnessReport.to_dict).",
+      "type": "object",
+      "additionalProperties": true
+    },
+    "measured_out": {
+      "description": "Only emitted by `vo process` (LoudnessReport.to_dict).",
+      "type": ["object", "null"],
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

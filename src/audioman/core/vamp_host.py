@@ -1,5 +1,5 @@
 # Created: 2026-03-22
-# Purpose: Vamp 플러그인 호스트 래퍼
+# Purpose: Vamp plugin host wrapper
 # Dependencies: vamp (optional)
 
 from __future__ import annotations
@@ -11,21 +11,21 @@ import numpy as np
 
 
 def _import_vamp():
-    """vamp 패키지 lazy import"""
+    """Lazy import of the vamp package"""
     try:
         import vamp
         return vamp
     except ImportError:
         raise ImportError(
-            "vamp 패키지가 필요합니다. 설치: pip install vamp\n"
-            "Vamp 플러그인도 시스템에 설치되어 있어야 합니다.\n"
+            "The 'vamp' package is required. Install: pip install vamp\n"
+            "Vamp plugins must also be installed on the system.\n"
             "  macOS: brew install vamp-plugin-sdk qm-vamp-plugins"
         )
 
 
 @dataclass
 class VampResult:
-    """Vamp 플러그인 실행 결과"""
+    """Result of running a Vamp plugin"""
     plugin_id: str
     output: str
     shape: str  # "list", "vector", "matrix"
@@ -34,13 +34,13 @@ class VampResult:
 
 
 def list_plugins() -> list[str]:
-    """설치된 Vamp 플러그인 목록"""
+    """List of installed Vamp plugins"""
     vamp = _import_vamp()
     return sorted(vamp.list_plugins())
 
 
 def get_plugin_outputs(plugin_id: str) -> dict:
-    """플러그인의 출력 정보 조회"""
+    """Query a plugin's output information"""
     vamp = _import_vamp()
     return vamp.get_outputs_of(plugin_id)
 
@@ -54,29 +54,29 @@ def run_plugin(
     block_size: int = 0,
     step_size: int = 0,
 ) -> VampResult:
-    """Vamp 플러그인 실행
+    """Run a Vamp plugin
 
     Args:
-        audio: (channels, samples) 또는 (samples,) — mono로 변환됨
-        sample_rate: 샘플 레이트
-        plugin_id: "library:plugin" 또는 "library:plugin:output" 형식
-        output: 출력 이름 (빈 문자열이면 기본 출력)
-        parameters: 플러그인 파라미터 {name: value}
-        block_size: FFT 블록 크기 (0이면 플러그인 기본값)
-        step_size: 홉 크기 (0이면 플러그인 기본값)
+        audio: (channels, samples) or (samples,) — converted to mono
+        sample_rate: sample rate
+        plugin_id: "library:plugin" or "library:plugin:output" form
+        output: output name (empty string → default output)
+        parameters: plugin parameters {name: value}
+        block_size: FFT block size (0 → the plugin's default)
+        step_size: hop size (0 → the plugin's default)
 
     Returns:
         VampResult
     """
     vamp = _import_vamp()
 
-    # mono 변환 (vamp은 1D float32 배열 기대)
+    # mono conversion (vamp expects a 1-D float32 array)
     if audio.ndim == 2:
         mono = audio.mean(axis=0).astype(np.float32)
     else:
         mono = audio.astype(np.float32)
 
-    # plugin_id에서 output 분리 ("lib:plugin:output" 형식)
+    # split output off plugin_id ("lib:plugin:output" form)
     parts = plugin_id.split(":")
     if len(parts) == 3 and not output:
         plugin_id = f"{parts[0]}:{parts[1]}"
@@ -94,7 +94,7 @@ def run_plugin(
 
     result = vamp.collect(mono, sample_rate, plugin_id, **kwargs)
 
-    # 결과 형태 판별
+    # determine the result shape
     if "matrix" in result:
         shape = "matrix"
     elif "vector" in result:
@@ -118,10 +118,10 @@ def result_to_frames_and_values(
     sample_rate: int,
     hop_size: int = 512,
 ) -> tuple[list[int], list[float]]:
-    """vector/list 결과를 (frames, values) 쌍으로 변환
+    """Convert a vector/list result into a (frames, values) pair
 
     Returns:
-        (frame_numbers, values) — SVL time values용
+        (frame_numbers, values) — for SVL time values
     """
     if result.shape == "vector":
         step, values = result.data["vector"]
@@ -144,20 +144,20 @@ def result_to_frames_and_values(
         return frames, values
 
     else:
-        raise ValueError(f"vector/list 변환 불가: shape={result.shape}")
+        raise ValueError(f"cannot convert vector/list result: shape={result.shape}")
 
 
 def result_to_instants(
     result: VampResult,
     sample_rate: int,
 ) -> tuple[list[int], list[str]]:
-    """list 결과를 (frames, labels) 쌍으로 변환
+    """Convert a list result into a (frames, labels) pair
 
     Returns:
-        (frame_numbers, labels) — SVL time instants용
+        (frame_numbers, labels) — for SVL time instants
     """
     if result.shape != "list":
-        raise ValueError(f"time instants 변환은 list 결과만 지원: shape={result.shape}")
+        raise ValueError(f"time instants conversion requires a list result: shape={result.shape}")
 
     events = result.data["list"]
     frames = []
@@ -173,13 +173,13 @@ def result_to_instants(
 def result_to_matrix(
     result: VampResult,
 ) -> tuple[np.ndarray, int]:
-    """matrix 결과를 (matrix, hop_samples) 쌍으로 변환
+    """Convert a matrix result into a (matrix, hop_samples) pair
 
     Returns:
-        (matrix[n_frames, n_bins], hop_size_in_samples) — SVL dense 3D용
+        (matrix[n_frames, n_bins], hop_size_in_samples) — for SVL dense 3D
     """
     if result.shape != "matrix":
-        raise ValueError(f"matrix 변환 불가: shape={result.shape}")
+        raise ValueError(f"cannot convert matrix result: shape={result.shape}")
 
     step, matrix = result.data["matrix"]
     hop_samples = int(round(float(step) * result.sample_rate))

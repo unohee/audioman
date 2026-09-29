@@ -42,7 +42,7 @@ def slider_to_db(value: int) -> float:
 
 
 class TrackStrip(QWidget):
-    """단일 트랙: 이름 라벨 + vertical fader + dB readout + M/S 버튼 + RMS meter."""
+    """A single track: name label + vertical fader + dB readout + M/S buttons + RMS meter."""
 
     def __init__(self, player: MultitrackPlayer, track_index: int, parent=None):
         super().__init__(parent)
@@ -54,7 +54,7 @@ class TrackStrip(QWidget):
         layout.setContentsMargins(2, 4, 2, 4)
         layout.setSpacing(3)
 
-        # 트랙 이름 (긴 이름 회전 또는 잘라쓰기)
+        # Track name (long names are truncated)
         name = self.track.name
         if len(name) > 14:
             name = name[:13] + "…"
@@ -92,7 +92,7 @@ class TrackStrip(QWidget):
         ms_row.addStretch()
         layout.addLayout(ms_row)
 
-        # RMS meter (수평 진행바, 끝에서 위로 올라가는 모양 대신 옆으로)
+        # RMS meter (vertical bar rather than a horizontal one that grows upward)
         self.meter = QProgressBar()
         self.meter.setOrientation(Qt.Orientation.Vertical)
         self.meter.setRange(0, 100)
@@ -113,7 +113,7 @@ class TrackStrip(QWidget):
         self.fader.setMinimumHeight(180)
         self.fader.setFixedWidth(24)
         self.fader.valueChanged.connect(self._on_fader)
-        # 우클릭으로 0dB 리셋
+        # Right-click resets to 0dB
         self.fader.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.fader.customContextMenuRequested.connect(lambda *_: self.fader.setValue(db_to_slider(0.0)))
 
@@ -155,7 +155,7 @@ class TrackStrip(QWidget):
         self.solo_btn.setChecked(False)
 
     def update_meter(self):
-        # 트랙 RMS를 0-100으로 변환 (dB 스케일, -60~0 → 0~100)
+        # Map track RMS to 0-100 (dB scale, -60..0 → 0..100)
         rms = self.track.rms
         if rms <= 1e-6:
             self.meter.setValue(0)
@@ -164,7 +164,7 @@ class TrackStrip(QWidget):
         # -60..0 → 0..100
         pct = max(0, min(100, int((db + 60) * 100 / 60)))
         self.meter.setValue(pct)
-        # peak 빨간색 처리
+        # Red styling on peak
         peak = self.track.peak
         if peak >= 1.0:
             self.meter.setStyleSheet(
@@ -183,7 +183,7 @@ class TrackStrip(QWidget):
             )
 
     def set_gain_external(self, db: float):
-        """외부에서 (Load JSON 등) gain 변경. valueChanged signal로 player에 전파됨."""
+        """Change the gain from outside (Load JSON, etc). Propagates to the player via the valueChanged signal."""
         self.fader.setValue(db_to_slider(db))
 
 
@@ -339,7 +339,7 @@ class FaderTestWindow(QMainWindow):
         self.player.seek(pos_sec)
 
     def _tick(self):
-        # 모든 strip의 meter 업데이트
+        # Update the meter of every strip
         for s in self.strips:
             s.update_meter()
         # Master meter
@@ -378,7 +378,7 @@ class FaderTestWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _save_gains(self):
-        # 기본 저장 위치: source_dir 옆에 .audioman/fader_test/<timestamp>.json
+        # Default save location: .audioman/fader_test/<timestamp>.json next to source_dir
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         if self.source_dir:
             default_dir = self.source_dir.parent / ".audioman" / "fader_test"
@@ -420,9 +420,9 @@ class FaderTestWindow(QMainWindow):
             return
         gains = data.get("gains", data)
         if not isinstance(gains, dict):
-            QMessageBox.warning(self, "Load failed", "JSON에 'gains' dict가 없습니다.")
+            QMessageBox.warning(self, "Load failed", "JSON has no 'gains' dict.")
             return
-        # strip의 fader 값을 변경 (signal로 player에도 전파됨)
+        # Change the strip fader values (the signal propagates them to the player too)
         matched = 0
         for s in self.strips:
             if s.track.name in gains:

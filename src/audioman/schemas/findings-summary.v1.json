@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audioman://schema/findings-summary.v1.json",
+  "title": "Audioman Findings Summary",
+  "description": "Aggregate counts for a finding[] array. Shared by every command that emits findings (observe, stream triage, analyze).",
+  "type": "object",
+  "required": ["total", "by_severity", "by_category"],
+  "properties": {
+    "total": {"type": "integer"},
+    "by_severity": {
+      "type": "object",
+      "required": ["info", "warn", "critical"],
+      "properties": {
+        "info": {"type": "integer"},
+        "warn": {"type": "integer"},
+        "critical": {"type": "integer"}
+      }
+    },
+    "by_category": {
+      "type": "object",
+      "required": ["signal", "spectral", "plugin", "container"],
+      "properties": {
+        "signal": {"type": "integer"},
+        "spectral": {"type": "integer"},
+        "plugin": {"type": "integer"},
+        "container": {"type": "integer"}
+      }
+    }
+  }
+}

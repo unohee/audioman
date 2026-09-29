@@ -7,8 +7,10 @@ import argparse
 from pathlib import Path
 
 from audioman.cli.output import output_console, print_error, print_json, print_table, print_warning
+from audioman.cli.output import print_markup
 from audioman.core.aesthetic import DEFAULT_ISSUES, screen_file
 from audioman.core.batch import collect_audio_files
+from audioman.core.findings import json_envelope, schema_uri
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -45,16 +47,19 @@ def run(args: argparse.Namespace) -> None:
     if input_path.is_dir():
         files = collect_audio_files(input_path, recursive=args.recursive)
         reports = [_screen_one(path, issues, args.backend) for path in files]
-        out = {"command": "screen", "input": str(input_path), "files": reports}
         if args.json:
-            print_json(out)
+            print_json(json_envelope(
+                "screen",
+                {"input": str(input_path), "files": reports},
+                schema=schema_uri("screen"),
+            ))
             return
         _print_batch(reports)
         return
 
     report = _screen_one(input_path, issues, args.backend)
     if args.json:
-        print_json({"command": "screen", **report})
+        print_json(json_envelope("screen", report, schema=schema_uri("screen")))
         return
     _print_single(report)
 
@@ -68,11 +73,13 @@ def _screen_one(path: Path, issues: list[str], backend: str) -> dict:
         print_error(f"{e}. Install essentia or use --backend fallback.")
     except Exception as e:
         print_error(str(e))
+    # Unreachable in production: print_error exits. The explicit raise keeps a
+    # future edit that stops exiting from returning None into the report path.
     raise AssertionError("unreachable")
 
 
 def _print_single(report: dict) -> None:
-    output_console.print(f"\n[bold]{report['file']}[/bold]")
+    print_markup(f"\n[bold]{report['file']}[/bold]")
     output_console.print(
         f"  Duration: {report['duration']}s | SR: {report['sample_rate']}Hz | CH: {report['channels']}"
     )

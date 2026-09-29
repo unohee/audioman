@@ -1,13 +1,15 @@
 # Created: 2026-03-22
-# Purpose: audioman visualize 서브커맨드 — Vamp 플러그인 + 내장 분석 → SVL export
+# Purpose: audioman visualize subcommand - Vamp plugin + built-in analysis -> SVL export
 # Dependencies: core.svl, core.vamp_host, core.analysis
 
 import argparse
+import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
 
-from audioman.cli.output import console, print_error, print_success, print_info, output_console
+from audioman.cli.output import print_error, print_info, print_markup, print_success, print_warning, output_console
 from audioman.core.audio_file import read_audio
 from audioman.core.svl import (
     write_time_instants,
@@ -17,14 +19,17 @@ from audioman.core.svl import (
 )
 
 
-# 내장 분석 타입과 설명
+# Guidance when no launcher is available (print this instead of a traceback)
+_NO_SV_LAUNCHER = "Sonic Visualiser was not found. Please open the file manually."
+
+# Built-in analysis types and their descriptions
 BUILTIN_TYPES = {
-    "spectral-centroid": "스펙트럼 무게중심 주파수 (Hz)",
-    "spectral-entropy": "스펙트럼 엔트로피 (bits)",
-    "rms": "RMS 에너지",
-    "peak": "피크 진폭",
-    "zcr": "제로 크로싱 레이트",
-    "spectrogram": "STFT 파워 스펙트로그램",
+    "spectral-centroid": "Spectral centroid frequency (Hz)",
+    "spectral-entropy": "Spectral entropy (bits)",
+    "rms": "RMS energy",
+    "peak": "Peak amplitude",
+    "zcr": "Zero crossing rate",
+    "spectrogram": "STFT power spectrogram",
 }
 
 
@@ -82,14 +87,14 @@ def run(args: argparse.Namespace) -> None:
 
     input_path = Path(args.input)
     if not input_path.exists():
-        print_error(f"파일을 찾을 수 없습니다: {input_path}")
+        print_error(f"File not found: {input_path}")
 
     if args.plugin:
         _run_vamp(args, input_path)
     elif args.builtin:
         _run_builtin(args, input_path)
     else:
-        # 기본: spectrogram
+        # Default: spectrogram
         args.builtin = "spectrogram"
         _run_builtin(args, input_path)
 
@@ -99,9 +104,9 @@ def _list_plugins() -> None:
 
     plugins = list_plugins()
     if not plugins:
-        print_error("설치된 Vamp 플러그인이 없습니다.")
+        print_error("No Vamp plugins installed.")
 
-    output_console.print(f"\n[bold]설치된 Vamp 플러그인 ({len(plugins)}개)[/bold]\n")
+    print_markup(f"\n[bold]Installed Vamp plugins ({len(plugins)})[/bold]\n")
     for p in plugins:
         output_console.print(f"  {p}")
     output_console.print()
@@ -111,14 +116,14 @@ def _plugin_info(plugin_id: str) -> None:
     from audioman.core.vamp_host import get_plugin_outputs
 
     outputs = get_plugin_outputs(plugin_id)
-    output_console.print(f"\n[bold]{plugin_id}[/bold]\n")
+    print_markup(f"\n[bold]{plugin_id}[/bold]\n")
     for name, info in outputs.items():
         output_console.print(f"  {name}: {info}")
     output_console.print()
 
 
 def _resolve_output_path(args: argparse.Namespace, input_path: Path, suffix: str) -> Path:
-    """출력 경로 결정"""
+    """Resolve the output path."""
     if args.output:
         return Path(args.output)
     stem = input_path.stem
@@ -133,8 +138,13 @@ def _run_vamp(args: argparse.Namespace, input_path: Path) -> None:
         result_to_matrix,
     )
 
-    audio, sr = read_audio(input_path)
-    console.print(f"[dim]Vamp 플러그인 실행: {args.plugin}[/dim]")
+    try:
+        audio, sr = read_audio(input_path)
+    except (OSError, RuntimeError, ValueError) as e:
+        # `soundfile.LibsndfileError` derives from RuntimeError, not OSError.
+        print_error(str(e))
+        return
+    print_info(f"Running Vamp plugin: {args.plugin}")
 
     result = run_plugin(
         audio, sr, args.plugin,
@@ -143,9 +153,9 @@ def _run_vamp(args: argparse.Namespace, input_path: Path) -> None:
         block_size=args.frame_size,
     )
 
-    console.print(f"[dim]결과 형태: {result.shape}[/dim]")
+    print_info(f"Result shape: {result.shape}")
 
-    # 플러그인 이름에서 suffix 생성
+    # Build a suffix from the plugin name
     plugin_suffix = args.plugin.replace(":", "_").replace("-", "")
 
     if result.shape == "matrix":
@@ -161,7 +171,7 @@ def _run_vamp(args: argparse.Namespace, input_path: Path) -> None:
     elif result.shape == "vector":
         frames, values = result_to_frames_and_values(result, sr, hop_size=args.hop)
         out_path = _resolve_output_path(args, input_path, plugin_suffix)
-        # 단위 추정
+        # Guess the units
         units = _guess_units(args.plugin)
         write_time_values(
             out_path, frames, values,
@@ -171,7 +181,7 @@ def _run_vamp(args: argparse.Namespace, input_path: Path) -> None:
 
     elif result.shape == "list":
         events = result.data["list"]
-        # duration 필드가 있으면 notes, 없으면 instants
+        # Use notes when a duration field is present, otherwise instants
         has_duration = any(
             ev.get("duration") and float(ev["duration"]) > 0
             for ev in events[:10]
@@ -211,9 +221,9 @@ def _run_vamp(args: argparse.Namespace, input_path: Path) -> None:
                 sample_rate=sr, resolution=args.hop,
             )
     else:
-        print_error(f"알 수 없는 결과 형태: {result.shape}")
+        print_error(f"Unknown result shape: {result.shape}")
 
-    print_success(f"SVL 생성: {out_path}")
+    print_success(f"SVL written: {out_path}")
 
     if args.open:
         _open_in_sv(out_path)
@@ -222,17 +232,22 @@ def _run_vamp(args: argparse.Namespace, input_path: Path) -> None:
 def _run_builtin(args: argparse.Namespace, input_path: Path) -> None:
     from audioman.core.analysis import compute_frame_metrics
 
-    audio, sr = read_audio(input_path)
+    try:
+        audio, sr = read_audio(input_path)
+    except (OSError, RuntimeError, ValueError) as e:
+        # `soundfile.LibsndfileError` derives from RuntimeError, not OSError.
+        print_error(str(e))
+        return
     builtin = args.builtin
     frame_size = args.frame_size
     hop = args.hop
 
-    console.print(f"[dim]내장 분석: {builtin} (frame={frame_size}, hop={hop})[/dim]")
+    print_info(f"Built-in analysis: {builtin} (frame={frame_size}, hop={hop})")
 
     if builtin == "spectrogram":
         if audio.shape[-1] < frame_size:
             print_error(
-                f"입력 오디오가 spectrogram frame-size보다 짧습니다: "
+                f"Input audio is shorter than the spectrogram frame size: "
                 f"samples={audio.shape[-1]}, frame-size={frame_size}"
             )
         matrix = _compute_spectrogram(audio, sr, frame_size, hop)
@@ -247,7 +262,7 @@ def _run_builtin(args: argparse.Namespace, input_path: Path) -> None:
                 fmax=args.png_fmax,
                 title=input_path.name,
             )
-            print_success(f"PNG 생성: {png_path}")
+            print_success(f"PNG written: {png_path}")
 
         if args.png_only:
             if args.open:
@@ -256,7 +271,7 @@ def _run_builtin(args: argparse.Namespace, input_path: Path) -> None:
 
         out_path = _resolve_output_path(args, input_path, "spectrogram")
 
-        # bin 이름 생성 (주파수 범위)
+        # Build bin names from the frequency range
         n_bins = matrix.shape[1]
         freq_per_bin = (sr / 2) / n_bins
         bin_names = [
@@ -273,7 +288,7 @@ def _run_builtin(args: argparse.Namespace, input_path: Path) -> None:
         )
 
     else:
-        # 프레임 단위 메트릭 → time values
+        # Per-frame metrics -> time values
         metrics = compute_frame_metrics(audio, sr, frame_size=frame_size, hop_size=hop)
 
         metric_map = {
@@ -295,7 +310,7 @@ def _run_builtin(args: argparse.Namespace, input_path: Path) -> None:
             sample_rate=sr, resolution=hop,
         )
 
-    print_success(f"SVL 생성: {out_path}")
+    print_success(f"SVL written: {out_path}")
 
     if args.open:
         _open_in_sv(out_path)
@@ -307,15 +322,15 @@ def _compute_spectrogram(
     frame_size: int = 2048,
     hop_size: int = 512,
 ) -> np.ndarray:
-    """STFT 파워 스펙트로그램 (dB 스케일)
+    """STFT power spectrogram in dB scale.
 
     Returns:
-        (n_frames, n_bins) 배열, dB 스케일
+        (n_frames, n_bins) array in dB scale.
     """
     if frame_size <= 0 or hop_size <= 0:
         raise ValueError("frame_size and hop_size must be positive")
 
-    # mono 변환
+    # Convert to mono
     if audio.ndim == 2:
         mono = audio.mean(axis=0)
     else:
@@ -332,7 +347,7 @@ def _compute_spectrogram(
     for start in range(0, n_samples - frame_size + 1, hop_size):
         frame = mono[start:start + frame_size]
         spectrum = np.abs(np.fft.rfft(frame * window))
-        # 파워 → dB (Sonic Visualiser 호환)
+        # Power -> dB (Sonic Visualiser compatible)
         power = spectrum ** 2
         power_db = 10 * np.log10(np.maximum(power, 1e-10))
         frames_list.append(power_db)
@@ -353,13 +368,13 @@ def _write_spectrogram_png(
     fmax: float | None = None,
     title: str = "",
 ) -> None:
-    """matplotlib 기반 PNG 스펙트로그램. matrix shape: (n_frames, n_bins) in dB."""
+    """Write a matplotlib PNG spectrogram; matrix shape is (n_frames, n_bins) in dB."""
     try:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
     except ImportError:
-        print_error("matplotlib이 필요합니다: uv add matplotlib")
+        print_error("matplotlib is required: uv add matplotlib")
 
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -395,7 +410,7 @@ def _write_spectrogram_png(
 
 
 def _guess_units(plugin_id: str) -> str:
-    """플러그인 이름에서 단위 추정"""
+    """Guess the units from the plugin name."""
     pid = plugin_id.lower()
     if "centroid" in pid or "pitch" in pid or "frequency" in pid:
         return "Hz"
@@ -406,11 +421,31 @@ def _guess_units(plugin_id: str) -> str:
     return ""
 
 
+def _sv_launcher(path: Path) -> list[str] | None:
+    """Return Sonic Visualiser launcher arguments for the current platform.
+
+    macOS uses `open -a`, Linux uses `xdg-open`. Other platforms have no way to
+    open the file, so they return None (this CLI does not support a Windows
+    launcher).
+    """
+    if sys.platform == "darwin":
+        return ["open", "-a", "Sonic Visualiser", str(path)]
+    if sys.platform.startswith("linux"):
+        return ["xdg-open", str(path)]
+    return None
+
+
 def _open_in_sv(path: Path) -> None:
-    """Sonic Visualiser로 SVL 파일 열기 (macOS)"""
-    import subprocess
+    """Open an SVL file in Sonic Visualiser (platform-specific launcher)."""
+    command = _sv_launcher(path)
+    if command is None:
+        print_warning(_NO_SV_LAUNCHER)
+        return
+
     try:
-        subprocess.Popen(["open", "-a", "Sonic Visualiser", str(path)])
-        console.print("[dim]Sonic Visualiser로 열기 시도...[/dim]")
-    except FileNotFoundError:
-        console.print("[yellow]Sonic Visualiser를 찾을 수 없습니다. 수동으로 열어주세요.[/yellow]")
+        subprocess.Popen(command)
+    except OSError:
+        # The launcher is missing or cannot be executed (includes FileNotFoundError)
+        print_warning(_NO_SV_LAUNCHER)
+    else:
+        print_info("Opening in Sonic Visualiser...")
