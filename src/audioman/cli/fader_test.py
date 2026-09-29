@@ -59,8 +59,21 @@ def run(args: argparse.Namespace) -> None:
             print_error("PyQt6 not installed — run: uv add PyQt6")
         return
 
+    # The audio backend needs the PortAudio *system* library, which is a separate OS
+    # package from the `sounddevice` Python module. Without it `import sounddevice`
+    # raises OSError — an uncaught traceback for a missing host dependency, the same
+    # class of failure as the libEGL case above. `_fader_test_ui` imports the player
+    # itself, so this must be resolved before that module is imported.
+    try:
+        from audioman.core.multitrack_player import MultitrackPlayer
+    except OSError as exc:
+        print_error(
+            f"The audio backend is unavailable: {exc} "
+            f"(Debian/Ubuntu: sudo apt-get install libportaudio2 portaudio19-dev)"
+        )
+        return
+
     from audioman.cli._fader_test_ui import FaderTestWindow
-    from audioman.core.multitrack_player import MultitrackPlayer
 
     app = QApplication.instance() or QApplication(sys.argv)
 

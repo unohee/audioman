@@ -117,6 +117,61 @@ class TestNonGuiPaths:
         assert result.code == 1
         assert "Not a directory" in result.stderr
 
+    @needs_qt_native
+    def test_missing_portaudio_is_reported_not_raised(self, run_cli, tmp_path, monkeypatch):
+        """The audio backend needs the PortAudio system library.
+
+        `import sounddevice` raises OSError when it is absent, which is an OS-level
+        gap rather than a Python dependency problem. It used to surface as an
+        uncaught traceback; it must now name the library and the package to install.
+        """
+        import builtins
+
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "sounddevice" or name.startswith("sounddevice."):
+                raise OSError("PortAudio library not found")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.delitem(sys.modules, "audioman.core.multitrack_player", raising=False)
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+
+        result = run_cli(["fader-test", str(tmp_path)])
+
+        assert result.code == 1
+        assert "PortAudio" in result.stderr
+        assert "libportaudio2" in result.stderr
+        assert "Traceback" not in result.stderr
+
+    @needs_qt_native
+    def test_missing_portaudio_returns_before_launching_a_window(
+        self, run_cli, tmp_path, monkeypatch, silent_error,
+    ):
+        """Neutralise print_error's exit, so the explicit `return` is what stops it.
+
+        Without the guard the command would carry on to build a QApplication and a
+        player for a backend it just reported as unavailable.
+        """
+        import builtins
+
+        seen = silent_error("audioman.cli.fader_test")
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "sounddevice" or name.startswith("sounddevice."):
+                raise OSError("PortAudio library not found")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.delitem(sys.modules, "audioman.core.multitrack_player", raising=False)
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+
+        run_cli(["fader-test", str(tmp_path)])
+
+        assert seen and "PortAudio" in seen[0]
+        # Falling through would print this after the player is constructed.
+        assert "loading stems" not in "".join(seen)
+
     def test_missing_directory_returns_before_importing_qt(self, run_cli, tmp_path, silent_error):
         """The guard must return explicitly, not lean on print_error's exit.
 
