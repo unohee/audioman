@@ -52,28 +52,36 @@ def _name_to_short_name(name: str) -> str:
 
 
 def _parse_vst3_info(vst3_path: Path) -> Optional[PluginMeta]:
-    """VST3 번들에서 Info.plist 파싱하여 PluginMeta 생성"""
+    """Parse available VST3 bundle metadata, falling back to its directory name.
+
+    macOS bundles provide Contents/Info.plist. Linux and Windows bundles do
+    not require that file, so a missing or unreadable plist must not hide them
+    from discovery; module-binary name extraction is intentionally unnecessary.
+    """
     plist_path = vst3_path / "Contents" / "Info.plist"
-    if not plist_path.exists():
-        return None
+    plist: dict = {}
+    if plist_path.exists():
+        try:
+            with open(plist_path, "rb") as f:
+                loaded = plistlib.load(f)
+            if isinstance(loaded, dict):
+                plist = loaded
+            else:
+                logger.warning(f"Info.plist 형식이 올바르지 않음: {plist_path}")
+        except Exception:
+            logger.warning(f"Info.plist 파싱 실패: {plist_path}")
 
-    try:
-        with open(plist_path, "rb") as f:
-            plist = plistlib.load(f)
-    except Exception:
-        logger.warning(f"Info.plist 파싱 실패: {plist_path}")
-        return None
-
-    name = plist.get("CFBundleName", vst3_path.stem)
+    name = plist.get("CFBundleName") or vst3_path.stem
     short_name = _name_to_short_name(name)
     aliases = ALIASES.get(short_name, [])
+    bundle_id = plist.get("CFBundleIdentifier", "")
 
     return PluginMeta(
         name=name,
         short_name=short_name,
         path=str(vst3_path),
         format="vst3",
-        vendor=plist.get("CFBundleIdentifier", "").split(".")[1] if "." in plist.get("CFBundleIdentifier", "") else "",
+        vendor=bundle_id.split(".")[1] if "." in bundle_id else "",
         version=plist.get("CFBundleShortVersionString", ""),
         aliases=aliases,
     )
