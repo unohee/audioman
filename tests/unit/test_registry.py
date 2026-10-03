@@ -79,19 +79,56 @@ class TestParseVst3Info:
         assert meta.version == "10.4.2"
         assert "declick" in meta.aliases
 
-    def test_missing_plist(self, tmp_path):
-        """Info.plist 없으면 None"""
+    def test_linux_bundle_without_plist_uses_bundle_name(self, tmp_path):
+        """Linux bundle layout does not require the macOS Info.plist."""
+        vst3_dir = tmp_path / "LinuxPlugin.vst3"
+        module_dir = vst3_dir / "Contents" / "x86_64-linux"
+        module_dir.mkdir(parents=True)
+        (module_dir / "LinuxPlugin.so").write_bytes(b"fixture module")
+
+        meta = _parse_vst3_info(vst3_dir)
+        assert meta is not None
+        assert meta.name == "LinuxPlugin"
+        assert meta.short_name == "linuxplugin"
+        assert meta.format == "vst3"
+
+    def test_missing_metadata_uses_bundle_name(self, tmp_path):
+        """A bundle with no metadata remains registrable."""
         vst3_dir = tmp_path / "NoInfo.vst3"
         vst3_dir.mkdir()
-        assert _parse_vst3_info(vst3_dir) is None
+        meta = _parse_vst3_info(vst3_dir)
+        assert meta is not None
+        assert meta.name == "NoInfo"
+        assert meta.short_name == "noinfo"
 
-    def test_invalid_plist(self, tmp_path):
-        """손상된 plist → None"""
+    def test_scan_registers_bundle_without_plist(self, tmp_path):
+        """Discovery registers non-macOS bundles instead of dropping them."""
+        search_dir = tmp_path / "vst3"
+        bundle = search_dir / "LinuxOnly.vst3"
+        (bundle / "Contents" / "x86_64-linux").mkdir(parents=True)
+        (bundle / "Contents" / "x86_64-linux" / "module.so").write_bytes(b"fixture")
+        settings = MagicMock()
+        settings.cache_dir = str(tmp_path / "cache")
+        settings.extra_vst3_paths = []
+        settings.extra_au_paths = []
+        registry = PluginRegistry()
+        with patch("audioman.core.registry.get_settings", return_value=settings), \
+             patch("audioman.core.registry.get_vst3_search_paths", return_value=[search_dir]), \
+             patch("audioman.core.registry.get_au_search_paths", return_value=[]):
+            registered = registry.scan(refresh=True)
+        assert len(registered) == 1
+        assert registered[0].name == "LinuxOnly"
+        assert registry.list(fmt="vst3")[0].short_name == "linuxonly"
+
+    def test_invalid_plist_falls_back_to_bundle_name(self, tmp_path):
+        """A malformed plist does not hide an otherwise valid bundle."""
         vst3_dir = tmp_path / "Bad.vst3"
         contents_dir = vst3_dir / "Contents"
         contents_dir.mkdir(parents=True)
         (contents_dir / "Info.plist").write_text("not a plist")
-        assert _parse_vst3_info(vst3_dir) is None
+        meta = _parse_vst3_info(vst3_dir)
+        assert meta is not None
+        assert meta.name == "Bad"
 
     def test_missing_bundle_name_uses_stem(self, tmp_path):
         """CFBundleName 없으면 폴더명 사용"""
