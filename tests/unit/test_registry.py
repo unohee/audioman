@@ -107,6 +107,53 @@ class TestParseVst3Info:
         assert meta is not None
         assert meta.name == "FallbackName"
 
+    def test_linux_bundle_without_plist(self, tmp_path):
+        """Linux 레이아웃(Info.plist 없음) → 번들 이름으로 PluginMeta"""
+        vst3_dir = tmp_path / "de-artifact.vst3"
+        arch_dir = vst3_dir / "Contents" / "x86_64-linux"
+        arch_dir.mkdir(parents=True)
+        (arch_dir / "de-artifact.so").write_bytes(b"\x7fELF")
+
+        meta = _parse_vst3_info(vst3_dir)
+        assert meta is not None
+        assert meta.name == "de-artifact"
+        assert meta.short_name == "de-artifact"
+        assert meta.format == "vst3"
+        assert meta.path == str(vst3_dir)
+        assert meta.vendor == ""
+        assert meta.version == ""
+
+    def test_bundle_without_plist_reads_moduleinfo(self, tmp_path):
+        """moduleinfo.json 이 있으면 vendor/version 사용"""
+        vst3_dir = tmp_path / "Some Plugin.vst3"
+        (vst3_dir / "Contents" / "x86_64-win").mkdir(parents=True)
+        resources = vst3_dir / "Contents" / "Resources"
+        resources.mkdir()
+        (resources / "moduleinfo.json").write_text(json.dumps({
+            "Name": "Some Plugin",
+            "Version": "1.2.3",
+            "Factory Info": {"Vendor": "Acme"},
+        }))
+
+        meta = _parse_vst3_info(vst3_dir)
+        assert meta is not None
+        assert meta.name == "Some Plugin"
+        assert meta.short_name == "some-plugin"
+        assert meta.vendor == "Acme"
+        assert meta.version == "1.2.3"
+
+    def test_bundle_with_invalid_moduleinfo(self, tmp_path):
+        """손상된 moduleinfo.json → vendor/version 빈 값, 등록은 유지"""
+        vst3_dir = tmp_path / "Broken.vst3"
+        resources = vst3_dir / "Contents" / "Resources"
+        resources.mkdir(parents=True)
+        (resources / "moduleinfo.json").write_text("{not json")
+
+        meta = _parse_vst3_info(vst3_dir)
+        assert meta is not None
+        assert meta.vendor == ""
+        assert meta.version == ""
+
 
 class TestParseAuInfo:
     """AU Info.plist 파싱"""

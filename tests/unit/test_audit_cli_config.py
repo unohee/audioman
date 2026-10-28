@@ -75,3 +75,29 @@ def test_toml_settings_source_uses_stdlib_compatible_api(tmp_path):
     settings = TestSettings()
     assert settings.default_sample_rate == 48000
     assert settings.extra_au_paths == ["/tmp/au"]
+
+
+def test_scan_registers_linux_vst3_bundle_without_info_plist(tmp_path, monkeypatch):
+    vst3_dir = tmp_path / "vst3"
+    arch_dir = vst3_dir / "de-artifact.vst3" / "Contents" / "x86_64-linux"
+    arch_dir.mkdir(parents=True)
+    (arch_dir / "de-artifact.so").write_bytes(b"\x7fELF")
+    # Windows layout: the inner binary is also named *.vst3 and must not register twice
+    win_dir = vst3_dir / "Win Plugin.vst3" / "Contents" / "x86_64-win"
+    win_dir.mkdir(parents=True)
+    (win_dir / "Win Plugin.vst3").write_bytes(b"MZ")
+
+    configured = AudiomanSettings(cache_dir=str(tmp_path / "cache"))
+    monkeypatch.setattr(settings_module, "_settings", configured)
+    monkeypatch.setattr("audioman.core.registry.get_vst3_search_paths", lambda: [])
+    monkeypatch.setattr("audioman.core.registry.get_au_search_paths", lambda: [])
+
+    registry = PluginRegistry()
+    plugins = registry.scan(extra_paths=[str(vst3_dir)], refresh=True)
+
+    assert sorted(p.short_name for p in plugins) == ["de-artifact", "win-plugin"]
+    meta = registry.get("de-artifact")
+    assert meta is not None
+    assert meta.format == "vst3"
+    assert meta.path == str(vst3_dir / "de-artifact.vst3")
+    assert registry.get("win-plugin").path == str(vst3_dir / "Win Plugin.vst3")

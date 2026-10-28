@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **`audioman scan` on Linux/Windows**: VST3 bundles without `Contents/Info.plist` (e.g. `<name>.vst3/Contents/x86_64-linux/<name>.so`) were silently skipped (`Scanned 0 plugins`). They now register under the bundle name, with vendor/version from `Contents/Resources/moduleinfo.json` when present. The inner `Contents/x86_64-win/<name>.vst3` binary is not registered a second time.
+
 ### Added — LLM-native Phase A
 - **--plain 글로벌 출력 모드**: rich color/markup/i18n을 모두 끄고 영어 ASCII 출력. `AUDIOMAN_PLAIN=1` 환경변수로도 활성화. `--help`/`print_table`이 grep/awk 친화 텍스트로 fallback. LLM agent 후기 #1 직접 대응.
 - **Finding 스키마** (`audioman.core.findings`): signal / spectral / plugin / container 4개 카테고리 통합 결함 표현. `code` (안정 enum), `severity` (info/warn/critical), `where` (file/sample/sec/freq), `measurement`, `hint`, `fix_hint` 필드. JSONSchema 발행 (`audioman://schema/finding.v1.json`).
