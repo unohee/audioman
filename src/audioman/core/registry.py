@@ -51,11 +51,63 @@ def _name_to_short_name(name: str) -> str:
     return short
 
 
+def _parse_vst3_moduleinfo(vst3_path: Path) -> tuple[str, str]:
+    """Read (vendor, version) from Contents/Resources/moduleinfo.json, if any.
+
+    moduleinfo.json is the cross-platform VST3 metadata file (SDK 3.7.5+).
+    Missing or unparseable files yield empty strings.
+    """
+    info_path = vst3_path / "Contents" / "Resources" / "moduleinfo.json"
+    if not info_path.is_file():
+        return "", ""
+    try:
+        info = json.loads(info_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        logger.warning(f"moduleinfo.json 파싱 실패: {info_path}")
+        return "", ""
+    if not isinstance(info, dict):
+        return "", ""
+    factory = info.get("Factory Info")
+    vendor = factory.get("Vendor", "") if isinstance(factory, dict) else ""
+    version = info.get("Version", "")
+    return (
+        vendor if isinstance(vendor, str) else "",
+        version if isinstance(version, str) else "",
+    )
+
+
+def _vst3_meta_from_bundle(vst3_path: Path) -> Optional[PluginMeta]:
+    """PluginMeta for a VST3 without Info.plist (Linux/Windows bundle layout).
+
+    Linux: <name>.vst3/Contents/x86_64-linux/<name>.so
+    Windows: <name>.vst3/Contents/x86_64-win/<name>.vst3 (or a legacy single file)
+    """
+    if vst3_path.is_dir() and not (vst3_path / "Contents").is_dir():
+        return None
+
+    name = vst3_path.stem
+    short_name = _name_to_short_name(name)
+    vendor, version = _parse_vst3_moduleinfo(vst3_path)
+
+    return PluginMeta(
+        name=name,
+        short_name=short_name,
+        path=str(vst3_path),
+        format="vst3",
+        vendor=vendor,
+        version=version,
+        aliases=ALIASES.get(short_name, []),
+    )
+
+
 def _parse_vst3_info(vst3_path: Path) -> Optional[PluginMeta]:
-    """VST3 번들에서 Info.plist 파싱하여 PluginMeta 생성"""
+    """VST3 번들에서 Info.plist 파싱하여 PluginMeta 생성
+
+    Info.plist가 없으면 (Linux/Windows 번들) 번들 이름으로 대체한다.
+    """
     plist_path = vst3_path / "Contents" / "Info.plist"
     if not plist_path.exists():
-        return None
+        return _vst3_meta_from_bundle(vst3_path)
 
     try:
         with open(plist_path, "rb") as f:
@@ -141,6 +193,9 @@ class PluginRegistry:
             if not search_dir.exists():
                 continue
             for vst3 in sorted(search_dir.glob("**/*.vst3")):
+                # Windows bundles hold the binary as Contents/x86_64-win/<name>.vst3
+                if any(parent.suffix == ".vst3" for parent in vst3.relative_to(search_dir).parents):
+                    continue
                 meta = _parse_vst3_info(vst3)
                 if meta:
                     self._register(meta)
