@@ -140,6 +140,25 @@ def digest_diff(p: dict) -> str:
     return _clip(text)
 
 
+_TEXTURE_LEAD = ("spectral_centroid", "spectral_rolloff", "spectral_flatness", "hf_ratio", "sharpness",
+                 "crest_factor", "onset_density", "stereo_width", "lr_correlation")
+
+
+def digest_texture(p: dict) -> str:
+    """Key texture descriptors with their repeat floors, for describe()."""
+    d = p.get("descriptors") or {}
+    parts = []
+    for name in _TEXTURE_LEAD:
+        entry = d.get(name) or {}
+        if entry.get("value") is None:
+            continue
+        floor = entry.get("floor")
+        parts.append(f"{name} {entry['value']:g} {entry.get('unit', '')}".rstrip()
+                     + (f" (+/-{floor:g})" if floor else ""))
+    head = f"{_format(p)}, {len(p.get('segments') or [])} segments."
+    return _clip(f"{head} {'; '.join(parts)}." if parts else f"{head} No defined descriptors (silent input).")
+
+
 DIGESTS: dict[str, Callable[[dict], str]] = {
     "analyze": digest_analyze,
     "observe": digest_observe,
