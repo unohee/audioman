@@ -132,6 +132,22 @@ profile. Every descriptor carries a **repeat floor**: the amount it moves when t
 analysis grid is shifted by half a hop. Differences below the floor are noise of the
 measurement, not of the audio.
 
+## MCP Server (for LLM agents)
+
+```bash
+claude mcp add audioman -- audioman mcp        # Claude Code
+```
+
+or, in any MCP client configuration:
+
+```json
+{"mcpServers": {"audioman": {"command": "audioman", "args": ["mcp"]}}}
+```
+
+Tools: `analyze`, `describe`, `diff`, `uat_compare`. Each returns a digest, a file
+reference to the complete JSON result, and a summary bounded by `detail`
+(`summary` <= 4 KiB by default).
+
 ## Comparing Two Renders (`diff`)
 
 ```bash

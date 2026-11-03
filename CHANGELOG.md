@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added — MCP server (`audioman mcp`)
+- A Model Context Protocol server on stdio exposing **analyze**, **describe** (texture descriptors with repeat floors), **diff** and **uat_compare**. Every result is a short digest, a `result_ref` JSON file with the complete result, and a size-bounded summary (`detail`, default `summary` <= 4 KiB) — the agent reads the digest first and opens files only when it needs the numbers. `diff` can also return a PNG figure.
+- Implements MCP protocol versions 2025-06-18, 2025-03-26 and 2024-11-05 directly (no SDK dependency). Clients before 2025-06-18 receive references and summary as text.
+
 ### Added — `audioman diff A B`
 - Aligns B to A by steady-state cross-correlation (when the lag can be established; otherwise compares unaligned and says why), describes both with the texture descriptors, and reports B - A for the whole file, every segment, every ERB band and six named bands (sub, bass, low_mid, mid, presence, air). A delta is **significant** only when it exceeds 2 x (floor_A + floor_B) and a small per-unit minimum, so identical inputs, or a delayed copy, report no significant change.
 - `changes` lists the significant whole-file changes, most significant (relative to floor) first; `residual_rel_db` gives the aligned sample-level difference; `--png` draws the per-band change against its floor band and every descriptor change in units of its floor; JSON carries a digest and a report.v2 block (`alignment` gate, `delta.*` measurements with repeat floors) and honours `--detail`.
