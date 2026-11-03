@@ -51,7 +51,10 @@ def _mono64(audio: np.ndarray) -> np.ndarray:
     x = x.mean(axis=0) if x.ndim == 2 else x
     # Non-finite samples would turn the FFT correlation into NaN everywhere; they are
     # judged by the finiteness gates, so here they only must not poison the lag.
-    return np.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
+    x = np.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
+    # A DC offset (or drift) correlates with itself at every lag and can outweigh the
+    # signal; the lag is a property of the AC content.
+    return x - x.mean() if len(x) else x
 
 
 def _ncc_at(reference: np.ndarray, processed: np.ndarray, lag: int) -> float:

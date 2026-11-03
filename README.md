@@ -132,6 +132,16 @@ profile. Every descriptor carries a **repeat floor**: the amount it moves when t
 analysis grid is shifted by half a hop. Differences below the floor are noise of the
 measurement, not of the audio.
 
+## Comparing Two Renders (`diff`)
+
+```bash
+audioman --json diff before.wav after.wav --png diff.png
+```
+
+B is aligned to A, both are described, and every descriptor, segment and band change
+is reported with its floor. Only changes beyond twice the combined floor are marked
+significant; identical files report "no significant change".
+
 ## Plugin / Host Acceptance (`uat`)
 
 ```bash

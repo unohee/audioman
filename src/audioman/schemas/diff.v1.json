@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audioman://schema/diff.v1.json",
+  "title": "Audioman Diff Result",
+  "description": "Output envelope for `audioman diff A B --json`: texture descriptor deltas (B - A) for the whole file, each segment and each band, each judged against the summed repeat floors of both measurements.",
+  "type": "object",
+  "required": [
+    "$schema",
+    "audioman_version",
+    "command",
+    "a",
+    "b",
+    "alignment",
+    "changes",
+    "descriptors",
+    "named_bands"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "audioman://schema/diff.v1.json"
+    },
+    "audioman_version": {
+      "type": "string"
+    },
+    "command": {
+      "const": "diff"
+    },
+    "digest": {
+      "type": "string"
+    },
+    "a": {
+      "type": "string"
+    },
+    "b": {
+      "type": "string"
+    },
+    "sample_rate": {
+      "type": "integer"
+    },
+    "segment_sec": {
+      "type": "number"
+    },
+    "significance": {
+      "type": "string"
+    },
+    "alignment": {
+      "type": "object",
+      "required": [
+        "applied",
+        "lag_samples"
+      ],
+      "properties": {
+        "applied": {
+          "type": "boolean"
+        },
+        "lag_samples": {
+          "type": "integer"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "residual_rel_db": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "RMS of (B - A) relative to A after alignment; null when identical or A is silent."
+    },
+    "segments": {
+      "type": "array"
+    },
+    "changes": {
+      "type": "array",
+      "description": "Significant whole-file descriptor changes, most significant first.",
+      "items": {
+        "type": "object",
+        "required": [
+          "descriptor",
+          "delta",
+          "unit",
+          "direction"
+        ],
+        "properties": {
+          "descriptor": {
+            "type": "string"
+          },
+          "delta": {
+            "type": "number"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "direction": {
+            "enum": [
+              "up",
+              "down"
+            ]
+          },
+          "floor": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "ratio_to_floor": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "descriptors": {
+      "type": "object"
+    },
+    "named_bands": {
+      "type": "array"
+    },
+    "erb_bands": {
+      "type": "array"
+    },
+    "figure": {
+      "type": "string",
+      "description": "Path of the --png figure, when written."
+    },
+    "report": {
+      "$ref": "audioman://schema/report.v2.json"
+    },
+    "detail": {
+      "type": "object"
+    }
+  }
+}
