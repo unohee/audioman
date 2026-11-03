@@ -80,6 +80,7 @@ class TestSingleJson:
         src = write_wav(tmp_path / "tone.wav", duration=1.0)
         result = run_command([
             "--json", "analyze", str(src), "--frames", "--frame-size", "1024", "--hop", "256",
+            "--detail", "full",  # arrays inline; the default level spills them (test_detail_levels)
         ])
         assert result.code == 0
         block = _json(result)["frame_metrics"]

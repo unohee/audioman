@@ -12,6 +12,7 @@ import argparse
 import time
 from pathlib import Path
 
+from audioman.cli._detail import add_detail_arguments, shape_json
 from audioman.cli.output import (
     output_console,
     print_error,
@@ -92,6 +93,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
                       help="Target profile (default: spotify)")
     p_qc.add_argument("--click-sensitivity", type=float, default=6.0,
                       help="Click detector sensitivity (default: 6.0). Lower = more sensitive")
+    add_detail_arguments(p_qc)
     p_qc.set_defaults(func=run_qc)
 
     # verify (prep + qc)
@@ -259,9 +261,9 @@ def run_qc(args: argparse.Namespace) -> None:
         print_error(str(e))
 
     if args.json:
-        print_json(json_envelope(
+        print_json(shape_json("master qc", json_envelope(
             "master qc", {"input": str(src), **report}, schema=schema_uri("master")
-        ))
+        ), args, label=src.stem))
         return
 
     print_markup(f"\n[bold]{src.name}[/bold]")

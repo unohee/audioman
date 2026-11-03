@@ -9,6 +9,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from audioman.cli._detail import add_detail_arguments, shape_json
 from audioman.cli.output import (
     output_console,
     print_error,
@@ -88,6 +89,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help="Recurse into subdirectories (batch mode)",
     )
+    add_detail_arguments(parser)
     parser.set_defaults(func=run)
 
 
@@ -182,16 +184,16 @@ def run(args: argparse.Namespace) -> None:
             except Exception as e:
                 fail += 1
                 if args.json:
-                    print_json(json_envelope(
+                    print_json(shape_json("observe", json_envelope(
                         "observe",
                         {"file": str(fpath), "error": str(e)},
                         schema=schema_uri("observe"),
-                    ))
+                    ), args, label=fpath.stem))
                 else:
                     print_warning(f"  {fpath.name}: {e}")
                 continue
             if args.json:
-                print_json(payload)
+                print_json(shape_json("observe", payload, args, label=fpath.stem))
             else:
                 _print_human(payload)
 
@@ -207,7 +209,7 @@ def run(args: argparse.Namespace) -> None:
         print_error(str(e))
         return
     if args.json:
-        print_json(payload)
+        print_json(shape_json("observe", payload, args, label=input_path.stem))
         return
     _print_human(payload)
 

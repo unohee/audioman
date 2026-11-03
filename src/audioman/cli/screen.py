@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from audioman.cli._detail import add_detail_arguments, shape_json
 from audioman.cli.output import output_console, print_error, print_json, print_table, print_warning
 from audioman.cli.output import print_markup
 from audioman.core.aesthetic import DEFAULT_ISSUES, screen_file
@@ -31,6 +32,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Detector backend (default: auto)",
     )
     parser.add_argument("--recursive", "-r", action="store_true", help="Include subdirectories (batch)")
+    add_detail_arguments(parser)
     parser.set_defaults(func=run)
 
 
@@ -48,18 +50,19 @@ def run(args: argparse.Namespace) -> None:
         files = collect_audio_files(input_path, recursive=args.recursive)
         reports = [_screen_one(path, issues, args.backend) for path in files]
         if args.json:
-            print_json(json_envelope(
+            print_json(shape_json("screen", json_envelope(
                 "screen",
                 {"input": str(input_path), "files": reports},
                 schema=schema_uri("screen"),
-            ))
+            ), args, label=input_path.name))
             return
         _print_batch(reports)
         return
 
     report = _screen_one(input_path, issues, args.backend)
     if args.json:
-        print_json(json_envelope("screen", report, schema=schema_uri("screen")))
+        print_json(shape_json("screen", json_envelope("screen", report, schema=schema_uri("screen")),
+                              args, label=input_path.stem))
         return
     _print_single(report)
 
