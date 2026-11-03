@@ -33,7 +33,8 @@
         "doctor",
         "uat compare",
         "uat smoke",
-        "uat pdc"
+        "uat pdc",
+        "diff"
       ]
     },
     "subject": {

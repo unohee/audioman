@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added — `audioman diff A B`
+- Aligns B to A by steady-state cross-correlation (when the lag can be established; otherwise compares unaligned and says why), describes both with the texture descriptors, and reports B - A for the whole file, every segment, every ERB band and six named bands (sub, bass, low_mid, mid, presence, air). A delta is **significant** only when it exceeds 2 x (floor_A + floor_B) and a small per-unit minimum, so identical inputs, or a delayed copy, report no significant change.
+- `changes` lists the significant whole-file changes, most significant (relative to floor) first; `residual_rel_db` gives the aligned sample-level difference; `--png` draws the per-band change against its floor band and every descriptor change in units of its floor; JSON carries a digest and a report.v2 block (`alignment` gate, `delta.*` measurements with repeat floors) and honours `--detail`.
+
+### Fixed
+- Latency/alignment estimation subtracts the mean first: a DC offset correlates with itself at every lag and could outweigh the signal.
+
 ### Added — texture descriptors (`analyze --texture`)
 - **`audioman.core.texture.describe`** and **`analyze --texture [--segment-sec S]`**: spectral centroid, rolloff, bandwidth, flatness, contrast, flux, HF ratio, approximate sharpness, RMS, crest factor, onset density, stereo width and L/R correlation, for the whole file and per segment, plus a 32-band ERB level profile.
 - **Repeat floor** on every descriptor: each is measured again on the signal advanced by half an analysis hop (every frame and segment boundary moves, the content does not); the difference is its `floor` (whole file) and `segment_floor` (largest per-segment difference). Rolloff, which lands on FFT bins, never gets a floor below one bin. A change smaller than the floor is not evidence of a change.

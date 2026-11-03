@@ -122,11 +122,30 @@ def digest_report(report: dict) -> str:
     return _clip(f"{head} {len(bad)} of {len(gates)} gates not passing: {named}.")
 
 
+def digest_diff(p: dict) -> str:
+    align = p.get("alignment") or {}
+    if align.get("applied"):
+        how = f"aligned by {align.get('lag_samples', 0):+d} samples"
+    else:
+        how = f"not aligned ({align.get('reason', 'n/a')})"
+    changes = p.get("changes") or []
+    bands = [b for b in p.get("named_bands") or [] if b.get("significant")]
+    if not changes and not bands:
+        return _clip(f"B vs A ({how}): no significant change.")
+    parts = [f"{c['descriptor']} {c['direction']} {abs(c['delta'])} {c['unit']}"
+             + (f" (floor {c['floor']})" if c.get("floor") else "") for c in changes[:6]]
+    text = f"B vs A ({how}): {len(changes)} significant descriptor change(s): {', '.join(parts)}."
+    if bands:
+        text += " Bands: " + ", ".join(f"{b['band']} {b['delta_db']:+.1f} dB" for b in bands) + "."
+    return _clip(text)
+
+
 DIGESTS: dict[str, Callable[[dict], str]] = {
     "analyze": digest_analyze,
     "observe": digest_observe,
     "screen": digest_screen,
     "master qc": digest_master_qc,
+    "diff": digest_diff,
 }
 
 

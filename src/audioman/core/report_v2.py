@@ -313,12 +313,35 @@ def _report_doctor(p: dict) -> Report:
     return Report("doctor", subject, ms, [], require(gates, required))
 
 
+def _report_diff(p: dict) -> Report:
+    align = p.get("alignment") or {}
+    sr = p.get("sample_rate")
+    subject = {"file": p.get("b"), "sample_rate": sr if isinstance(sr, int) else None, "channels": None,
+               "duration_sec": align.get("compared_sec")}
+    ms: list[Measurement] = []
+    for name, d in (p.get("descriptors") or {}).items():
+        if d.get("delta") is not None:
+            ms.append(Measurement(f"delta.{name}", d["delta"], d.get("unit", ""), d.get("floor"),
+                                  "repeat" if d.get("floor") is not None else "unknown", "diff"))
+    for band in p.get("named_bands") or []:
+        ms.append(Measurement(f"delta.band.{band['band']}", band["delta_db"], "dB", band["floor_db"], "repeat", "diff"))
+    if p.get("residual_rel_db") is not None:
+        ms.append(_measure("residual_rel_db", p["residual_rel_db"], "dB", "diff"))
+    if align.get("applied"):
+        gate = Gate("alignment", "PASS", threshold="lag established by cross-correlation")
+    else:
+        gate = Gate("alignment", "WARN", threshold="lag established by cross-correlation",
+                    reason=f"compared unaligned: {align.get('reason') or 'unknown'}")
+    return Report("diff", subject, ms, [], require([gate], ["alignment"]))
+
+
 ADAPTERS: dict[str, Callable[[dict], Report]] = {
     "analyze": _report_analyze,
     "observe": _report_observe,
     "screen": _report_screen,
     "master qc": _report_master_qc,
     "doctor": _report_doctor,
+    "diff": _report_diff,
 }
 
 
