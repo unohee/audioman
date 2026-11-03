@@ -1,19 +1,22 @@
 # Created: 2026-04-27
-# Purpose: audioman fader-compare — fader-test ground truth와 automix 결과를 비교.
-#          자동 알고리즘이 본인 결정과 얼마나 가까운지 정량 평가 + 가장 어긋난 트랙 보고.
+# Purpose: audioman fader-compare — compare a fader-test ground truth against automix results.
+#          Quantify how close the algorithm gets to the human decision + report the worst-off tracks.
 
 from __future__ import annotations
 
 import argparse
 import json
 from pathlib import Path
+from typing import Optional
 
 from audioman.cli.output import (
     output_console,
     print_error,
     print_json,
     print_table,
+    print_markup,
 )
+from audioman.core.findings import json_envelope, schema_uri
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -33,27 +36,51 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.set_defaults(func=run)
 
 
+def _load_ground_truth(gt_path: Path) -> Optional[dict]:
+    """Read + validate the fader-test export. Returns None after print_error."""
+    try:
+        data = json.loads(gt_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:
+        print_error(f"Cannot read ground truth JSON: {gt_path} ({e})")
+        return None
+
+    if not isinstance(data, dict):
+        print_error(f"Top level of the ground truth JSON is not an object: {type(data).__name__}")
+        return None
+
+    source_dir = data.get("source_dir")
+    if not isinstance(source_dir, str) or not Path(source_dir).is_dir():
+        print_error(f"ground truth source_dir is not valid: {source_dir}")
+        return None
+
+    gt_gains = data.get("gains")
+    if not isinstance(gt_gains, dict) or not gt_gains:
+        print_error("ground truth JSON has no 'gains' field.")
+        return None
+
+    return {"source_dir": source_dir, "gains": gt_gains}
+
+
 def run(args: argparse.Namespace) -> None:
     gt_path = Path(args.ground_truth)
     if not gt_path.exists():
-        print_error(f"파일 없음: {gt_path}")
+        print_error(f"File not found: {gt_path}")
+        return
 
-    data = json.loads(gt_path.read_text())
-    source_dir = data.get("source_dir")
-    if not source_dir or not Path(source_dir).is_dir():
-        print_error(f"ground truth의 source_dir가 유효하지 않습니다: {source_dir}")
+    loaded = _load_ground_truth(gt_path)
+    if loaded is None:
+        return
+    source_dir = loaded["source_dir"]
+    gt_gains = loaded["gains"]
 
-    gt_gains = data.get("gains") or {}
-    if not gt_gains:
-        print_error("ground truth JSON에 'gains' 필드가 없습니다.")
-
-    # automix 권고값 계산
+    # Compute the automix recommendations
     from pathlib import Path as _P
     from audioman.core.automix import automix as run_automix
 
     track_paths = sorted(_P(source_dir).glob("*.wav"))
     if not track_paths:
-        print_error(f"source_dir에 wav 없음: {source_dir}")
+        print_error(f"No wav files in source_dir: {source_dir}")
+        return
 
     try:
         result = run_automix(
@@ -62,34 +89,41 @@ def run(args: argparse.Namespace) -> None:
             reference_path=args.reference,
         )
     except Exception as e:
-        print_error(f"automix 실패: {e}")
+        print_error(f"automix failed: {e}")
         return
 
     if len(result.gains_db) != len(track_paths):
         print_error(
-            "automix 결과의 gain 수가 입력 트랙 수와 다릅니다: "
+            "automix returned a different number of gains than input tracks: "
             f"tracks={len(track_paths)}, gains={len(result.gains_db)}"
         )
+        return
 
-    # 트랙 이름으로 매핑 (alphabetical 순서 가정 — fader-test와 automix 둘 다 sorted)
+    # Map by track name (assuming alphabetical order — both fader-test and automix sort)
     rows: list[dict] = []
     for path, auto_db in zip(track_paths, result.gains_db):
         name = path.stem.strip()
         gt_db = gt_gains.get(name)
         if gt_db is None:
-            # whitespace stripped 이름과 raw 이름 둘 다 시도
+            # Try both the whitespace-stripped name and the raw name
             gt_db = gt_gains.get(path.stem)
         if gt_db is None:
             continue
+        try:
+            gt_db_f = float(gt_db)
+        except (TypeError, ValueError):
+            print_error(f"ground truth gain is not a number: {name}={gt_db!r}")
+            return
         rows.append({
             "track": name,
-            "ground_truth_db": float(gt_db),
+            "ground_truth_db": gt_db_f,
             "automix_db": float(auto_db),
-            "diff_db": float(auto_db) - float(gt_db),  # automix가 ground truth보다 얼마나 큰가
+            "diff_db": float(auto_db) - gt_db_f,  # how much louder automix is than the ground truth
         })
 
     if not rows:
-        print_error("매칭된 트랙이 없습니다 — 트랙명이 일치하는지 확인.")
+        print_error("No tracks matched — check that the track names agree.")
+        return
 
     n = len(rows)
     diffs = [abs(r["diff_db"]) for r in rows]
@@ -100,38 +134,41 @@ def run(args: argparse.Namespace) -> None:
 
     # JSON output
     if args.json:
-        print_json({
-            "command": "fader-compare",
-            "ground_truth": str(gt_path),
-            "automix_target": args.target,
-            "n_tracks_matched": n,
-            "summary": {
-                "mean_abs_error_db": round(mean_abs_err, 2),
-                "max_abs_error_db": round(max_abs_err, 2),
-                "within_3dB_pct": round(within_3, 1),
-                "within_6dB_pct": round(within_6, 1),
+        print_json(json_envelope(
+            "fader-compare",
+            {
+                "ground_truth": str(gt_path),
+                "automix_target": args.target,
+                "n_tracks_matched": n,
+                "summary": {
+                    "mean_abs_error_db": round(mean_abs_err, 2),
+                    "max_abs_error_db": round(max_abs_err, 2),
+                    "within_3dB_pct": round(within_3, 1),
+                    "within_6dB_pct": round(within_6, 1),
+                },
+                "tracks": [
+                    {
+                        "track": r["track"],
+                        "ground_truth_db": round(r["ground_truth_db"], 2),
+                        "automix_db": round(r["automix_db"], 2),
+                        "diff_db": round(r["diff_db"], 2),
+                    }
+                    for r in rows
+                ],
             },
-            "tracks": [
-                {
-                    "track": r["track"],
-                    "ground_truth_db": round(r["ground_truth_db"], 2),
-                    "automix_db": round(r["automix_db"], 2),
-                    "diff_db": round(r["diff_db"], 2),
-                }
-                for r in rows
-            ],
-        })
+            schema=schema_uri("fader-compare"),
+        ))
         return
 
     # Human-readable
-    output_console.print(f"\n[bold]Fader-test vs Automix ({args.target})[/bold]")
+    print_markup(f"\n[bold]Fader-test vs Automix ({args.target})[/bold]")
     output_console.print(f"  matched tracks: {n}")
     output_console.print(f"  mean |error|:   {mean_abs_err:.2f} dB")
     output_console.print(f"  max |error|:    {max_abs_err:.2f} dB")
     output_console.print(f"  within ±3 dB:   {within_3:.0f}%")
     output_console.print(f"  within ±6 dB:   {within_6:.0f}%\n")
 
-    # 가장 어긋난 트랙 top 10
+    # The most disagreeing tracks, top 15
     rows_sorted = sorted(rows, key=lambda r: -abs(r["diff_db"]))
     rows_table = []
     for r in rows_sorted[:15]:
@@ -150,9 +187,9 @@ def run(args: argparse.Namespace) -> None:
         rows_table,
     )
 
-    # 가장 일치한 트랙
+    # The closest matches
     rows_close = sorted(rows, key=lambda r: abs(r["diff_db"]))[:5]
-    output_console.print("\n[bold]Closest matches[/bold]")
+    print_markup("\n[bold]Closest matches[/bold]")
     for r in rows_close:
         output_console.print(
             f"  {r['track']:<25s}  gt={r['ground_truth_db']:+.1f}  "

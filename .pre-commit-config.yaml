@@ -1,0 +1,66 @@
+# Layer 0 (book.md Art. II / Part III.2): deterministic checks that finish in seconds, on
+# every commit. Anything slower or judgement-based belongs in CI or in review, not here —
+# a hook people routinely bypass is worse than no hook.
+#
+# The same checks run in CI where they cannot be bypassed:
+#   .github/workflows/constitution.yml  — LOC ceiling, `cxt bs`, trailers, workflow integrity
+#   .github/workflows/python-ci.yml     — tests + coverage report
+#
+# Scope note. The four hooks this file carries are exactly the ones book.md Part III.2
+# names for the 0 floor: LOC ceiling, `cxt bs` criticals, secret scan, formatter. A full
+# `ruff check` is deliberately NOT here: `src/` currently carries ~376 ruff findings
+# (mostly optional-typing and import-order), so a blocking lint hook would fail every
+# commit until that debt is cleared — which is how a hook trains everyone onto
+# `--no-verify`. Clearing it belongs to the coverage workstream (AUD-1851), and once it
+# is clear the hook can be added with no other change.
+#
+# `ruff-format` rewrites the files it is given, so the first commit that touches a
+# previously unformatted file includes the reformat. That is inherent to adopting a
+# formatter (measured 2026-09-28: 92 of 108 Python files under `src/` and `tests/` are
+# not ruff-format clean). To take the churn in one commit instead of spreading it:
+# `pre-commit run --all-files`.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=512"]
+      # Secret scan, deterministic half: finds a private key by its PEM header.
+      - id: detect-private-key
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.9
+    hooks:
+      - id: ruff-format
+
+  # Entropy- and pattern-based secret detection. The baseline records what is already in
+  # the tree (currently: nothing) so the hook reports a newly added secret rather than a
+  # standing list.
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ["--baseline", ".secrets.baseline"]
+        exclude: ^(uv\.lock|\.secrets\.baseline$|outputs/|presets/)
+
+  - repo: local
+    hooks:
+      # Ambient interpreter: these shell out to the globally installed `cxt` and need
+      # nothing from the project's dependencies. An isolated env would resolve torch.
+      - id: loc-ceiling
+        name: "Art. III — no file over 1500 code lines"
+        entry: python scripts/gates.py loc --ceiling 1500
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: cxt-bs-critical
+        name: "Art. II — no `cxt bs` criticals in src/"
+        entry: python scripts/gates.py bs
+        language: system
+        pass_filenames: false
+        always_run: true

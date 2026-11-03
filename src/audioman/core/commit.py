@@ -1,5 +1,5 @@
 # Created: 2026-04-05
-# Purpose: Destructive commit — 플러그인 체인 적용 + auto delay compensation
+# Purpose: Destructive commit — apply a plugin chain + auto delay compensation
 
 import logging
 import time
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class CommitResult:
-    """커밋 결과"""
+    """Commit result"""
     input_path: str
     output_path: str
     steps: list[dict]
@@ -45,29 +45,29 @@ def commit_file(
     compensate_latency: bool = True,
     tail_trim: bool = True,
 ) -> CommitResult:
-    """단일 파일에 플러그인 체인 적용 + delay compensation
+    """Apply a plugin chain to a single file + delay compensation
 
-    기존 pipeline.run_pipeline()과 달리:
-    - 각 플러그인의 레이턴시를 사전 측정
-    - 최종 출력에서 누적 레이턴시만큼 보상 (앞부분 제거 + zero-pad)
-    - tail_trim으로 원본 길이 복원
+    Unlike pipeline.run_pipeline():
+    - measures each plugin's latency up front
+    - compensates the accumulated latency in the final output (drop the front + zero-pad)
+    - restores the original length with tail_trim
 
     Args:
-        input_path: 입력 오디오 파일
-        output_path: 출력 파일 경로
-        steps: 플러그인 체인 (PipelineStep 리스트)
-        compensate_latency: delay compensation 적용 여부
-        tail_trim: 플러그인이 추가한 tail을 원본 길이로 자르기
+        input_path: input audio file
+        output_path: output file path
+        steps: plugin chain (list of PipelineStep)
+        compensate_latency: whether to apply delay compensation
+        tail_trim: trim the tail a plugin added back to the original length
     """
     start = time.monotonic()
     registry = get_registry()
 
-    # 오디오 읽기
+    # read the audio
     audio, sr = read_audio(input_path)
     input_stats = get_audio_stats(audio, sr)
     original_length = audio.shape[-1]
 
-    # 레이턴시 측정
+    # measure latency
     measurements: list[LatencyMeasurement] = []
     total_latency = 0
 
@@ -75,15 +75,15 @@ def commit_file(
         measurements, total_latency = measure_chain_latency(steps, sample_rate=sr)
         if total_latency > 0:
             logger.info(
-                f"총 레이턴시: {total_latency} samples "
-                f"({total_latency / sr * 1000:.1f}ms) — compensation 적용 예정"
+                f"Total latency: {total_latency} samples "
+                f"({total_latency / sr * 1000:.1f}ms) — compensation will be applied"
             )
 
-    # 플러그인 체인 순차 처리 (인메모리)
+    # process the plugin chain sequentially (in memory)
     for i, step in enumerate(steps):
         meta = registry.get(step.plugin_name)
         if not meta:
-            raise ValueError(f"플러그인을 찾을 수 없습니다: '{step.plugin_name}' (step {i+1})")
+            raise ValueError(f"Plugin not found: '{step.plugin_name}' (step {i+1})")
 
         wrapper = VST3PluginWrapper(meta.path)
         wrapper.load()
@@ -97,7 +97,7 @@ def commit_file(
     if compensate_latency and total_latency > 0:
         audio = apply_delay_compensation(audio, total_latency)
 
-    # Tail trim — 원본 길이로 복원
+    # Tail trim — restore the original length
     if tail_trim and audio.shape[-1] > original_length:
         if audio.ndim == 1:
             audio = audio[:original_length]
@@ -124,7 +124,7 @@ def dry_run_commit(
     steps: list[PipelineStep],
     sample_rate: int = 48000,
 ) -> tuple[list[LatencyMeasurement], int]:
-    """처리 없이 레이턴시 측정만 수행 (dry-run)
+    """Measure latency only, without processing (dry-run)
 
     Returns:
         (measurements, total_latency_samples)

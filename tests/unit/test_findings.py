@@ -175,3 +175,38 @@ class TestSignalFindingsCombined:
         sig = _sine()
         findings = detect_signal_findings(sig, SR)
         assert findings == []
+
+
+class TestFixHintDict:
+    def test_to_dict_with_note(self):
+        from audioman.core.findings import FixHint
+        d = FixHint(kind="audioman-fx", args=["fx", "denoise"], note="why").to_dict()
+        assert d == {"kind": "audioman-fx", "args": ["fx", "denoise"], "note": "why"}
+
+    def test_to_dict_without_note(self):
+        from audioman.core.findings import FixHint
+        d = FixHint(kind="manual").to_dict()
+        assert d == {"kind": "manual", "args": []}
+
+    def test_args_are_copied(self):
+        from audioman.core.findings import FixHint
+        args = ["a"]
+        d = FixHint(kind="manual", args=args).to_dict()
+        args.append("b")
+        assert d["args"] == ["a"]
+
+
+class TestFindingFixHintInDict:
+    def test_fix_hint_rendered_when_present(self):
+        from audioman.core.findings import Finding, FixHint, Code, Category, Severity
+        f = Finding(
+            code=list(Code)[0], category=list(Category)[0], severity=list(Severity)[0],
+            fix_hint=FixHint(kind="manual", note="x"),
+        )
+        d = f.to_dict()
+        assert d["fix_hint"] == {"kind": "manual", "args": [], "note": "x"}
+
+    def test_fix_hint_absent_when_none(self):
+        from audioman.core.findings import Finding, Code, Category, Severity
+        f = Finding(code=list(Code)[0], category=list(Category)[0], severity=list(Severity)[0])
+        assert "fix_hint" not in f.to_dict()

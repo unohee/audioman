@@ -1,19 +1,22 @@
 # Created: 2026-05-11
-# Purpose: `audioman observe` — fault 관측 1급 명령.
-# analyze/doctor가 산발적으로 만들던 결함 정보를 단일 Finding[] 스키마로 통합.
-# LLM agent가 `audioman observe X --json | jq '.findings'`로 바로 소비할 수 있게 한다.
+# Purpose: `audioman observe` — the first-class fault observation command.
+# Unifies the fault information scattered across analyze/doctor into a single Finding[] schema.
+# Lets LLM agents consume it directly with `audioman observe X --json | jq '.findings'`.
 
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
-from audioman import __version__
 from audioman.cli.output import (
     output_console,
     print_error,
     print_json,
+    print_success,
     print_table,
+    print_warning,
+    print_markup,
 )
 from audioman.core.analysis import detect_silence, spectrum_diagnostics
 from audioman.core.audio_file import get_audio_stats, read_audio
@@ -25,9 +28,11 @@ from audioman.core.detectors import (
 )
 from audioman.core.findings import (
     Category,
-    SCHEMA_URI,
     Severity,
     filter_findings,
+    findings_summary,
+    json_envelope,
+    schema_uri,
 )
 
 
@@ -113,8 +118,8 @@ def _observe_file(
         )
         all_findings.extend(spectrum_to_findings(spectrum, file=str(path)))
 
-    # plugin/container 카테고리는 Phase C에서 채움. 지금은 사용자가 명시적으로
-    # 지정하면 빈 결과를 반환 (스키마 일관성 유지).
+    # plugin/container categories are filled in Phase C. For now, if the user asks for them
+    # explicitly we return an empty result (keeps the schema consistent).
 
     filtered = filter_findings(
         all_findings,
@@ -122,33 +127,23 @@ def _observe_file(
         min_severity=min_severity,
     )
 
-    payload = {
-        "$schema": SCHEMA_URI,
-        "audioman_version": __version__,
-        "command": "observe",
-        "file": str(path),
-        "sample_rate": sr,
-        "channels": stats.channels,
-        "duration_sec": round(stats.duration, 6),
-        "total_samples": int(stats.frames),
-        "filter": {
-            "categories": sorted(categories),
-            "min_severity": min_severity.value,
-        },
-        "findings": [f.to_dict() for f in filtered],
-        "summary": {
-            "total": len(filtered),
-            "by_severity": {
-                "info": sum(1 for f in filtered if f.severity is Severity.INFO),
-                "warn": sum(1 for f in filtered if f.severity is Severity.WARN),
-                "critical": sum(1 for f in filtered if f.severity is Severity.CRITICAL),
+    payload = json_envelope(
+        "observe",
+        {
+            "file": str(path),
+            "sample_rate": sr,
+            "channels": stats.channels,
+            "duration_sec": round(stats.duration, 6),
+            "total_samples": int(stats.frames),
+            "filter": {
+                "categories": sorted(categories),
+                "min_severity": min_severity.value,
             },
-            "by_category": {
-                cat: sum(1 for f in filtered if f.category.value == cat)
-                for cat in _CATEGORY_CHOICES
-            },
+            "findings": [f.to_dict() for f in filtered],
+            "summary": findings_summary(filtered),
         },
-    }
+        schema=schema_uri("observe"),
+    )
     return payload
 
 
@@ -164,34 +159,53 @@ def run(args: argparse.Namespace) -> None:
     categories = _parse_categories(args.category)
     min_severity = Severity(args.severity)
     input_path = Path(args.input)
+    kwargs = {
+        "categories": categories,
+        "min_severity": min_severity,
+        "silence_threshold": args.silence_threshold,
+        "spectrum_fft": args.spectrum_fft,
+        "spectrum_min_rms": args.spectrum_min_rms,
+    }
 
     if input_path.is_dir():
         files = collect_audio_files(input_path, recursive=args.recursive)
         if not files:
             print_error(f"No audio files in: {input_path}")
+            return
+
+        # A broken file must not abort the batch: count it, report it, continue.
+        # Exit status stays non-zero so scripting sees the partial failure.
+        fail = 0
         for fpath in files:
-            payload = _observe_file(
-                fpath,
-                categories=categories,
-                min_severity=min_severity,
-                silence_threshold=args.silence_threshold,
-                spectrum_fft=args.spectrum_fft,
-                spectrum_min_rms=args.spectrum_min_rms,
-            )
+            try:
+                payload = _observe_file(fpath, **kwargs)
+            except Exception as e:
+                fail += 1
+                if args.json:
+                    print_json(json_envelope(
+                        "observe",
+                        {"file": str(fpath), "error": str(e)},
+                        schema=schema_uri("observe"),
+                    ))
+                else:
+                    print_warning(f"  {fpath.name}: {e}")
+                continue
             if args.json:
                 print_json(payload)
             else:
                 _print_human(payload)
+
+        if not args.json:
+            print_success(f"Batch complete: {len(files) - fail} succeeded, {fail} failed / {len(files)} total")
+        if fail:
+            sys.exit(1)
         return
 
-    payload = _observe_file(
-        input_path,
-        categories=categories,
-        min_severity=min_severity,
-        silence_threshold=args.silence_threshold,
-        spectrum_fft=args.spectrum_fft,
-        spectrum_min_rms=args.spectrum_min_rms,
-    )
+    try:
+        payload = _observe_file(input_path, **kwargs)
+    except Exception as e:
+        print_error(str(e))
+        return
     if args.json:
         print_json(payload)
         return
@@ -199,7 +213,7 @@ def run(args: argparse.Namespace) -> None:
 
 
 def _print_human(payload: dict) -> None:
-    output_console.print(f"\n[bold]{payload['file']}[/bold]")
+    print_markup(f"\n[bold]{payload['file']}[/bold]")
     output_console.print(
         f"  {payload['duration_sec']}s @ {payload['sample_rate']}Hz, "
         f"{payload['channels']} ch, {payload['total_samples']} samples"
@@ -213,7 +227,7 @@ def _print_human(payload: dict) -> None:
     )
 
     if not payload["findings"]:
-        output_console.print("  [green]No findings at requested severity.[/green]")
+        print_markup("  [green]No findings at requested severity.[/green]")
         return
 
     rows = []

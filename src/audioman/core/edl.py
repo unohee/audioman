@@ -1,9 +1,9 @@
 # Created: 2026-04-26
-# Purpose: 비파괴 편집을 위한 EDL(Edit Decision List) 데이터 모델 + render 엔진
+# Purpose: EDL (Edit Decision List) data model + render engine for non-destructive editing
 #
-# EDL은 원본 오디오를 변경하지 않고 편집 의도를 ops 리스트로 누적한다.
-# render 시점에 ops를 순차 적용해 최종 오디오를 생성한다.
-# 시간 좌표는 *해당 op 직전 시점의 타임라인 기준*이다 (DAW history와 동일).
+# An EDL accumulates editing intent as a list of ops without touching the source audio.
+# At render time the ops are applied in order to produce the final audio.
+# Time coordinates are relative to *the timeline immediately before that op* (same as DAW history).
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from audioman.core.audio_file import read_audio, write_audio
 
 EDL_VERSION = 1
 
-# 지원하는 op 타입과 필수 파라미터
+# supported op types and their required parameters
 OP_SCHEMA: dict[str, set[str]] = {
     "cut_region": {"start_sec", "end_sec"},
     "trim": {"start_sec", "end_sec"},
@@ -43,7 +43,7 @@ OP_SCHEMA: dict[str, set[str]] = {
 
 @dataclass
 class EDL:
-    """단일 입력 파일에 대한 비파괴 편집 의도."""
+    """Non-destructive editing intent for a single input file."""
     source: str
     source_sha256: str
     sample_rate: int
@@ -71,7 +71,7 @@ class EDL:
     def from_dict(cls, data: dict) -> "EDL":
         version = int(data.get("version", 1))
         if version > EDL_VERSION:
-            raise ValueError(f"지원하지 않는 EDL version: {version} > {EDL_VERSION}")
+            raise ValueError(f"unsupported EDL version: {version} > {EDL_VERSION}")
         return cls(
             version=version,
             source=data["source"],
@@ -86,7 +86,7 @@ class EDL:
 
 
 def file_sha256(path: str | Path, chunk: int = 1 << 20) -> str:
-    """입력 파일 무결성 해시. 큰 파일도 청크 단위로 처리."""
+    """Input file integrity hash. Large files are processed in chunks."""
     h = hashlib.sha256()
     with open(path, "rb") as f:
         while True:
@@ -102,10 +102,10 @@ def _now_iso() -> str:
 
 
 def init_edl(source: str | Path) -> EDL:
-    """입력 파일에 대한 새 EDL 생성. 오디오를 한 번만 읽어 메타데이터 추출."""
+    """Create a new EDL for an input file. Reads the audio once to extract metadata."""
     source = Path(source).resolve()
     if not source.exists():
-        raise FileNotFoundError(f"파일 없음: {source}")
+        raise FileNotFoundError(f"file not found: {source}")
     audio, sr = read_audio(source)
     n_ch = 1 if audio.ndim == 1 else audio.shape[0]
     n_samples = audio.shape[-1]
@@ -123,23 +123,23 @@ def init_edl(source: str | Path) -> EDL:
 
 
 def validate_op(op: dict) -> None:
-    """op 형식 검증. 알 수 없는 type이거나 필수 키 누락 시 ValueError."""
+    """Validate the op format. Raises ValueError on an unknown type or missing required key."""
     if not isinstance(op, dict):
-        raise ValueError(f"op은 dict여야 합니다: {type(op)}")
+        raise ValueError(f"op must be a dict: {type(op)}")
     op_type = op.get("type")
     if op_type not in OP_SCHEMA:
         raise ValueError(
-            f"알 수 없는 op type: {op_type!r} "
-            f"(지원: {sorted(OP_SCHEMA.keys())})"
+            f"unknown op type: {op_type!r} "
+            f"(supported: {sorted(OP_SCHEMA.keys())})"
         )
     required = OP_SCHEMA[op_type]
     missing = required - set(op.keys())
     if missing:
-        raise ValueError(f"op {op_type!r}에 필수 키 누락: {sorted(missing)}")
+        raise ValueError(f"op {op_type!r} is missing required keys: {sorted(missing)}")
 
 
 def add_op(edl: EDL, op: dict) -> EDL:
-    """op을 EDL에 추가. 검증 후 modified_at 갱신."""
+    """Append an op to the EDL. Validates it, then refreshes modified_at."""
     validate_op(op)
     edl.ops.append(dict(op))
     edl.modified_at = _now_iso()
@@ -155,12 +155,12 @@ def save_edl(edl: EDL, path: str | Path) -> None:
 def load_edl(path: str | Path) -> EDL:
     path = Path(path)
     if not path.exists():
-        raise FileNotFoundError(f"EDL 파일 없음: {path}")
+        raise FileNotFoundError(f"EDL file not found: {path}")
     return EDL.from_dict(json.loads(path.read_text()))
 
 
 # ---------------------------------------------------------------------------
-# Render 엔진
+# Render engine
 # ---------------------------------------------------------------------------
 
 
@@ -175,7 +175,7 @@ def _ms_to_samples(ms: float | None, sr: int) -> int:
 
 
 def _apply_op(audio: np.ndarray, sr: int, op: dict) -> np.ndarray:
-    """단일 op을 현재 오디오에 적용. 순수 함수 (입력 audio 미변경)."""
+    """Apply a single op to the current audio. Pure function (input audio unchanged)."""
     t = op["type"]
 
     if t == "cut_region":
@@ -201,10 +201,10 @@ def _apply_op(audio: np.ndarray, sr: int, op: dict) -> np.ndarray:
         clip_audio, clip_sr = read_audio(clip_path)
         if clip_sr != sr:
             raise ValueError(
-                f"splice clip sample rate 불일치: edl={sr}Hz, clip={clip_sr}Hz "
+                f"splice clip sample rate mismatch: edl={sr}Hz, clip={clip_sr}Hz "
                 f"({clip_path})"
             )
-        # 채널 자동 정렬
+        # automatic channel alignment
         in_ch = 1 if audio.ndim == 1 else audio.shape[0]
         clip_ch = 1 if clip_audio.ndim == 1 else clip_audio.shape[0]
         if in_ch != clip_ch:
@@ -212,9 +212,10 @@ def _apply_op(audio: np.ndarray, sr: int, op: dict) -> np.ndarray:
                 src = clip_audio if clip_audio.ndim == 1 else clip_audio[0]
                 clip_audio = np.stack([src, src], axis=0)
             elif in_ch == 1 and clip_ch == 2:
-                clip_audio = clip_audio.mean(axis=0)
+                # keep the (1, samples) layout so dsp.splice sees matching ndim
+                clip_audio = clip_audio.mean(axis=0, keepdims=True)
             else:
-                raise ValueError(f"splice 채널 변환 불가: in={in_ch}, clip={clip_ch}")
+                raise ValueError(f"splice channel conversion not possible: in={in_ch}, clip={clip_ch}")
         position = _sec_to_samples(op["position_sec"], sr)
         cf = _ms_to_samples(op.get("crossfade_ms"), sr)
         return dsp.splice(
@@ -278,14 +279,14 @@ def _apply_op(audio: np.ndarray, sr: int, op: dict) -> np.ndarray:
         )
 
     if t == "process":
-        # VST3 plugin 호스팅 — pipeline 코드 재사용
+        # VST3 plugin hosting — reuses the pipeline code
         from audioman.core.registry import get_registry
         from audioman.plugins.vst3 import VST3PluginWrapper
 
         registry = get_registry()
         meta = registry.get(op["plugin"])
         if not meta:
-            raise ValueError(f"플러그인을 찾을 수 없음: {op['plugin']!r}")
+            raise ValueError(f"plugin not found: {op['plugin']!r}")
         wrapper = VST3PluginWrapper(meta.path)
         wrapper.load()
         params = op.get("params", {}) or {}
@@ -304,7 +305,7 @@ def _apply_op(audio: np.ndarray, sr: int, op: dict) -> np.ndarray:
         for step in op["steps"]:
             meta = registry.get(step["plugin"])
             if not meta:
-                raise ValueError(f"chain 플러그인 없음: {step['plugin']!r}")
+                raise ValueError(f"chain plugin not found: {step['plugin']!r}")
             wrapper = VST3PluginWrapper(meta.path)
             wrapper.load()
             if step.get("params"):
@@ -312,7 +313,7 @@ def _apply_op(audio: np.ndarray, sr: int, op: dict) -> np.ndarray:
             audio = wrapper.process(audio, sr)
         return audio
 
-    raise ValueError(f"_apply_op: 알 수 없는 op type {t!r}")
+    raise ValueError(f"_apply_op: unknown op type {t!r}")
 
 
 @dataclass
@@ -345,25 +346,25 @@ def render_edl(
     edl_path: str | Path | None = None,
     verify_source: bool = True,
 ) -> RenderResult:
-    """EDL을 순차 적용해 최종 오디오를 출력 파일로 저장.
+    """Apply the EDL in order and write the final audio to the output file.
 
-    verify_source=True면 source_sha256으로 입력 파일 변경을 감지한다.
+    With verify_source=True, source_sha256 is used to detect changes to the input file.
     """
     start = time.monotonic()
     src = Path(edl.source)
     if not src.exists():
-        raise FileNotFoundError(f"EDL source 파일 없음: {src}")
+        raise FileNotFoundError(f"EDL source file not found: {src}")
     if verify_source:
         actual = file_sha256(src)
         if actual != edl.source_sha256:
             raise ValueError(
-                f"source 파일이 변경됨: expected={edl.source_sha256[:12]}, "
+                f"source file changed: expected={edl.source_sha256[:12]}, "
                 f"actual={actual[:12]} ({src})"
             )
 
     audio, sr = read_audio(src)
     if sr != edl.sample_rate:
-        raise ValueError(f"sample rate 불일치: edl={edl.sample_rate}, file={sr}")
+        raise ValueError(f"sample rate mismatch: edl={edl.sample_rate}, file={sr}")
 
     in_dur = audio.shape[-1] / sr
 
@@ -371,7 +372,7 @@ def render_edl(
         try:
             audio = _apply_op(audio, sr, op)
         except Exception as e:
-            raise RuntimeError(f"op #{i+1} ({op.get('type')}) 실패: {e}") from e
+            raise RuntimeError(f"op #{i+1} ({op.get('type')}) failed: {e}") from e
 
     write_audio(output_path, audio, sr)
 
@@ -392,7 +393,7 @@ def render_edl(
 
 
 # ---------------------------------------------------------------------------
-# Workspace (.audioman/) 관리
+# Workspace (.audioman/) management
 # ---------------------------------------------------------------------------
 
 
@@ -403,7 +404,7 @@ REDO_DIRNAME = "redo"
 
 
 def workspace_dir(source: str | Path) -> Path:
-    """입력 파일이 있는 디렉터리에 .audioman/ 워크스페이스를 둔다."""
+    """Put the .audioman/ workspace in the directory holding the input file."""
     src = Path(source).resolve()
     return src.parent / WORKSPACE_DIRNAME / src.stem
 
@@ -439,10 +440,11 @@ def _list_sorted(d: Path) -> list[Path]:
 
 
 def snapshot_history(edl: EDL, source: str | Path, clear_redo: bool = True) -> Path:
-    """현재 EDL을 history/ 에 스냅샷.
+    """Snapshot the current EDL into history/.
 
-    clear_redo=True면 새 op 추가 시점에 redo 큐를 비운다 (Pro Tools/REAPER와 동일).
-    이는 "되돌렸다가 다른 길로 가면 옛 redo는 무효"라는 자연스러운 모델.
+    With clear_redo=True the redo queue is cleared when a new op is added
+    (same as Pro Tools/REAPER). That is the natural model: "if you undo and take a
+    different path, the old redos are void".
     """
     hist = history_dir(source)
     hist.mkdir(parents=True, exist_ok=True)
@@ -468,32 +470,32 @@ def list_redo(source: str | Path) -> list[Path]:
 
 
 def undo(source: str | Path) -> EDL | None:
-    """가장 최근 history 스냅샷을 redo/로 옮기고 그 직전 상태를 active EDL로."""
+    """Move the most recent history snapshot to redo/ and make the previous state the active EDL."""
     hist = list_history(source)
     if len(hist) < 2:
         return None
     rd = redo_dir(source)
     rd.mkdir(parents=True, exist_ok=True)
-    # 가장 마지막 = 현재 상태 → redo로 이동
+    # the last one = current state -> move to redo
     current = hist[-1]
     target = hist[-2]
     redo_idx = _next_index(rd)
     current.rename(rd / f"{redo_idx:04d}.json")
-    # 직전 상태를 active EDL로 복원
+    # restore the previous state as the active EDL
     edl = load_edl(target)
     save_edl(edl, edl_path(source))
     return edl
 
 
 def redo(source: str | Path) -> EDL | None:
-    """가장 최근 redo 스냅샷을 history/ 끝으로 되돌리고 active EDL로 복원."""
+    """Move the most recent redo snapshot back to the end of history/ and restore it as the active EDL."""
     rd_list = list_redo(source)
     if not rd_list:
         return None
     target = rd_list[-1]
     edl = load_edl(target)
     save_edl(edl, edl_path(source))
-    # redo → history 로 이동 (다음 undo 대상이 됨)
+    # move redo -> history (becomes the next undo target)
     hist = history_dir(source)
     hist.mkdir(parents=True, exist_ok=True)
     new_idx = _next_index(hist)

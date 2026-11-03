@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audioman://schema/process.v1.json",
+  "title": "Audioman Process Result",
+  "description": "Output envelope for `audioman process --json`. Covers the dry-run plan (single and batch), the single-file result and the per-file batch lines (success and error).",
+  "type": "object",
+  "required": ["$schema", "audioman_version", "command"],
+  "properties": {
+    "$schema": {"const": "audioman://schema/process.v1.json"},
+    "audioman_version": {"type": "string"},
+    "command": {"const": "process"},
+    "dry_run": {"type": "boolean"},
+    "batch": {"type": "boolean"},
+    "input": {"type": ["string", "null"]},
+    "output": {"type": ["string", "null"]},
+    "input_dir": {"type": ["string", "null"]},
+    "output_dir": {"type": ["string", "null"]},
+    "file_count": {"type": ["integer", "null"]},
+    "files": {"type": ["array", "null"], "items": {"type": "string"}},
+    "plugin": {"type": ["string", "null"]},
+    "params": {"type": ["object", "null"]},
+    "input_path": {"type": ["string", "null"]},
+    "output_path": {"type": ["string", "null"]},
+    "input_stats": {"type": ["object", "null"]},
+    "output_stats": {"type": ["object", "null"]},
+    "duration_seconds": {"type": ["number", "null"]},
+    "error": {"type": "string"}
+  }
+}

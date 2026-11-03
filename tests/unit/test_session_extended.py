@@ -1,4 +1,4 @@
-# tests/unit/test_session_extended.py — session.py 미커버 영역 추가 테스트
+# tests/unit/test_session_extended.py - extra tests for uncovered parts of session.py
 
 import json
 import pytest
@@ -10,7 +10,7 @@ from audioman.core.mixer import TrackConfig
 
 
 class TestParseTrack:
-    """_parse_track 개별 테스트"""
+    """Individual `_parse_track` tests."""
 
     def test_basic(self, tmp_path):
         (tmp_path / "vocal.wav").touch()
@@ -82,7 +82,7 @@ class TestParseTrack:
 
 
 class TestSessionConfigToDict:
-    """SessionConfig.to_dict() 테스트"""
+    """`SessionConfig.to_dict()` tests."""
 
     def test_basic(self):
         config = SessionConfig(
@@ -116,7 +116,7 @@ class TestSessionConfigToDict:
 
 
 class TestLoadSessionEdgeCases:
-    """load_session 추가 edge case"""
+    """Additional `load_session` edge cases."""
 
     def test_file_not_found(self, tmp_path):
         with pytest.raises(FileNotFoundError):
@@ -125,7 +125,7 @@ class TestLoadSessionEdgeCases:
     def test_not_dict_raises(self, tmp_path):
         f = tmp_path / "bad.json"
         f.write_text(json.dumps([1, 2, 3]))
-        with pytest.raises(ValueError, match="딕셔너리"):
+        with pytest.raises(ValueError, match="not a mapping"):
             load_session(f)
 
     def test_json_session_with_master(self, tmp_path):

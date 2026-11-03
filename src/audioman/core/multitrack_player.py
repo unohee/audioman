@@ -1,14 +1,14 @@
 # Created: 2026-04-27
-# Purpose: 멀티트랙 동기 재생 엔진. fader-test UI의 audio backend.
+# Purpose: Multitrack synchronized playback engine. Audio backend for the fader-test UI.
 #
-# 모든 stem을 RAM에 float32로 미리 로드 → sounddevice OutputStream callback에서
-# gain 적용 후 stereo mix. sample-accurate sync, low-latency.
+# Preload every stem into RAM as float32 → in the sounddevice OutputStream callback
+# apply gain then stereo mix. Sample-accurate sync, low latency.
 #
 # Thread model:
-#   - Main thread (Qt): fader gain 변경, transport 명령
+#   - Main thread (Qt): fader gain changes, transport commands
 #   - Audio thread (PortAudio callback): mix + output
-#   - 두 thread 사이 데이터 전달은 numpy array의 atomic assignment에 의존
-#     (numpy float64/float32 element assign은 GIL 하에서 atomic)
+#   - Data passing between the two threads relies on atomic assignment to numpy arrays
+#     (numpy float64/float32 element assignment is atomic under the GIL)
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class TrackState:
-    """단일 트랙의 재생 상태."""
+    """Playback state for a single track."""
     name: str
     path: str
     audio: np.ndarray  # shape (channels, samples), float32
@@ -34,12 +34,12 @@ class TrackState:
     gain_db: float = 0.0
     muted: bool = False
     soloed: bool = False
-    rms: float = 0.0  # 마지막 callback의 RMS (meter용)
+    rms: float = 0.0  # RMS from the last callback (for the meter)
     peak: float = 0.0
 
 
 def _load_track(path: Path, target_sr: int | None = None) -> tuple[np.ndarray, int]:
-    """단일 wav를 float32 (channels, samples) 형태로 로드."""
+    """Load a single wav as float32 (channels, samples)."""
     data, sr = sf.read(str(path), dtype="float32", always_2d=True)
     audio = data.T  # (samples, ch) → (ch, samples)
     if target_sr is not None and sr != target_sr:
@@ -50,13 +50,13 @@ def _load_track(path: Path, target_sr: int | None = None) -> tuple[np.ndarray, i
 
 
 class MultitrackPlayer:
-    """멀티트랙 stem 폴더를 동기 재생하는 엔진.
+    """Engine that plays back a multitrack stem folder in sync.
 
-    사용법:
+    Usage:
         player = MultitrackPlayer.from_directory(Path("/path/to/stems"))
         player.set_gain_db(track_index=0, db=-3.5)
         player.play()
-        ... (재생 중) ...
+        ... (while playing) ...
         player.pause()
         gains = player.export_gains()  # {track_name: gain_db}
     """
@@ -69,29 +69,29 @@ class MultitrackPlayer:
         master_gain_db: float = 0.0,
     ):
         if not tracks:
-            raise ValueError("최소 1개의 트랙이 필요합니다.")
+            raise ValueError("At least one track is required.")
         self.tracks = tracks
         self.sample_rate = sample_rate
         self.block_size = block_size
         self.master_gain_db = master_gain_db
 
-        # 모든 트랙 길이 일치 확인 (DAW stem export 가정)
+        # verify that all tracks have the same length (assumes a DAW stem export)
         lengths = {t.audio.shape[1] for t in tracks}
         if len(lengths) > 1:
-            logger.warning(f"트랙 길이가 다름: {lengths}. 가장 긴 길이로 재생.")
+            logger.warning(f"Track lengths differ: {lengths}. Playing at the longest length.")
         self.total_samples = max(t.audio.shape[1] for t in tracks)
         self.duration_sec = self.total_samples / sample_rate
 
-        # 재생 상태 (lock 보호)
+        # playback state (protected by the lock)
         self._lock = threading.RLock()
-        self._position = 0  # 현재 sample 위치
+        self._position = 0  # current sample position
         self._playing = False
         self._stream: sd.OutputStream | None = None
 
         # Master meter (read-only by UI)
         self.master_rms = 0.0
         self.master_peak = 0.0
-        self.clipping_count = 0  # 누적
+        self.clipping_count = 0  # cumulative
 
     # ------------------------------------------------------------------
     # Factory
@@ -104,13 +104,13 @@ class MultitrackPlayer:
         block_size: int = 1024,
         target_sr: int | None = None,
     ) -> "MultitrackPlayer":
-        """디렉터리의 모든 .wav를 트랙으로 로드. 알파벳 순서."""
+        """Load every .wav in the directory as a track. Alphabetical order."""
         directory = Path(directory)
         if not directory.is_dir():
-            raise ValueError(f"디렉터리 아님: {directory}")
+            raise ValueError(f"Not a directory: {directory}")
         wav_paths = sorted(directory.glob("*.wav"))
         if not wav_paths:
-            raise ValueError(f"wav 파일 없음: {directory}")
+            raise ValueError(f"No wav files: {directory}")
 
         tracks = []
         sr = target_sr
@@ -181,7 +181,7 @@ class MultitrackPlayer:
     # ------------------------------------------------------------------
 
     def set_gain_db(self, track_index: int, db: float) -> None:
-        # numpy/python float assignment는 GIL 하에 atomic이라 lock 불필요
+        # numpy/python float assignment is atomic under the GIL, so no lock is needed
         self.tracks[track_index].gain_db = float(db)
 
     def set_muted(self, track_index: int, muted: bool) -> None:
@@ -194,11 +194,11 @@ class MultitrackPlayer:
         self.master_gain_db = float(db)
 
     def export_gains(self) -> dict[str, float]:
-        """현재 모든 트랙의 gain dB를 dict로."""
+        """Return every track's current gain in dB as a dict."""
         return {t.name: round(t.gain_db, 2) for t in self.tracks}
 
     def export_state(self) -> dict:
-        """완전한 상태 (gain + mute + solo + master)."""
+        """Full state (gain + mute + solo + master)."""
         return {
             "master_gain_db": round(self.master_gain_db, 2),
             "tracks": [
@@ -214,7 +214,7 @@ class MultitrackPlayer:
         }
 
     def import_gains(self, gains: dict[str, float]) -> int:
-        """이름 매칭으로 gain 일괄 적용. 매칭된 트랙 수 반환."""
+        """Bulk-apply gains by name matching. Returns the number of matched tracks."""
         matched = 0
         for t in self.tracks:
             if t.name in gains:
@@ -238,7 +238,7 @@ class MultitrackPlayer:
             outdata.fill(0.0)
             return
 
-        # 어떤 트랙이 들리는가? (solo가 있으면 solo만, 없으면 unmuted 전부)
+        # which tracks are audible? (only soloed tracks if any are soloed, otherwise all unmuted)
         any_solo = any(t.soloed for t in self.tracks)
 
         # mix buffer (frames, 2)
@@ -265,7 +265,7 @@ class MultitrackPlayer:
             track_audio = t.audio
             ch = track_audio.shape[0]
 
-            # 현재 위치에서 frames만큼 잘라내 (n_to_copy)
+            # take `frames` samples starting at the current position (n_to_copy)
             tend = min(pos + frames, track_audio.shape[1])
             tn = tend - pos
             if tn <= 0:
@@ -280,7 +280,7 @@ class MultitrackPlayer:
                 mix[:tn, 0] += seg[0] * lin
                 mix[:tn, 1] += seg[1] * lin
 
-            # 트랙별 RMS/peak (UI meter용)
+            # per-track RMS/peak (for the UI meter)
             t.rms = float(np.sqrt(np.mean(seg ** 2))) if seg.size else 0.0
             t.peak = float(np.max(np.abs(seg))) if seg.size else 0.0
 
@@ -292,7 +292,7 @@ class MultitrackPlayer:
         if self.master_peak >= 1.0:
             self.clipping_count += int(np.sum(np.abs(mix) >= 1.0))
 
-        # 끝까지 안 채웠으면 0으로
+        # zero-fill if we did not reach the end
         if n_to_copy < frames:
             mix[n_to_copy:].fill(0.0)
             with self._lock:

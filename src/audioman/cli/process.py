@@ -1,11 +1,12 @@
 # Created: 2026-03-21
-# Purpose: audioman process 서브커맨드 (단일 + 배치)
+# Purpose: audioman process subcommand (single + batch)
 
 import argparse
 import json
 import sys
 
-from audioman.cli.output import print_error, print_json, print_success, print_warning, output_console
+from audioman.cli.output import print_error, print_json, print_literal, print_success, print_warning, output_console
+from audioman.core.findings import json_envelope, schema_uri
 from audioman.core.engine import parse_params, process_file
 from audioman.core.batch import collect_audio_files, resolve_output_path
 from pathlib import Path
@@ -20,7 +21,7 @@ def _positive_int(value: str) -> int:
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("process", help="Process audio with a single plugin")
-    # 입력: 파일 또는 디렉토리
+    # Input: file or directory
     parser.add_argument("input", help="Input audio file or directory")
     parser.add_argument("--plugin", "-p", required=True, help="Plugin name")
     parser.add_argument("--param", action="append", default=[], help="Parameter (key=value)")
@@ -37,7 +38,7 @@ def run(args: argparse.Namespace) -> None:
     params = parse_params(args.param) if args.param else {}
     input_path = Path(args.input)
 
-    # 배치 모드 판정: 입력이 디렉토리이면 배치
+    # Batch mode: a directory input means batch processing
     if input_path.is_dir():
         _run_batch(args, params, input_path)
     else:
@@ -55,9 +56,9 @@ def _run_single(args: argparse.Namespace, params: dict) -> None:
             "params": params,
         }
         if args.json:
-            print_json(plan)
+            print_json(json_envelope("process", plan, schema=schema_uri("process")))
         else:
-            output_console.print(f"[dry-run] {args.input} → [{args.plugin}] → {args.output}")
+            print_literal(f"[dry-run] {args.input} → [{args.plugin}] → {args.output}")
             if params:
                 output_console.print(f"  params: {params}")
         return
@@ -73,13 +74,13 @@ def _run_single(args: argparse.Namespace, params: dict) -> None:
     except (FileNotFoundError, ValueError) as e:
         print_error(str(e))
     except Exception as e:
-        print_error(f"처리 실패: {e}")
+        print_error(f"Processing failed: {e}")
 
     if args.json:
-        print_json({"command": "process", **result.to_dict()})
+        print_json(json_envelope("process", result.to_dict(), schema=schema_uri("process")))
         return
 
-    output_console.print(f"\n[bold]처리 완료[/bold]")
+    print_success("Processing complete")
     output_console.print(f"  Plugin: {result.plugin_name}")
     output_console.print(f"  Input:  {result.input_path}")
     output_console.print(f"  Output: {result.output_path}")
@@ -88,7 +89,7 @@ def _run_single(args: argparse.Namespace, params: dict) -> None:
     output_s = result.output_stats
     output_console.print(f"  RMS:    {input_s['rms']:.4f} → {output_s['rms']:.4f}")
     output_console.print(f"  Peak:   {input_s['peak']:.4f} → {output_s['peak']:.4f}")
-    print_success("완료")
+    print_success("Done")
 
 
 def _run_batch(args: argparse.Namespace, params: dict, input_dir: Path) -> None:
@@ -96,7 +97,7 @@ def _run_batch(args: argparse.Namespace, params: dict, input_dir: Path) -> None:
     files = collect_audio_files(input_dir, recursive=args.recursive)
 
     if not files:
-        print_error(f"오디오 파일이 없습니다: {input_dir}")
+        print_error(f"No audio files found: {input_dir}")
 
     if args.dry_run:
         plan = {
@@ -111,9 +112,9 @@ def _run_batch(args: argparse.Namespace, params: dict, input_dir: Path) -> None:
             "files": [str(f) for f in files],
         }
         if args.json:
-            print_json(plan)
+            print_json(json_envelope("process", plan, schema=schema_uri("process")))
         else:
-            output_console.print(f"[dry-run] 배치: {len(files)}개 파일 → [{args.plugin}] → {output_dir}")
+            print_literal(f"[dry-run] batch: {len(files)} files → [{args.plugin}] → {output_dir}")
         return
 
     jobs = []
@@ -128,7 +129,7 @@ def _run_batch(args: argparse.Namespace, params: dict, input_dir: Path) -> None:
 
 
 def _process_one(job_args):
-    """멀티프로세싱 워커 함수"""
+    """Multiprocessing worker function."""
     fpath, out_path, plugin_name, params, passes = job_args
     try:
         result = process_file(
@@ -160,7 +161,7 @@ def _run_batch_sequential(args, jobs, total):
         console=output_console,
         disable=args.json,
     ) as progress:
-        task_id = progress.add_task("처리", total=total)
+        task_id = progress.add_task("Processing", total=total)
 
         for i, job in enumerate(jobs):
             fpath = job[0]
@@ -169,18 +170,20 @@ def _run_batch_sequential(args, jobs, total):
             if r["ok"]:
                 ok += 1
                 if args.json:
-                    print(json.dumps({"command": "process", **r["result"]}, ensure_ascii=False, default=str))
+                    print(json.dumps(json_envelope("process", r["result"], schema=schema_uri("process")), ensure_ascii=False, default=str))
             else:
                 fail += 1
                 if args.json:
-                    print(json.dumps({"command": "process", "input": r["input"], "error": r["error"]}, ensure_ascii=False))
+                    print(json.dumps(json_envelope("process", {"input": r["input"], "error": r["error"]}, schema=schema_uri("process")), ensure_ascii=False))
                 elif not args.json:
                     print_warning(f"  {fpath.name}: {r['error']}")
 
             progress.update(task_id, advance=1, description=f"{fpath.name}")
 
     if not args.json:
-        print_success(f"배치 완료: {ok} 성공, {fail} 실패 / {total} 전체")
+        print_success(f"Batch complete: {ok} succeeded, {fail} failed / {total} total")
+    if fail:
+        sys.exit(1)
 
 
 def _run_batch_parallel(args, jobs, total):
@@ -196,23 +199,25 @@ def _run_batch_parallel(args, jobs, total):
         TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
         TextColumn("{task.completed}/{task.total}"),
         TimeElapsedColumn(),
-        console=output_console,
+        console=output_console, disable=args.json,
     ) as progress:
-        task_id = progress.add_task(f"처리 ({args.workers} workers)", total=total)
+        task_id = progress.add_task(f"Processing ({args.workers} workers)", total=total)
 
         with Pool(processes=args.workers) as pool:
             for r in pool.imap_unordered(_process_one, jobs):
                 if r["ok"]:
                     ok += 1
                     if args.json:
-                        print(json.dumps({"command": "process", **r["result"]}, ensure_ascii=False, default=str))
+                        print(json.dumps(json_envelope("process", r["result"], schema=schema_uri("process")), ensure_ascii=False, default=str))
                 else:
                     fail += 1
                     if args.json:
-                        print(json.dumps({"command": "process", "input": r["input"], "error": r["error"]}, ensure_ascii=False))
+                        print(json.dumps(json_envelope("process", {"input": r["input"], "error": r["error"]}, schema=schema_uri("process")), ensure_ascii=False))
 
                 progress.update(task_id, advance=1,
                     description=f"[{ok+fail}/{total}] {Path(r['input']).name}")
 
     if not args.json:
-        print_success(f"배치 완료: {ok} 성공, {fail} 실패 / {total} 전체 ({args.workers} workers)")
+        print_success(f"Batch complete: {ok} succeeded, {fail} failed / {total} total ({args.workers} workers)")
+    if fail:
+        sys.exit(1)

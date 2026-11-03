@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from audioman.core.streaming import (
+    BlockTiming,
     render_offline,
     render_streamed,
     make_pedalboard_process_fn,
@@ -177,3 +178,46 @@ def test_benchmark_smaller_block_higher_rt_factor():
     small = benchmark(render_streamed(x, SR, heavy, block_size=64))
     large = benchmark(render_streamed(x, SR, heavy, block_size=1024))
     assert small.rt_factor_mean > large.rt_factor_mean
+
+
+# --- residual branches ------------------------------------------------------
+
+
+def test_block_timing_zero_deadline_reports_infinite_rt_factor():
+    """A zero deadline means "no real-time budget": rt_factor must not divide by 0."""
+    timing = BlockTiming(index=0, n_samples=0, process_sec=0.001, deadline_sec=0.0)
+    assert timing.rt_factor == float("inf")
+    assert timing.is_xrun is True
+
+
+def test_render_streamed_rejects_output_shape_mismatch():
+    """A process_fn that changes the block shape must be rejected, not silently stacked."""
+    def wrong_shape(block, sample_rate, reset):
+        return block[:, :-1]
+
+    with pytest.raises(ValueError, match="same shape as the input block"):
+        render_streamed(_sine(dur=0.05), SR, wrong_shape, block_size=128)
+
+
+def test_render_streamed_accepts_mono_1d_process_fn_output():
+    """A 1-D block returned by process_fn is promoted back to (1, samples)."""
+    def mono_out(block, sample_rate, reset):
+        return block[0]
+
+    st = render_streamed(_sine(dur=0.05), SR, mono_out, block_size=128)
+    assert st.audio.ndim == 2
+    assert st.audio.shape[0] == 1
+
+
+def test_render_streamed_casts_float64_input_to_float32():
+    """Input dtype is normalized before the first block reaches process_fn."""
+    seen: list[np.dtype] = []
+
+    def record(block, sample_rate, reset):
+        seen.append(block.dtype)
+        return block
+
+    x = _sine(dur=0.05).astype(np.float64)
+    st = render_streamed(x, SR, record, block_size=128)
+    assert seen and all(dtype == np.float32 for dtype in seen)
+    assert st.audio.dtype == np.float32

@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audioman://schema/commit.v1.json",
+  "title": "Audioman Commit Result",
+  "description": "Output envelope for `audioman commit --json`. The measurement variant (`--dry-run`) reports per-plugin latency and the chain; the execution variant reports the written file, delay compensation and stats. `total_latency_samples` is present in both.",
+  "type": "object",
+  "required": [
+    "$schema",
+    "audioman_version",
+    "command",
+    "total_latency_samples"
+  ],
+  "properties": {
+    "$schema": {"const": "audioman://schema/commit.v1.json"},
+    "audioman_version": {"type": "string"},
+    "command": {"const": "commit"},
+    "total_latency_samples": {"type": "integer"},
+    "dry_run": {
+      "type": ["boolean", "null"],
+      "description": "Measurement variant (`--dry-run`) only; always true when present."
+    },
+    "chain": {
+      "type": ["array", "null"],
+      "description": "Measurement variant only.",
+      "items": {"type": "object"}
+    },
+    "latency": {
+      "type": ["array", "null"],
+      "description": "Measurement variant only: per-plugin measurements.",
+      "items": {"type": "object"}
+    },
+    "input_path": {
+      "type": ["string", "null"],
+      "description": "Execution variant only."
+    },
+    "output_path": {
+      "type": ["string", "null"],
+      "description": "Execution variant only."
+    },
+    "steps": {
+      "type": ["array", "null"],
+      "description": "Execution variant only.",
+      "items": {"type": "object"}
+    },
+    "latency_compensation": {
+      "type": ["array", "null"],
+      "description": "Execution variant only.",
+      "items": {"type": "object"}
+    },
+    "input_stats": {
+      "type": ["object", "null"],
+      "description": "Execution variant only."
+    },
+    "output_stats": {
+      "type": ["object", "null"],
+      "description": "Execution variant only."
+    },
+    "duration_seconds": {
+      "type": ["number", "null"],
+      "description": "Execution variant only."
+    }
+  }
+}

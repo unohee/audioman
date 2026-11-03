@@ -158,3 +158,30 @@ class TestMakeTimeAxis:
         result = _make_time_axis(60, 1.0)
         # 라벨 포함해서 적절한 길이
         assert len(result) > 0
+
+
+class TestEmptyChunkPadding:
+    def test_more_columns_than_samples_pads_with_silence(self):
+        # width 200 > sample count 16 → trailing columns hit the empty-chunk branch
+        audio = np.ones(16, dtype=np.float32) * 0.5
+        out = render_waveform(audio, sample_rate=48000, width=200, height=8)
+        assert isinstance(out, str)
+        assert len(out) > 0
+
+    def test_empty_chunk_in_envelope_renderer(self):
+        audio = np.ones(16, dtype=np.float32) * 0.5
+        out = render_envelope(audio, sample_rate=48000, width=200)
+        assert isinstance(out, str)
+
+
+class TestValidateRenderParams:
+    def test_zero_width_rejected(self):
+        from audioman.core.waveform import _validate_render_params
+        with pytest.raises(ValueError, match="width must be positive"):
+            _validate_render_params(0, 16, 44100)
+
+    def test_zero_sample_rate_rejected(self):
+        from audioman.core.waveform import _validate_render_params
+        # width >= 8 and height >= 2 so validation reaches the sample-rate check
+        with pytest.raises(ValueError, match="sample_rate must be positive"):
+            _validate_render_params(80, 16, 0)

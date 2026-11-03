@@ -1,0 +1,39 @@
+name: constitution
+
+# book.md enforced in CI through the shared reusable workflow. This file is a thin
+# caller by design: the Articles are language-agnostic and their gates live in
+# `unohee/ci-templates`, so a rule fixed there is fixed for every repository at once.
+# A copy here would fix this repository and silently leave the others behind.
+# Language CI is `.github/workflows/python-ci.yml`.
+#
+# Measured against this repository before adoption (2026-09-28, local run of the same
+# gate scripts the template executes):
+#   Art. III (LOC)        0 breach, 0 files on the 30-day clock over 101 files
+#   Art. IV (ARCHITECTURE) present
+#   §5.5 (trailers)       0 offending commits
+#   Art. II (cxt bs)      0 critical, 99 warning, 31 minor over 101 files
+#   Art. VI (workflows)   0 gate-defeating construct
+#
+# `gates-ref` is not pinned here: the caller takes the gates from the template's
+# default (`main`), which is what the constitution prescribes. ci-templates runs the
+# same gate against its own workflow files on every push, so a broken gate is caught
+# where it is written.
+
+on:
+  push:
+    branches: [main]
+  # Every pull request, whatever it targets: a gate that does not run on the branch a
+  # change lands through is not a gate.
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: constitution-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    uses: unohee/ci-templates/.github/workflows/constitution-gate.yml@main

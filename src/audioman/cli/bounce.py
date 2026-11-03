@@ -1,9 +1,11 @@
 # Created: 2026-04-05
-# Purpose: audioman bounce 서브커맨드 — 멀티트랙 바운스
+# Purpose: audioman bounce subcommand — multitrack bounce
 
 import argparse
 
 from audioman.cli.output import print_error, print_json, print_success, print_warning, output_console
+from audioman.cli.output import print_markup
+from audioman.core.findings import json_envelope, schema_uri
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -28,7 +30,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _parse_float_list(s: str) -> list[float]:
-    """쉼표 구분 float 리스트 파싱"""
+    """Parse a comma-separated list of floats."""
     if not s.strip():
         return []
     return [float(v.strip()) for v in s.split(",")]
@@ -38,13 +40,13 @@ def run(args: argparse.Namespace) -> None:
     from audioman.core.mixer import TrackConfig, bounce
     from audioman.core.pipeline import parse_chain_string
 
-    # 세션 파일 모드
+    # Session file mode
     if args.session:
         from audioman.core.session import load_session
         try:
             session = load_session(args.session)
         except Exception as e:
-            print_error(f"세션 파일 로드 실패: {e}")
+            print_error(f"Failed to load session file: {e}")
             return
 
         tracks = session.tracks
@@ -52,18 +54,19 @@ def run(args: argparse.Namespace) -> None:
         sample_rate = session.sample_rate
         subtype = session.subtype
     else:
-        # CLI 인자 모드
+        # CLI argument mode
         if not args.inputs:
-            print_error("입력 파일을 지정하세요 (또는 --session 사용)")
+            print_error("Specify input files (or use --session)")
             return
 
         try:
             gains = _parse_float_list(args.gain)
             pans = _parse_float_list(args.pan)
         except ValueError as e:
-            print_error(f"--gain 및 --pan은 쉼표로 구분된 숫자여야 합니다: {e}")
+            print_error(f"--gain and --pan must be comma-separated numbers: {e}")
+            return
 
-        # 트랙별 체인 파싱 ('|'로 구분)
+        # Parse per-track chains (separated by '|')
         chains = []
         if args.chain.strip():
             for chain_str in args.chain.split("|"):
@@ -89,16 +92,15 @@ def run(args: argparse.Namespace) -> None:
     # Dry-run
     if args.dry_run:
         plan = {
-            "command": "bounce",
             "dry_run": True,
             "output": output_path,
             "track_count": len(tracks),
             "tracks": [t.to_dict() for t in tracks],
         }
         if args.json:
-            print_json(plan)
+            print_json(json_envelope("bounce", plan, schema=schema_uri("bounce")))
         else:
-            output_console.print(f"\n[bold]Bounce Plan[/bold] — {len(tracks)} tracks → {output_path}")
+            print_markup(f"\n[bold]Bounce Plan[/bold] — {len(tracks)} tracks → {output_path}")
             for i, t in enumerate(tracks, 1):
                 chain_str = f" → [{', '.join(s.plugin_name for s in t.chain)}]" if t.chain else ""
                 output_console.print(
@@ -106,7 +108,7 @@ def run(args: argparse.Namespace) -> None:
                 )
         return
 
-    # 실행
+    # Execute
     try:
         result = bounce(
             tracks=tracks,
@@ -115,18 +117,18 @@ def run(args: argparse.Namespace) -> None:
             subtype=subtype,
         )
     except Exception as e:
-        print_error(f"바운스 실패: {e}")
+        print_error(f"Bounce failed: {e}")
         return
 
     if args.json:
-        print_json({"command": "bounce", **result.to_dict()})
+        print_json(json_envelope("bounce", result.to_dict(), schema=schema_uri("bounce")))
         return
 
-    output_console.print(f"\n[bold]바운스 완료[/bold]")
+    print_success("Bounce complete")
     output_console.print(f"  Tracks: {result.track_count}")
     output_console.print(f"  Output: {result.output_path}")
     output_console.print(f"  SR:     {result.sample_rate} Hz")
     output_console.print(f"  Time:   {result.duration_seconds}s")
     if result.clipping_detected:
-        print_warning("클리핑 감지 — 트랙 볼륨 조정 또는 마스터 리미터 사용 권장")
-    print_success("완료")
+        print_warning("Clipping detected — lower the track levels or use a master limiter")
+    print_success("Done")

@@ -1,5 +1,5 @@
 # Created: 2026-03-21
-# Purpose: 다중 플러그인 체인 처리 파이프라인
+# Purpose: Multi-plugin chain processing pipeline
 
 import logging
 import time
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PipelineStep:
-    """파이프라인 단계"""
+    """Pipeline step"""
     plugin_name: str
     params: dict[str, Any]
 
@@ -28,7 +28,7 @@ class PipelineStep:
 
 @dataclass
 class PipelineResult:
-    """파이프라인 실행 결과"""
+    """Pipeline execution result"""
     input_path: str
     output_path: str
     steps: list[dict]
@@ -41,7 +41,7 @@ class PipelineResult:
 
 
 def parse_chain_string(chain_str: str) -> list[PipelineStep]:
-    """체인 문자열 파싱
+    """Parse a chain string
     "denoise:threshold=-20,dehum:freq=60,declick" →
     [PipelineStep("denoise", {"threshold": -20}), PipelineStep("dehum", {"freq": 60}), ...]
     """
@@ -79,19 +79,19 @@ def run_pipeline(
     output_path: str | Path,
     steps: list[PipelineStep],
 ) -> PipelineResult:
-    """다중 플러그인 순차 처리"""
+    """Process multiple plugins sequentially"""
     start = time.monotonic()
     registry = get_registry()
 
-    # 오디오 읽기
+    # read the audio
     audio, sr = read_audio(input_path)
     input_stats = get_audio_stats(audio, sr)
 
-    # 각 단계 순차 실행
+    # run each step sequentially
     for i, step in enumerate(steps):
         meta = registry.get(step.plugin_name)
         if not meta:
-            raise ValueError(f"플러그인을 찾을 수 없습니다: '{step.plugin_name}' (step {i+1})")
+            raise ValueError(f"Plugin not found: '{step.plugin_name}' (step {i+1})")
 
         wrapper = VST3PluginWrapper(meta.path)
         wrapper.load()
@@ -102,7 +102,7 @@ def run_pipeline(
         logger.info(f"Step {i+1}/{len(steps)}: {meta.short_name}")
         audio = wrapper.process(audio, sr)
 
-    # 출력 저장
+    # write the output
     output_stats = get_audio_stats(audio, sr)
     write_audio(output_path, audio, sr)
 

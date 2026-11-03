@@ -1,15 +1,15 @@
 # Created: 2026-04-26
-# Purpose: 마스터링 납품 전 QC(Quality Control) 검수 리포트.
-# 측정 → target profile별 PASS/WARN/FAIL 판정 → JSON 리포트.
+# Purpose: QC (Quality Control) inspection report before mastering delivery.
+# Measurement → PASS/WARN/FAIL verdict per target profile → JSON report.
 #
-# 핵심 측정:
+# Core measurements:
 #   - Loudness: integrated/short-term LUFS, LRA, True Peak
-#   - Clipping: |sample| >= 1.0 발생 횟수와 위치
-#   - DC offset: 채널별 mean
-#   - Click/pop: 1차 차분 spike 감지 (국부 RMS 대비 비율 기반)
-#   - Phase correlation: 스테레오 L/R 상관계수
-#   - Channel imbalance: L/R RMS 차이
-#   - Head/tail silence: 납품 표준 padding 확인
+#   - Clipping: count and locations of |sample| >= 1.0
+#   - DC offset: per-channel mean
+#   - Click/pop: first-difference spike detection (ratio against local RMS)
+#   - Phase correlation: stereo L/R correlation coefficient
+#   - Channel imbalance: L/R RMS difference
+#   - Head/tail silence: verify delivery-standard padding
 #   - Format: SR / bit depth / channels
 
 from __future__ import annotations
@@ -33,17 +33,17 @@ from audioman.core.dsp import measure_dc_offset
 @dataclass
 class QCTarget:
     name: str
-    integrated_lufs: tuple[float, float]      # (min, max) — 권장 범위
-    max_true_peak_dbtp: float                 # 절대 천장
-    min_lra: float = 0.0                      # 최소 dynamic range (방송용)
+    integrated_lufs: tuple[float, float]      # (min, max) — recommended range
+    max_true_peak_dbtp: float                 # absolute ceiling
+    min_lra: float = 0.0                      # minimum dynamic range (for broadcast)
     max_lra: float | None = None
     head_silence_ms: tuple[float, float] = (0.0, 1000.0)
     tail_silence_sec: tuple[float, float] = (0.0, 5.0)
-    sample_rate: int | None = None            # None이면 무관
+    sample_rate: int | None = None            # None → not checked
     min_bit_depth: int | None = None
 
 
-# 주요 마스터링/스트리밍 표준
+# Major mastering/streaming standards
 TARGETS: dict[str, QCTarget] = {
     "spotify": QCTarget(
         name="Spotify (Loud)",
@@ -92,7 +92,7 @@ def list_targets() -> list[str]:
 
 
 def detect_clipping(audio: np.ndarray, threshold: float = 0.999) -> dict:
-    """클리핑 감지. |sample| >= threshold인 샘플 수 + 위치."""
+    """Detect clipping. Count and locations of |sample| >= threshold."""
     abs_audio = np.abs(audio)
     if audio.ndim == 1:
         clipped = np.where(abs_audio >= threshold)[0]
@@ -101,7 +101,7 @@ def detect_clipping(audio: np.ndarray, threshold: float = 0.999) -> dict:
             "first_sample_locations": [int(x) for x in clipped[:10].tolist()],
         }
 
-    # 스테레오: 채널 union
+    # stereo: union across channels
     union = np.zeros(audio.shape[1], dtype=bool)
     per_ch = []
     for ch in range(audio.shape[0]):
@@ -123,15 +123,16 @@ def detect_clicks(
     window_ms: float = 50.0,
     min_separation_ms: float = 5.0,
 ) -> dict:
-    """클릭/팝 감지.
+    """Detect clicks/pops.
 
-    1차 차분 |x[n+1] - x[n]|이 국부 RMS의 sensitivity배를 초과하면 클릭으로 판정.
-    국부 RMS는 window_ms 단위 sliding average. min_separation_ms 안에 있는
-    연쇄 검출은 한 번으로 묶음.
+    A first difference |x[n+1] - x[n]| exceeding sensitivity times the local RMS
+    is judged a click. The local RMS is a sliding average over window_ms.
+    Detections chained within min_separation_ms are grouped into one.
 
-    sensitivity 기본 6: 마스터링 QC는 false negative가 false positive보다
-    훨씬 위험하므로 보수적으로 잡음. 정상 음악의 transient는 보통 RMS 대비
-    3~5배 정도라, 6배 초과는 disk edit/digital glitch 의심.
+    Default sensitivity 6: mastering QC treats a false negative as far more
+    dangerous than a false positive, so it errs conservative. Normal musical
+    transients are usually 3-5x the RMS, so a ratio above 6 suggests a disk edit
+    or digital glitch.
     """
     mono = audio.mean(axis=0) if audio.ndim == 2 else audio
     n = len(mono)
@@ -159,18 +160,21 @@ def detect_clicks(
             "sensitivity": sensitivity,
         }
 
-    # 국부 RMS: rolling square mean
+    # local RMS: rolling square mean
     sq = mono.astype(np.float64) ** 2
     cumsum = np.concatenate([[0.0], np.cumsum(sq)])
     rolling_mean_sq = (cumsum[win:] - cumsum[:-win]) / win
-    # diff와 길이 맞추기 (앞뒤 패딩)
+    # match the length to diff (pad both ends)
+    # `win >= 16` and `n >= win` here, so the rolling mean has n - win + 1 entries and
+    # the gap to the n - 1 the ratio needs is exactly win - 2 >= 14: `pad` is never
+    # negative, and padding by `pad` on the left and the remainder on the right makes
+    # the result exactly n - 1 long, so no truncation or top-up can be needed.
     pad = (n - 1 - len(rolling_mean_sq)) // 2
-    if pad > 0:
-        rolling_mean_sq = np.pad(rolling_mean_sq, (pad, n - 1 - len(rolling_mean_sq) - pad), mode="edge")
-    elif pad < 0:
-        rolling_mean_sq = rolling_mean_sq[:n - 1]
-    if len(rolling_mean_sq) < n - 1:
-        rolling_mean_sq = np.pad(rolling_mean_sq, (0, n - 1 - len(rolling_mean_sq)), mode="edge")
+    rolling_mean_sq = np.pad(
+        rolling_mean_sq,
+        (pad, n - 1 - len(rolling_mean_sq) - pad),
+        mode="edge",
+    )
 
     local_rms = np.sqrt(np.maximum(rolling_mean_sq, 1e-12))
     ratio = diff / local_rms
@@ -179,7 +183,7 @@ def detect_clicks(
     if len(candidates) == 0:
         return {"n_clicks": 0, "locations_sec": [], "max_ratio": float(ratio.max())}
 
-    # min_separation 내 연쇄는 1개로 묶음
+    # group chains within min_separation into one
     min_sep = max(int(min_separation_ms / 1000.0 * sample_rate), 1)
     grouped = [candidates[0]]
     for c in candidates[1:]:
@@ -195,9 +199,10 @@ def detect_clicks(
 
 
 def stereo_phase_correlation(audio: np.ndarray, window_ms: float = 100.0, sample_rate: int = 48000) -> dict:
-    """스테레오 L/R 상관계수. 모노 호환성 검사.
+    """Stereo L/R correlation coefficient. Mono compatibility check.
 
-    -1 (완전 역상) ~ +1 (완전 동상). 0 미만 영역이 길면 모노 합산 시 cancellation.
+    -1 (fully out of phase) ~ +1 (fully in phase). A long stretch below 0 means
+    cancellation when summed to mono.
     """
     if audio.ndim != 2 or audio.shape[0] != 2:
         return {"applicable": False, "reason": "not stereo"}
@@ -205,13 +210,13 @@ def stereo_phase_correlation(audio: np.ndarray, window_ms: float = 100.0, sample
     left = audio[0].astype(np.float64)
     right = audio[1].astype(np.float64)
 
-    # 글로벌 correlation
+    # global correlation
     if np.std(left) > 0 and np.std(right) > 0:
         global_corr = float(np.corrcoef(left, right)[0, 1])
     else:
         global_corr = 0.0
 
-    # 윈도우별 correlation (최소값과 음의 영역 비율)
+    # per-window correlation (minimum and negative-region ratio)
     win = max(int(window_ms / 1000.0 * sample_rate), 256)
     n_windows = len(left) // win
     if n_windows < 1:
@@ -250,7 +255,7 @@ def stereo_phase_correlation(audio: np.ndarray, window_ms: float = 100.0, sample
 
 
 def channel_imbalance_db(audio: np.ndarray) -> dict:
-    """L/R RMS 차이 (dB). 0이면 완벽 균형."""
+    """L/R RMS difference (dB). 0 means perfectly balanced."""
     if audio.ndim != 2 or audio.shape[0] != 2:
         return {"applicable": False, "reason": "not stereo"}
     rms_l = float(np.sqrt(np.mean(audio[0] ** 2)))
@@ -267,9 +272,10 @@ def channel_imbalance_db(audio: np.ndarray) -> dict:
 
 
 def head_tail_silence(audio: np.ndarray, sample_rate: int, threshold_db: float = -60.0) -> dict:
-    """파일 앞/뒤 무음 길이. 마스터링 납품 padding 확인.
+    """Leading/trailing silence length. Verifies mastering delivery padding.
 
-    threshold_db는 -60dB로 엄격 — true silence (실제 zero) 또는 noise floor 직전.
+    threshold_db of -60 dB is strict — true silence (actual zeros) or just above
+    the noise floor.
     """
     mono = audio.mean(axis=0) if audio.ndim == 2 else audio
     threshold = 10 ** (threshold_db / 20.0)
@@ -287,7 +293,7 @@ def head_tail_silence(audio: np.ndarray, sample_rate: int, threshold_db: float =
 
 
 def file_format_info(path: str | Path) -> dict:
-    """soundfile 메타데이터 (bit depth, subtype, etc)."""
+    """soundfile metadata (bit depth, subtype, etc)."""
     info = sf.info(str(path))
     bit_depth = None
     sub = info.subtype or ""
@@ -324,7 +330,7 @@ def _status_for_lufs(lufs: float | None, target_range: tuple[float, float]) -> s
     lo, hi = target_range
     if lo <= lufs <= hi:
         return "PASS"
-    # 0.5 LU 이내면 WARN
+    # WARN within 0.5 LU
     if lo - 0.5 <= lufs <= hi + 0.5:
         return "WARN"
     return "FAIL"
@@ -332,7 +338,7 @@ def _status_for_lufs(lufs: float | None, target_range: tuple[float, float]) -> s
 
 def _status_for_tp(tp: float | None, ceiling: float) -> str:
     if tp is None:
-        return "PASS"  # 무음은 TP 위반 없음
+        return "PASS"  # silence cannot violate TP
     if tp <= ceiling:
         return "PASS"
     if tp <= ceiling + 0.3:
@@ -356,17 +362,17 @@ def evaluate(
     target: str | QCTarget = "spotify",
     click_sensitivity: float = 6.0,
 ) -> dict:
-    """모든 QC 측정 + target profile 대비 판정. 통합 리포트 반환."""
+    """All QC measurements + verdict against a target profile. Returns a combined report."""
     if isinstance(target, str):
         if target not in TARGETS:
-            raise ValueError(f"알 수 없는 target: {target!r} (지원: {list(TARGETS.keys())})")
+            raise ValueError(f"Unknown target: {target!r} (supported: {list(TARGETS.keys())})")
         target_obj = TARGETS[target]
         target_name = target
     else:
         target_obj = target
         target_name = target.name
 
-    # 1. 측정
+    # 1. measurement
     loud_report = loudness_mod.measure(audio, sample_rate)
     loud_d = loud_report.to_dict()
     clip = detect_clipping(audio)
@@ -377,7 +383,7 @@ def evaluate(
     silences = head_tail_silence(audio, sample_rate)
     fmt = file_format_info(file_path) if file_path else None
 
-    # 2. 판정
+    # 2. verdict
     checks: list[dict] = []
 
     # Loudness
@@ -444,7 +450,7 @@ def evaluate(
         "detail": clicks,
     })
 
-    # Phase correlation (스테레오만)
+    # Phase correlation (stereo only)
     if phase.get("applicable"):
         neg_pct = phase.get("negative_correlation_pct", 0.0)
         phase_status = "PASS" if neg_pct < 5.0 else ("WARN" if neg_pct < 20.0 else "FAIL")
@@ -509,7 +515,7 @@ def evaluate(
                 "status": bd_status,
             })
 
-    # 3. 종합 verdict
+    # 3. overall verdict
     statuses = [c["status"] for c in checks]
     if "FAIL" in statuses:
         verdict = "FAIL"
@@ -542,7 +548,7 @@ def evaluate_file(
     target: str | QCTarget = "spotify",
     click_sensitivity: float = 6.0,
 ) -> dict:
-    """파일 경로로 evaluate. read_audio + format_info 자동."""
+    """evaluate by file path. read_audio + format_info are automatic."""
     audio, sr = read_audio(file_path)
     return evaluate(
         audio, sr,

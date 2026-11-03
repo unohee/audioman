@@ -1,6 +1,6 @@
 # Created: 2026-05-07
-# Purpose: audioman obs — OBS 멀티트랙 영상 자동 진단 (dry-run)
-# 사용 가이드: docs/obs-workflow.md
+# Purpose: audioman obs — automatic diagnosis of OBS multitrack video (dry-run)
+# Guide: docs/obs-workflow.md
 
 from __future__ import annotations
 
@@ -15,44 +15,46 @@ from audioman.cli.output import (
     print_info,
     print_json,
     print_table,
+    print_markup,
 )
 from audioman.core import obs as obs_core
+from audioman.core.findings import json_envelope, schema_uri
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
         "obs",
-        help="OBS 멀티트랙 영상 자동 진단 (dry-run) — see docs/obs-workflow.md",
+        help="Automatic diagnosis of OBS multitrack video (dry-run) — see docs/obs-workflow.md",
     )
     sub = parser.add_subparsers(dest="obs_command", required=True)
 
-    # obs probe — 토폴로지만 빠르게
-    p_probe = sub.add_parser("probe", help="트랙 토폴로지(분리/단일/복제/무음) 식별")
-    p_probe.add_argument("input", help="입력 영상 파일 또는 디렉터리")
+    # obs probe — topology only, fast
+    p_probe = sub.add_parser("probe", help="Identify track topology (separate/single/duplicated/silent)")
+    p_probe.add_argument("input", help="Input video file or directory")
     p_probe.add_argument(
         "--probe-seconds", type=float, default=None,
-        help="트랙별 RMS 측정 길이(초). 미지정 시 영상 전체를 스캔. "
-             "빠른 확인이 필요하면 15 정도로 지정.",
+        help="Per-track RMS measurement length in seconds. Defaults to scanning the whole video. "
+             "Use ~15 for a quick check.",
     )
     p_probe.set_defaults(func=_run_probe)
 
-    # obs dry-run — 진단 + 처치 계획
+    # obs dry-run — diagnosis + treatment plan
     p_dry = sub.add_parser(
         "dry-run",
-        help="활성 트랙 분류 + 진단 + 처치 계획 생성 (실제 처리 없음)",
+        help="Classify active tracks + diagnose + build treatment plan (no actual processing)",
     )
-    p_dry.add_argument("input", help="입력 영상 파일 또는 디렉터리")
+    p_dry.add_argument("input", help="Input video file or directory")
     p_dry.add_argument(
         "--seconds", type=float, default=60.0,
-        help="분석 구간 길이 (default: 60s, 영상 중간부에서 추출)",
+        help="Analysis window length (default: 60s, taken from the middle of the video)",
     )
     p_dry.add_argument(
         "--start", type=float, default=None,
-        help="분석 시작 시점(초). 미지정 시 영상 중간",
+        help="Analysis start time in seconds. Defaults to the middle of the video",
     )
     p_dry.add_argument(
         "--out-dir", type=str, default=None,
-        help="JSON 리포트를 저장할 디렉터리 (지정 시 stdout 대신 파일로)",
+        help="Directory to write JSON reports to (writes files instead of stdout when set)",
     )
     p_dry.set_defaults(func=_run_dry_run)
 
@@ -69,7 +71,7 @@ def _iter_videos(path: Path):
         for p in sorted(path.iterdir()):
             if p.suffix.lower() not in exts:
                 continue
-            # .mov와 .mp4가 같은 stem이면 .mov 우선
+            # .mov wins when .mov and .mp4 share the same stem
             stem = p.with_suffix("")
             if stem in seen_stems:
                 continue
@@ -82,7 +84,7 @@ def _iter_videos(path: Path):
 def _run_probe(args: argparse.Namespace) -> None:
     inp = Path(args.input)
     if not inp.exists():
-        print_error(f"파일/폴더 없음: {inp}")
+        print_error(f"File/folder not found: {inp}")
         return
 
     json_mode = getattr(args, "json", False)
@@ -98,7 +100,11 @@ def _run_probe(args: argparse.Namespace) -> None:
         results.append({"video": str(video), **r.to_dict()})
 
     if json_mode:
-        print_json(results if inp.is_dir() else results[0] if results else {})
+        print_json(json_envelope(
+            "obs probe",
+            {"input": str(inp), "count": len(results), "files": results},
+            schema=schema_uri("obs"),
+        ))
         return
 
     rows = []
@@ -129,7 +135,7 @@ def _run_probe(args: argparse.Namespace) -> None:
 def _run_dry_run(args: argparse.Namespace) -> None:
     inp = Path(args.input)
     if not inp.exists():
-        print_error(f"파일/폴더 없음: {inp}")
+        print_error(f"File/folder not found: {inp}")
         return
 
     json_mode = getattr(args, "json", False)
@@ -142,7 +148,7 @@ def _run_dry_run(args: argparse.Namespace) -> None:
 
     for video in _iter_videos(inp):
         try:
-            print_info(f"분석 중: {video.name}")
+            print_info(f"Analyzing: {video.name}")
             report = obs_core.dry_run_video(
                 video,
                 analysis_seconds=args.seconds,
@@ -159,7 +165,7 @@ def _run_dry_run(args: argparse.Namespace) -> None:
             out_file = out_dir / f"{video.stem}.json"
             out_file.write_text(json.dumps(d, indent=2, ensure_ascii=False, default=str))
 
-        # 요약 행 (트랙별)
+        # Summary rows (one per track)
         topo = d["topology"]["topology"]
         for tr in d["treatments"]:
             actions = ",".join(p["action"] for p in tr["plan"]) or "-"
@@ -178,11 +184,15 @@ def _run_dry_run(args: argparse.Namespace) -> None:
             summary_rows.append([video.name, topo, "-", "-", "skip", "—"])
 
     if json_mode:
-        print_json(all_reports if inp.is_dir() else (all_reports[0] if all_reports else {}))
+        print_json(json_envelope(
+            "obs dry-run",
+            {"input": str(inp), "count": len(all_reports), "files": all_reports},
+            schema=schema_uri("obs"),
+        ))
         return
 
     if not summary_rows:
-        print_info("처리할 항목 없음")
+        print_info("Nothing to process")
         return
 
     print_table(
@@ -191,4 +201,4 @@ def _run_dry_run(args: argparse.Namespace) -> None:
         rows=summary_rows,
     )
     if out_dir is not None:
-        output_console.print(f"\n[dim]상세 JSON: {out_dir}/[/dim]")
+        print_markup(f"\n[dim]Detailed JSON: {out_dir}/[/dim]")

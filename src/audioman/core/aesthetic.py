@@ -114,7 +114,10 @@ def _spectral_flatness(frame: np.ndarray) -> float:
         return 0.0
     spectrum = np.abs(np.fft.rfft(frame * np.hanning(len(frame)))) ** 2
     spectrum = spectrum[1:] + 1e-18
-    if len(spectrum) == 0:
+    # Unreachable: rfft of an L-sample frame returns L // 2 + 1 bins, so dropping the
+    # DC bin leaves L // 2 >= 1 for every L >= 2 that passed the guard above. Kept so
+    # that lowering that guard degrades to a defined 0.0 instead of a NaN.
+    if len(spectrum) == 0:  # pragma: no cover - rfft(L)[1:] has L // 2 >= 1 bins
         return 0.0
     return float(np.exp(np.mean(np.log(spectrum))) / np.mean(spectrum))
 
@@ -506,7 +509,10 @@ def detect_rf_noise_events(
     if len(mono) < 2048:
         return [], "heuristic"
     fft_size = min(32768, 2 ** int(np.floor(np.log2(len(mono)))))
-    if fft_size < 2048:
+    # Unreachable: floor(log2(L)) >= 11 for every L >= 2048, which the guard above
+    # already required, so the power of two is >= 2048 and the min() cannot pull it
+    # below. Kept as the bound's assertion, in case that guard is ever loosened.
+    if fft_size < 2048:  # pragma: no cover - 2**floor(log2(L)) >= 2048 for L >= 2048
         return [], "heuristic"
     window = np.hanning(fft_size).astype(np.float32)
     frame = mono[:fft_size] if len(mono) == fft_size else mono[:fft_size]
@@ -521,7 +527,10 @@ def detect_rf_noise_events(
         lo = max(1, idx - 30)
         hi = min(len(spectrum), idx + 31)
         neighborhood = np.concatenate([spectrum[lo:max(lo, idx - 3)], spectrum[min(hi, idx + 4):hi]])
-        if len(neighborhood) == 0:
+        # Unreachable: the scan needs >= 2048 samples, so the spectrum has >= 1025 bins
+        # and both slice halves cannot be empty at once -- the lower one is empty only
+        # for idx <= 4, where the upper one always spans idx+4 .. idx+31 (27 bins).
+        if len(neighborhood) == 0:  # pragma: no cover - every bin has neighbours
             continue
         floor = float(np.median(neighborhood))
         snr = _power_db(float(spectrum[idx]) / max(floor, 1e-24))

@@ -2,7 +2,7 @@
 
 Cross-platform CLI wrapper for VST3/AU audio plugins. Control commercial audio software like iZotope RX from the command line.
 
-Built for AI agents and automated audio pipelines — every command supports `--json` output.
+Built for AI agents and automated audio pipelines — the root-level `--json` flag gives machine-readable output for every subcommand.
 
 ## Install
 
@@ -48,44 +48,60 @@ audioman process ./input_dir/ -p dereverb -o ./output_dir/ -r  # recursive
 
 ## Commands
 
+The 26 subcommands mirror `audioman --help`:
+
 | Command | Description |
 |---------|-------------|
-| `scan` | Discover VST3/AU plugins on the system |
-| `list` | List registered plugins with filters |
-| `info <plugin>` | Show plugin parameters and ranges |
+| `scan` | Scan system for VST3/AU plugins |
+| `list` | List registered plugins |
+| `info <plugin>` | Plugin details + parameter list |
 | `process <input>` | Process audio with a single plugin |
-| `chain <input>` | Sequential multi-plugin processing |
-| `preset` | Save/load/list/delete parameter presets |
-| `dump <plugin>` | Dump plugin parameter state as JSON |
-| `analyze <input>` | Audio analysis (RMS, spectral, silence detection) |
-| `fx <input>` | Built-in DSP effects (normalize, gate, trim, fade) |
-| `visualize <input>` | Export analysis to Sonic Visualiser SVL files |
-| `doctor -p <plugin>` | Plugin analysis (freq response, THD, dynamics, waveshaper) |
-| `vo {analyze,process}` | Voiceover workflow (VAD + RX denoise + utterance LUFS leveling) |
-| `obs {probe,dry-run}` | OBS multitrack 영상 자동 진단 — track topology + voice/music classification + 처치 계획 (dry-run only) |
-| `stream {bench,triage,compare,play}` | DAW 실시간 블록 처리 재현 — 플러그인 클릭/드롭아웃 triage + CPU 부하 벤치마크 |
+| `chain <input>` | Process audio through multiple plugins sequentially |
+| `preset` | Preset management (save/load/list/delete) |
+| `dump [plugin]` | Dump plugin parameter state to JSON/JSONL (always machine-readable; `--json` is implied) |
+| `analyze <input>` | Audio analysis (RMS, spectral entropy, silence detection, etc.) |
+| `fx <input>` | Built-in DSP effects (fade, trim, cut, splice, normalize, gate, gain) |
+| `visualize <input>` | Vamp plugin or built-in analysis -> Sonic Visualiser SVL file |
+| `doctor -p <plugin>` | Plugin analysis — frequency response, THD, dynamics, waveshaper, performance |
+| `eq-profile -p <plugin>` | EQ plugin profiling — frequency response, phase, group delay, nonlinearity |
+| `bounce` | Bounce multiple tracks into a single stereo file |
+| `commit <input>` | Commit plugin chain to audio with auto delay compensation |
+| `mixdown` | Mix tracks with master chain processing |
+| `edl` | Non-destructive edit workflow (EDL) |
+| `master` | Mastering delivery workflow (prep / qc / verify) |
+| `fader-test <input>` | Open a multitrack mixer GUI to set per-track gain balance (export as ground truth JSON) |
+| `fader-compare <gt>` | Compare automix recommendations against a fader-test ground truth |
+| `vo {analyze,process}` | Voiceover workflow (VAD + denoise + per-utterance LUFS leveling) |
+| `screen <input>` | Screen audio for aesthetic issues such as clicks, hum, breaths, sibilance, and noise |
+| `obs {probe,dry-run}` | OBS multitrack video auto-diagnosis (dry-run) — track topology + voice/music classification + treatment plan |
+| `observe <input>` | Observe audio faults across categories (signal, spectral, plugin, container) |
+| `changelog` | Show audioman changelog (LLM-friendly, parses CHANGELOG.md) |
+| `schemas {list,show}` | Show audioman JSONSchemas (machine-readable contract for `--json` output) |
+| `stream {bench,triage,compare,play}` | Reproduce DAW real-time block processing — benchmark & triage plugin clicks/dropouts |
+
+Global flags (`--json`, `--plain`, `--verbose`, `--version`) are defined at the root, so they must be placed **before** the subcommand (see [JSON Output](#json-output)).
 
 ## Plugin Click / Dropout Triage (DAW streaming)
 
-실제 DAW(Ableton 등)에서 나는 클릭을 audioman이 재현하고 자동 진단한다. DAW는 오디오를 고정 블록(128/256/512 samples)으로 콜백 처리하며 블록 사이 플러그인 내부 상태를 연속 유지한다 — `stream`은 그 환경을 재현해 오프라인 바운스와 무엇이 다른지 노출한다.
+audioman reproduces and automatically diagnoses the clicks you hear in a real DAW (Ableton, etc.). A DAW processes audio in fixed blocks (128/256/512 samples) via callbacks and keeps plugin internal state continuous across blocks — `stream` reproduces that environment and exposes what differs from an offline bounce.
 
 ```bash
-# 블록 크기별 실시간 CPU 부하 (RT factor, xrun, 동시 트랙 추정)
+# Real-time CPU load per block size (RT factor, xrun, concurrent track estimate)
 audioman stream bench mix.wav -p reverb --blocks 64,128,256,512,1024
 
-# 클릭/불연속 triage — 블록 경계 정렬 = 스트리밍 버그, 비정렬 = 소스 클릭
-audioman stream triage mix.wav -p denoise --block-size 512 --json
+# Click/discontinuity triage — block-boundary aligned = streaming bug, unaligned = source click
+audioman --json stream triage mix.wav -p denoise --block-size 512
 
-# 잘못된 호스트 동작(매 블록 reset) 시뮬레이션 — 클릭 강제 유발
+# Simulate a misbehaving host (reset on every block) — forces clicks
 audioman stream triage mix.wav -p denoise --reset-per-block
 
-# 블록 크기 의존 버그: 출력이 블록 크기마다 다른지 null test
+# Block-size-dependent bug: null test whether output differs per block size
 audioman stream compare mix.wav -p delay --blocks 128,256,512
 
-# 실제 오디오 디바이스로 재생 + PortAudio underflow(실 xrun) 카운트
+# Play through a real audio device + count PortAudio underflows (real xruns)
 audioman stream play mix.wav -p reverb --block-size 256
 
-# VST3 없이 테스트: builtin: 접두사로 pedalboard 내장 이펙트 사용
+# Test without VST3: use pedalboard built-in effects via the builtin: prefix
 audioman stream triage sine -p builtin:reverb --reset-per-block
 ```
 
@@ -125,15 +141,21 @@ audioman dump --all --filter "rx 10" -o rx10_defaults.jsonl
 
 ## JSON Output
 
-All commands support `--json` for machine-readable output:
+`--json`, `--plain`, `--verbose`, and `--version` are **root-level global flags**. They are parsed by the top-level parser, so they must appear **before** the subcommand. Placing them after the subcommand fails with `error: unrecognized arguments`:
 
 ```bash
+# Correct — global flags first
 audioman --json info denoise
 audioman --json process input.wav -p denoise -o out.wav
+
+# Wrong — rejected by argparse
+audioman info denoise --json   # error: unrecognized arguments: --json
 
 # Batch mode outputs JSONL (one JSON object per line)
 audioman --json process ./dir/ -p denoise -o ./out/
 ```
+
+`dump` is the one exception to the "flag is required" rule: it is always machine-readable (JSON for a single plugin, JSONL for `--all`), so `--json` is implied and accepted only for uniformity. Every other command needs the root-level flag to switch output modes.
 
 ## Presets
 
@@ -145,8 +167,8 @@ audioman preset save my_denoise --plugin denoise \
 # List presets
 audioman preset list
 
-# Use preset during processing
-audioman process input.wav -p denoise --preset my_denoise -o out.wav
+# Use a preset when dumping plugin state
+audioman dump denoise --preset my_denoise
 
 # Dump plugin state and save as preset in one step
 audioman dump denoise --param noise_reduction_db=25 --save-preset aggressive_denoise
@@ -161,8 +183,8 @@ audioman analyze input.wav
 # With ASCII waveform visualization
 audioman analyze input.wav -w
 
-# Frame-level metrics
-audioman analyze input.wav --frames --json
+# Frame-level metrics (global --json goes before the subcommand)
+audioman --json analyze input.wav --frames
 ```
 
 ## Built-in DSP Effects
@@ -207,19 +229,19 @@ Built-in analysis types: `spectrogram`, `spectral-centroid`, `spectral-entropy`,
 
 ## OBS multitrack Diagnosis
 
-OBS Studio 영상의 audio 스트림을 자동 진단해 어떤 트랙이 음성/음악/풀믹스인지 식별하고 처치 계획(dry-run)을 만든다.
+Automatically diagnoses the audio streams of OBS Studio videos, identifies which tracks are voice/music/fullmix, and produces a treatment plan (dry-run).
 
 ```bash
-# 트랙 토폴로지만 빠르게 (multitrack/single/duplicated/silent)
+# Track topology only, quickly (multitrack/single/duplicated/silent)
 audioman obs probe /Volumes/T7/OBS/
 
-# 60초 분석 + 진단 + 처치 계획 JSON 저장 (실제 처리 없음)
+# 60-second analysis + diagnosis + treatment plan JSON (no actual processing)
 audioman obs dry-run /Volumes/T7/OBS/ --seconds 60 --out-dir reports/
 ```
 
-각 활성 트랙은 `voice` / `music` / `fullmix` / `silent`로 분류되고, hum / clipping / DC offset / clicks / phase 검사 결과에 맞는 처치 (dehum, declip, voice-de-noise, leveling, stem_separate 등)가 정해진다. 같은 신호 그룹은 자동으로 미러링되어 동일 처치를 받는다.
+Each active track is classified as `voice` / `music` / `fullmix` / `silent`, and a treatment matching the hum / clipping / DC offset / clicks / phase check results (dehum, declip, voice-de-noise, leveling, stem_separate, etc.) is chosen. Identical signal groups are mirrored automatically and receive the same treatment.
 
-자세한 사용법, 분류 규칙, JSON 리포트 구조, 후속 처리 가이드는 [docs/obs-workflow.md](docs/obs-workflow.md) 참조.
+For detailed usage, classification rules, the JSON report structure, and follow-up processing guidance, see [docs/obs-workflow.md](docs/obs-workflow.md).
 
 ## Plugin Analysis (Doctor)
 
@@ -280,21 +302,6 @@ Tested with iZotope RX 10 (15 VST3 plugins, all parameters accessible):
 | Repair Assistant | `repair-assistant` | `repair` | 15 |
 
 Any VST3 or AU plugin installed on the system can be used — not limited to iZotope.
-
-## Internationalization (i18n)
-
-CLI help text supports locale-based translation. Default is English; Korean is included.
-
-```bash
-# Force language via environment variable
-AUDIOMAN_LANG=ko audioman --help   # Korean
-AUDIOMAN_LANG=en audioman --help   # English
-
-# Auto-detects from system locale (LC_ALL, LANG)
-audioman --help
-```
-
-To add a new language, add a catalog dict to `src/audioman/i18n.py`.
 
 ## Requirements
 

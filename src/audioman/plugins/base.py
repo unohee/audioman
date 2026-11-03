@@ -1,5 +1,6 @@
 # Created: 2026-03-21
-# Purpose: 플러그인 래퍼 Protocol
+# Purpose: Plugin wrapper Protocol — the runtime-checkable contract every
+# plugin wrapper (VST3, AU, built-in Python plugins) must satisfy.
 
 from typing import Any, Protocol, runtime_checkable
 
@@ -10,7 +11,16 @@ from audioman.plugins.parameter import ParameterInfo
 
 @runtime_checkable
 class PluginWrapper(Protocol):
-    """플러그인 래퍼 인터페이스"""
+    """Plugin wrapper interface.
+
+    Implemented by ``audioman.plugins.vst3.VST3PluginWrapper`` and any other
+    wrapper that exposes audio through the CLI/engine/streaming layers.
+
+    ``process`` takes a ``reset`` flag because the streaming layer calls
+    wrappers block by block and needs to control whether plugin state
+    (filter history, lookahead buffers) carries over between blocks. See
+    ``audioman.core.streaming.ProcessFn``.
+    """
 
     @property
     def name(self) -> str: ...
@@ -24,6 +34,11 @@ class PluginWrapper(Protocol):
 
     def set_parameters(self, params: dict[str, Any]) -> None: ...
 
-    def process(self, audio: np.ndarray, sample_rate: int) -> np.ndarray: ...
+    def process(
+        self,
+        audio: np.ndarray,
+        sample_rate: int,
+        reset: bool = True,
+    ) -> np.ndarray: ...
 
     def reset(self) -> None: ...

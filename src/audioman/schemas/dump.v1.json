@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audioman://schema/dump.v1.json",
+  "title": "Audioman Dump Result",
+  "description": "Output envelope for `audioman dump` (always machine-readable; --json is implied). Single mode emits the plugin state object; `--all` emits one JSONL record per plugin, each carrying `batch: true` — a successful state record or a failure record with `error`.",
+  "type": "object",
+  "required": [
+    "$schema",
+    "audioman_version",
+    "command",
+    "plugin",
+    "short_name",
+    "path"
+  ],
+  "properties": {
+    "$schema": {"const": "audioman://schema/dump.v1.json"},
+    "audioman_version": {"type": "string"},
+    "command": {"const": "dump"},
+    "plugin": {"type": "string"},
+    "short_name": {"type": "string"},
+    "path": {"type": "string"},
+    "format": {
+      "description": "Single-mode and batch-success state record only.",
+      "type": "string"
+    },
+    "identifier": {
+      "description": "Single-mode and batch-success state record only.",
+      "type": "string"
+    },
+    "version": {
+      "description": "Single-mode and batch-success state record only.",
+      "type": "string"
+    },
+    "parameter_count": {
+      "description": "Single-mode and batch-success state record only.",
+      "type": "integer"
+    },
+    "parameters": {
+      "description": "Single-mode and batch-success state record only; parameter name -> bool/float/string/null.",
+      "type": "object",
+      "additionalProperties": {"type": ["boolean", "number", "string", "null"]}
+    },
+    "saved_as_preset": {
+      "description": "Single mode only, when --save-preset was given.",
+      "type": "string"
+    },
+    "batch": {
+      "description": "Present on every `--all` JSONL record.",
+      "const": true
+    },
+    "error": {
+      "description": "Present on `--all` failure records only.",
+      "type": "string"
+    }
+  },
+  "additionalProperties": true
+}

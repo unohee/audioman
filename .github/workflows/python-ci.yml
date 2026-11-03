@@ -1,0 +1,84 @@
+name: python-ci
+
+# Language CI, from the shared template: `pip install -e ".[dev]"` then the suite.
+#
+# The project's real invocation (see README / pyproject `[tool.pytest.ini_options]`)
+# is `pytest tests -q -p no:cacheprovider`. The template's test job runs a fixed
+# command, so the repository-local form is enforced by the coverage job below rather
+# than by copying the template's steps in here.
+#
+# Coverage is reported, not enforced. The 100% target is a separate workstream
+# (`plan.md`, AUD-1851); until it lands, a threshold here would fail every build for a
+# reason unrelated to the change under review. The threshold is a single declared
+# input on the job below, marked with the exact line to flip.
+
+on:
+  push:
+    branches: [main]
+  # Every pull request, whatever it targets: a gate that does not run on the branch a
+  # change lands through is not a gate.
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: python-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    uses: unohee/ci-templates/.github/workflows/python-ci.yml@main
+    with:
+      python-version: "3.12"
+
+  coverage:
+    name: tests + coverage report
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install project and test tooling
+        run: python -m pip install -e ".[dev]"
+      # PyQt6 dlopens libEGL/libGL; the bare runner image does not ship them, so the
+      # GUI tests would skip and coverage would fall below 100%. The library is an
+      # environment prerequisite, not a project dependency, so it is installed here.
+      - name: Install Qt's native dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libegl1 libgl1
+      # The obs tests build real multitrack containers with ffmpeg and skip when it is
+      # absent — the same coverage-hole shape as libEGL above. ffmpeg is an external
+      # tool the CLI shells out to, so it belongs in the environment, not pyproject.
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get install -y --no-install-recommends ffmpeg
+      # ── Coverage gate ─────────────────────────────────────────────────────────
+      #
+      # AUD-1851 reached 100% (`TOTAL 8255 0 100%`, 2355 passed), so the threshold is
+      # now enforced. It was deliberately absent before: a floor set below 100% would
+      # have frozen that day's debt as the contract and stayed green through a
+      # regression that remained above it.
+      #
+      # `--cov-fail-under=100` is the gate. If a change legitimately cannot be covered,
+      # exclude it explicitly and visibly (a `# pragma: no cover` carrying its reason);
+      # never lower this number.
+      - name: Run tests with coverage
+        run: |
+          pytest tests -q -p no:cacheprovider \
+            --cov=audioman \
+            --cov-fail-under=100 \
+            --cov-report=term-missing \
+            --cov-report=xml
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: error

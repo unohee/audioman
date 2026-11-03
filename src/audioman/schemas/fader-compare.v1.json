@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audioman://schema/fader-compare.v1.json",
+  "title": "Audioman Fader Compare Result",
+  "description": "Output envelope for `audioman fader-compare --json`: automix recommendations scored against a fader-test ground truth.",
+  "type": "object",
+  "required": [
+    "$schema",
+    "audioman_version",
+    "command",
+    "ground_truth",
+    "automix_target",
+    "n_tracks_matched",
+    "summary",
+    "tracks"
+  ],
+  "properties": {
+    "$schema": {"const": "audioman://schema/fader-compare.v1.json"},
+    "audioman_version": {"type": "string"},
+    "command": {"const": "fader-compare"},
+    "ground_truth": {"type": "string"},
+    "automix_target": {"type": "string"},
+    "n_tracks_matched": {"type": "integer"},
+    "summary": {
+      "type": "object",
+      "required": [
+        "mean_abs_error_db",
+        "max_abs_error_db",
+        "within_3dB_pct",
+        "within_6dB_pct"
+      ],
+      "properties": {
+        "mean_abs_error_db": {"type": "number"},
+        "max_abs_error_db": {"type": "number"},
+        "within_3dB_pct": {"type": "number"},
+        "within_6dB_pct": {"type": "number"}
+      }
+    },
+    "tracks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["track", "ground_truth_db", "automix_db", "diff_db"],
+        "properties": {
+          "track": {"type": "string"},
+          "ground_truth_db": {"type": "number"},
+          "automix_db": {"type": "number"},
+          "diff_db": {"type": "number"}
+        }
+      }
+    }
+  }
+}
