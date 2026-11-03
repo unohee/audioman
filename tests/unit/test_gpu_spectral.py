@@ -172,13 +172,20 @@ class TestConstruction:
             return True
 
         monkeypatch.setattr(torch.cuda, "is_available", _is_available)
-        try:
-            ex = GPUSpectralExtractor(sr=SR)
-        except RuntimeError as exc:
-            # A host that reports CUDA but cannot allocate on it
-            pytest.skip(f"CUDA reported available but unusable on this host: {exc}")
+        # Only the selected device name is under test. A CPU/MPS-only torch build
+        # (macOS) refuses to allocate on CUDA, so record the requested name and
+        # build the extractor on the CPU.
+        requested = []
+        real_device = torch.device
+
+        def _device(name):
+            requested.append(name)
+            return real_device("cpu")
+
+        monkeypatch.setattr(torch, "device", _device)
+        GPUSpectralExtractor(sr=SR)
         assert calls["cuda"] >= 1
-        assert ex.device.type in ("cuda", "cpu")
+        assert requested == ["cuda"]
 
     def test_auto_device_prefers_mps_when_cuda_absent(self, monkeypatch):
         seen = {"mps": 0}

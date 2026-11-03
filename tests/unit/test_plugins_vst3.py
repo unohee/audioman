@@ -108,16 +108,30 @@ class _LoaderStub:
 
 
 _PROCFS_FDS = os.path.isdir("/proc/self/fd")
-no_procfs = pytest.mark.skipif(not _PROCFS_FDS, reason="requires /proc/self/fd to inspect open descriptors")
+# procfs on Linux; macOS exposes the same descriptor table under /dev/fd, but its
+# entries are not symlinks, so targets are identified by (st_dev, st_ino) instead.
+_FD_DIR = "/proc/self/fd" if _PROCFS_FDS else "/dev/fd"
 
 
 def _fd_links() -> dict[int, str]:
-    """Targets of the process's open descriptors, keyed by fd number."""
+    """Targets of the process's open descriptors, keyed by fd number.
+
+    A descriptor that refers to the null device maps to ``os.devnull`` on every
+    platform, so assertions about the stdout/stderr redirect read the same way.
+    """
+    null = os.stat(os.devnull)
+    null_id = (null.st_dev, null.st_ino)
     links = {}
-    for entry in os.listdir("/proc/self/fd"):
+    for entry in os.listdir(_FD_DIR):
+        fd = int(entry)
         try:
-            links[int(entry)] = os.readlink(f"/proc/self/fd/{entry}")
-        except OSError:  # the descriptor vanished between listdir and readlink
+            if _PROCFS_FDS:
+                links[fd] = os.readlink(f"{_FD_DIR}/{entry}")
+            else:
+                st = os.fstat(fd)
+                ident = (st.st_dev, st.st_ino)
+                links[fd] = os.devnull if ident == null_id else f"dev={ident[0]} ino={ident[1]}"
+        except OSError:  # the descriptor vanished between listdir and the lookup
             continue
     return links
 
@@ -177,14 +191,12 @@ class TestLoad:
         assert loader.calls == [str(wrapper._path)]
         assert wrapper._plugin is plugin
 
-    @no_procfs
     def test_load_redirects_stdout_to_devnull_during_load(self, wrapper, loader):
         loader.plugin = _FakePlugin()
         wrapper.load()
         assert loader.fd_links[0][1] == os.devnull
         assert loader.fd_links[0][2] == os.devnull
 
-    @no_procfs
     def test_load_restores_stdout_and_stderr(self, wrapper, loader):
         loader.plugin = _FakePlugin()
         before = (_fd_stat(1), _fd_stat(2))
@@ -192,14 +204,12 @@ class TestLoad:
         assert _fd_links()[1] != os.devnull
         assert (_fd_stat(1), _fd_stat(2)) == before
 
-    @no_procfs
     def test_load_does_not_leak_descriptors(self, wrapper, loader):
         loader.plugin = _FakePlugin()
         before = sorted(_fd_links())
         wrapper.load()
         assert sorted(_fd_links()) == before
 
-    @no_procfs
     def test_failed_load_leaves_no_leaked_descriptors(self, wrapper, loader):
         loader.error = ImportError("not a VST3 bundle")
         before = sorted(_fd_links())
@@ -214,7 +224,6 @@ class TestLoad:
         assert wrapper._plugin is None
         assert wrapper.is_loaded is False
 
-    @no_procfs
     def test_load_restores_stdout_after_failure(self, wrapper, loader):
         loader.error = ImportError("boom")
         before = (_fd_stat(1), _fd_stat(2))

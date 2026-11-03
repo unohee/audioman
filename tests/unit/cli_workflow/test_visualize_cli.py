@@ -415,6 +415,8 @@ class TestPngOutput:
             def __init__(self, args):
                 calls.append(args)
 
+        # The launcher argv is platform-specific; these assertions pin Linux.
+        monkeypatch.setattr("sys.platform", "linux")
         monkeypatch.setattr("subprocess.Popen", _FakePopen)
         png = tmp_path / "open.png"
         result = run_cli(
@@ -472,6 +474,8 @@ class TestOpenInSonicVisualiser:
 
     def test_svl_output_with_open_flag_attempts_launch(self, run_cli, tone, monkeypatch):
         calls = []
+        # The launcher argv is platform-specific; these assertions pin Linux.
+        monkeypatch.setattr("sys.platform", "linux")
         monkeypatch.setattr("subprocess.Popen", lambda args: calls.append(args))
         result = run_cli(["visualize", str(tone), "--builtin", "rms", "--open"])
         assert result.code == 0, result.stderr
@@ -662,6 +666,8 @@ class TestVampPaths:
 
     def test_svl_output_with_open_flag_launches_the_viewer(self, run_cli, tone, monkeypatch):
         calls = []
+        # The launcher argv is platform-specific; these assertions pin Linux.
+        monkeypatch.setattr("sys.platform", "linux")
         monkeypatch.setattr("subprocess.Popen", lambda args: calls.append(args))
         _FakeVampCollect(monkeypatch, {"vector": (0.0625, [1.0, 2.0])})
         result = run_cli(["visualize", str(tone), "--plugin", "lib:plug", "--open"])

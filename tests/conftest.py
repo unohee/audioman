@@ -46,3 +46,14 @@ def test_wav_silent(tmp_path, silent_audio, sample_rate):
     path = tmp_path / "silent.wav"
     sf.write(str(path), silent_audio.T, sample_rate, subtype="PCM_24")
     return path
+
+
+@pytest.fixture(autouse=True)
+def _wide_console(monkeypatch):
+    """Pin the rich console width for every test.
+
+    macOS tmp paths (``/private/var/folders/...``) are long enough that an 80-column
+    console wraps them mid-path, which breaks substring assertions on human output.
+    Line wrapping is incidental to every claim the suite makes.
+    """
+    monkeypatch.setenv("COLUMNS", "400")
