@@ -45,6 +45,7 @@ GRID_QUANTISED = {"spectral_rolloff"}
 SIGNAL_DESCRIPTORS = {
     "rms": "dBFS",
     "crest_factor": "dB",
+    "dynamic_range": "dB",
     "onset_density": "1/s",
     "stereo_width": "dB",
     "lr_correlation": "ratio",
@@ -74,6 +75,34 @@ def _segment_bounds(n_samples: int, sample_rate: int, segment_sec: float) -> lis
     return list(zip(edges[:-1], edges[1:]))
 
 
+DYNAMIC_BLOCK_SEC = 0.02
+DYNAMIC_FLOOR_DB = -60.0
+
+
+def _dynamic_range(mono: np.ndarray, sample_rate: int) -> float | None:
+    """Spread of short-term level: p95 - p10 of 20 ms block RMS (dB), blocks within 60 dB of the loudest.
+
+    Compression narrows it; crest factor alone can rise under a fast-attack
+    compressor (onset peaks pass, the body is turned down), so this is the
+    dynamics descriptor to read for compression.
+    """
+    block = max(1, int(DYNAMIC_BLOCK_SEC * sample_rate))
+    if len(mono) < 4 * block:
+        return None
+    # Overlapping blocks (hop = block / 4) so the statistic barely depends on where
+    # the block grid falls; non-overlapping blocks made the repeat floor large.
+    hop = max(1, block // 4)
+    squares = np.concatenate(([0.0], np.cumsum(mono.astype(np.float64) ** 2)))
+    starts = np.arange(0, len(mono) - block + 1, hop)
+    levels = np.sqrt(np.maximum(squares[starts + block] - squares[starts], 0.0) / block)
+    if levels.max() <= 0:
+        return None
+    with np.errstate(divide="ignore"):
+        db = 20.0 * np.log10(levels)
+    db = db[db >= db.max() + DYNAMIC_FLOOR_DB]
+    return float(np.percentile(db, 95) - np.percentile(db, 10))
+
+
 def _signal_values(x: np.ndarray, sample_rate: int, onsets: np.ndarray, start: int, end: int) -> dict[str, float | None]:
     """Descriptors computed on samples rather than frames, for x[:, start:end] (channels x samples)."""
     seg = x[:, start:end]
@@ -83,6 +112,7 @@ def _signal_values(x: np.ndarray, sample_rate: int, onsets: np.ndarray, start: i
     out: dict[str, float | None] = {
         "rms": _finite(_db(rms)),
         "crest_factor": _finite(_db(peak) - _db(rms)) if rms > 0 else None,
+        "dynamic_range": _dynamic_range(mono, sample_rate),
         "onset_density": float(np.count_nonzero((onsets >= start / sample_rate) & (onsets < end / sample_rate)))
         / max((end - start) / sample_rate, 1e-9),
         "stereo_width": None,

@@ -147,7 +147,7 @@ def diff_audio(
          for k, v in descriptors.items() if v["significant"]),
         key=lambda c: -(c["ratio_to_floor"] if c["ratio_to_floor"] is not None else math.inf),
     )
-    return {
+    result = {
         "sample_rate": sample_rate,
         "segment_sec": segment_sec,
         "significance": f"|delta| > {SIGNIFICANCE_K} x (floor_a + floor_b), and above a per-unit minimum",
@@ -159,3 +159,7 @@ def diff_audio(
         "named_bands": named,
         "erb_bands": bands,
     }
+    from audioman.core.vocabulary import propose_terms
+
+    result["vocabulary"] = propose_terms(result)
+    return result

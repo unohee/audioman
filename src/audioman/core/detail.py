@@ -214,9 +214,23 @@ def apply_detail(
         shaped = _shape_with_sections(payload, attempt, policy, level, spill_dir, label)
         if printed_size(shaped) <= policy.byte_ceiling:
             return shaped
+        # The index of moved values can itself be the largest part: move it to one file.
+        indexed = _move_index(shaped, spill_dir, label)
+        if printed_size(indexed) <= policy.byte_ceiling:
+            return indexed
     # Only scalar metadata is left inline; report the miss instead of dropping data.
     shaped["detail"]["within_ceiling"] = False
     return shaped
+
+
+def _move_index(shaped: dict, spill_dir: Path, label: str) -> dict:
+    """Replace detail.spilled/truncated by a reference to one file holding both."""
+    detail = shaped["detail"]
+    if not detail["spilled"] and not detail["truncated"]:
+        return shaped
+    ref = _Spiller(spill_dir, label).write("detail-index", {"spilled": detail["spilled"],
+                                                            "truncated": detail["truncated"]})
+    return {**shaped, "detail": {**detail, "spilled": [], "truncated": {}, "index_ref": ref}}
 
 
 def _shape_with_sections(payload, attempt, policy, level, spill_dir, label):

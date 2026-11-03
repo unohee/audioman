@@ -132,12 +132,17 @@ def digest_diff(p: dict) -> str:
     bands = [b for b in p.get("named_bands") or [] if b.get("significant")]
     if not changes and not bands:
         return _clip(f"B vs A ({how}): no significant change.")
+    terms = (p.get("vocabulary") or {}).get("terms") or []
+    vocab = ""
+    if terms:
+        vocab = " Terms (experimental): " + ", ".join(f"{t['term']} ({t['confidence']:.2f})" for t in terms[:8]) + "."
     parts = [f"{c['descriptor']} {c['direction']} {abs(c['delta'])} {c['unit']}"
              + (f" (floor {c['floor']})" if c.get("floor") else "") for c in changes[:6]]
     text = f"B vs A ({how}): {len(changes)} significant descriptor change(s): {', '.join(parts)}."
     if bands:
         text += " Bands: " + ", ".join(f"{b['band']} {b['delta_db']:+.1f} dB" for b in bands) + "."
-    return _clip(text)
+    # the vocabulary goes first so it survives the length clip
+    return _clip(f"B vs A ({how}):{vocab} " + text.split("): ", 1)[1]) if vocab else _clip(text)
 
 
 _TEXTURE_LEAD = ("spectral_centroid", "spectral_rolloff", "spectral_flatness", "hf_ratio", "sharpness",
