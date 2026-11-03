@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "audioman://schema/report.v2.json",
   "title": "Audioman Report v2",
-  "description": "Shared report contract attached as the top-level `report` key by analyze, observe, screen, master qc and doctor. Measurements carry a floor (the smallest meaningful difference); gates turn measurements into PASS/WARN/FAIL; a declared gate that was not produced is present as FAIL with reason \"missing\".",
+  "description": "Shared report contract attached as the top-level `report` key by analyze, observe, screen, master qc, doctor and the uat subcommands. Measurements carry a floor (the smallest meaningful difference); gates turn measurements into PASS/WARN/FAIL; a declared gate that was not produced is present as FAIL with reason \"missing\".",
   "type": "object",
   "required": [
     "schema",
@@ -30,7 +30,10 @@
         "observe",
         "screen",
         "master qc",
-        "doctor"
+        "doctor",
+        "uat compare",
+        "uat smoke",
+        "uat pdc"
       ]
     },
     "subject": {

@@ -233,3 +233,39 @@ def null_test(
               f"bit-equivalent to the offline bounce — investigate state continuity / PDC."),
         fix_hint=FixHint(kind="manual", args=[], note="Compare block sizes; check latency reporting"),
     )]
+
+
+def dropout_block_findings(
+    streamed: np.ndarray,
+    reference: np.ndarray,
+    sample_rate: int,
+    *,
+    block: int = 256,
+    file: Optional[str] = None,
+) -> list[Finding]:
+    """One finding when the streamed render has silent blocks where the offline render is active.
+
+    A lost host buffer reads as a short run of digital silence. Blocks are 256
+    samples so a lost buffer of 512 samples or more fully covers at least one.
+    """
+    from audioman.core.uat_gates import ACTIVE_DBFS, SILENT_DBFS, dropout_blocks
+
+    hits = dropout_blocks(streamed, reference, block)
+    if not hits:
+        return []
+    first = hits[0] * block
+    return [Finding(
+        code=Code.SAMPLE_DROPOUT,
+        category=Category.PLUGIN,
+        severity=Severity.CRITICAL,
+        where=Where(file=file, start_sample=first, start_sec=round(first / sample_rate, 6)),
+        measurement={
+            "dropout_blocks": len(hits),
+            "block_size": block,
+            "silent_below_dbfs": SILENT_DBFS,
+            "reference_above_dbfs": ACTIVE_DBFS,
+            "first_blocks_sec": [round(i * block / sample_rate, 4) for i in hits[:10]],
+        },
+        hint=f"{len(hits)} block(s) of the streamed render are silent where the offline render is not: "
+             "dropped host buffers.",
+    )]

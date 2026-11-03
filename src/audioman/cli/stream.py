@@ -240,7 +240,9 @@ def run_bench(args: argparse.Namespace) -> None:
 
 def run_triage(args: argparse.Namespace) -> None:
     from audioman.core.streaming import render_offline, render_streamed
-    from audioman.core.discontinuity import detect_discontinuities, detect_nonfinite, null_test
+    from audioman.core.discontinuity import (
+        detect_discontinuities, detect_nonfinite, dropout_block_findings, null_test,
+    )
     from audioman.core.findings import envelope, Severity
 
     audio, sr = _load_input(args)
@@ -261,6 +263,7 @@ def run_triage(args: argparse.Namespace) -> None:
     findings += detect_nonfinite(streamed.audio, sr, file=args.input)
     findings += detect_discontinuities(streamed.audio, sr, block_size=bs, file=args.input)
     findings += null_test(offline.audio, streamed.audio, sr, file=args.input)
+    findings += dropout_block_findings(streamed.audio, offline.audio, sr, file=args.input)
 
     if args.output:
         from audioman.core.audio_file import write_audio

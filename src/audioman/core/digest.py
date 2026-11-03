@@ -110,6 +110,18 @@ def digest_master_qc(p: dict) -> str:
     return _clip(f"{head}{level} {len(failing)} of {len(checks)} checks not passing: {named}.")
 
 
+def digest_report(report: dict) -> str:
+    """Digest of a report.v2 block: verdict, then the gates that did not pass and why."""
+    gates = report.get("gates") or []
+    bad = [g for g in gates if g.get("status") != "PASS"]
+    head = f"{report.get('command', '?')}: {report.get('verdict', '?')}."
+    if not bad:
+        return _clip(f"{head} All {len(gates)} gates pass.")
+    named = "; ".join(f"{g.get('name')} {g.get('status')}" + (f" ({g['reason']})" if g.get("reason") else "")
+                      for g in bad[:5])
+    return _clip(f"{head} {len(bad)} of {len(gates)} gates not passing: {named}.")
+
+
 DIGESTS: dict[str, Callable[[dict], str]] = {
     "analyze": digest_analyze,
     "observe": digest_observe,
