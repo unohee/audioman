@@ -17,6 +17,20 @@ uv tool install -e .
 audioman --help
 ```
 
+### Linux / Windows
+
+- `audioman scan` searches the platform's standard VST3 directories; add others with `--paths`.
+  Linux/Windows VST3 bundles have no `Contents/Info.plist`, so the plugin name is taken from
+  the bundle directory name (`de-artifact.vst3` → `de-artifact`) and vendor/version from
+  `Contents/Resources/moduleinfo.json` when present.
+- On some x86_64 CPUs (observed: AVX2 without AVX-512) the pedalboard cp313 Linux wheel crashes
+  with `SIGILL` on import. Python 3.12 works, so pin it when installing:
+
+  ```bash
+  uv sync --python 3.12
+  uv tool install --python 3.12 --force -e .
+  ```
+
 ## Quick Start
 
 ```bash
