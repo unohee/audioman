@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added — report.v2
+- **`report` block** (`audioman://schema/report.v2.json`) on `analyze`, `observe`, `screen`, `master qc` and `doctor` JSON output: `subject`, `measurements` (value, unit, **floor**, `floor_kind`, source), `findings`, `gates` (PASS/WARN/FAIL), `missing_gates` and `verdict`. A floor is the smallest difference in a value that means anything: exact for counts, half the last kept decimal for rounded values, one sample period for durations, one LSB for linear levels of PCM files, null only when declared `unknown`.
+- Each command declares the gates it must produce (`no_critical_findings`, `no_fail_events`, one per QC check with phase/imbalance required on stereo, `completed.<mode>` per doctor mode). A declared gate that was not produced is present as **FAIL, reason `missing`** — a check that did not run is never a pass.
+- The block is additive: v1 fields are unchanged. Under `--detail` its lists are trimmed (gates never), but it is never moved to a spill file, so it always validates in place.
+
 ### Added — token-budgeted JSON
 - **`--detail {summary,standard,full}`** and **`--spill-dir`** on `analyze`, `observe`, `screen` and `master qc`. `standard` (default) keeps the printed JSON under 32 KiB, `summary` under 4 KiB; long numeric arrays, long strings and long finding/event/check lists move to JSON spill files (default `<cache dir>/spill`) referenced by absolute path, with length and min/max/mean inline. Lists keep their most severe items first. Nothing is dropped: `detail.spilled` and `detail.truncated` list every file.
 - **`digest`**: every payload of those commands starts with a plain-English summary of the full measurement (format, levels, silence, hum, finding/event counts, QC verdict), at most 600 characters.

@@ -8,6 +8,7 @@ from audioman.cli.output import (
     print_error, print_json, print_success, print_info, print_markup, output_console,
 )
 from audioman.core.findings import json_envelope, schema_uri
+from audioman.core.report_v2 import build_report
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -314,13 +315,14 @@ def run(args: argparse.Namespace) -> None:
             results["compare"] = {"error": str(e)}
 
     # output
+    payload = json_envelope("doctor", {**results, "report": build_report("doctor", results)},
+                            schema=schema_uri("doctor"))
     if args.json:
-        print_json(json_envelope("doctor", results, schema=schema_uri("doctor")))
+        print_json(payload)
 
     if args.output:
         with open(args.output, "w") as f:
-            json.dump(json_envelope("doctor", results, schema=schema_uri("doctor")),
-                      f, indent=2, ensure_ascii=False, default=str)
+            json.dump(payload, f, indent=2, ensure_ascii=False, default=str)
         if not args.json:
             print_success(f"Result saved: {args.output}")
 

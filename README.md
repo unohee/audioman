@@ -155,6 +155,14 @@ audioman dump --all --filter "rx 10" -o rx10_defaults.jsonl
 
 ## JSON Output
 
+### report.v2
+
+`analyze`, `observe`, `screen`, `master qc` and `doctor` add a `report` object
+(`audioman schemas show report.v2`) with the same shape for every command:
+`measurements` with a `floor` (the smallest meaningful difference), `gates`
+(PASS/WARN/FAIL; a required gate that did not run is FAIL with reason `missing`)
+and a `verdict` derived from the gates.
+
 ### Detail levels (`--detail`)
 
 `analyze`, `observe`, `screen` and `master qc` shape their `--json` output for a context window:

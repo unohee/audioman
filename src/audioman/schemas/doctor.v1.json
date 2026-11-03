@@ -12,6 +12,7 @@
     "mode"
   ],
   "properties": {
+    "report": {"$ref": "audioman://schema/report.v2.json"},
     "$schema": {"const": "audioman://schema/doctor.v1.json"},
     "audioman_version": {"type": "string"},
     "command": {"const": "doctor"},
