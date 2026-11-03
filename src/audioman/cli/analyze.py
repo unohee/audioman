@@ -50,6 +50,11 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
                         help="Add long-term FFT diagnostics (band energy, dominant frequencies, hum, hf slope)")
     parser.add_argument("--spectrum-fft", type=_positive_int, default=16384,
                         help="FFT size for spectrum diagnostics (default: 16384)")
+    parser.add_argument("--texture", action="store_true",
+                        help="Texture descriptors (spectral shape, noisiness, dynamics, stereo) per segment, "
+                             "each with a repeat floor")
+    parser.add_argument("--segment-sec", type=float, default=1.0,
+                        help="Segment length for --texture (default: 1.0 s)")
     add_detail_arguments(parser)
     parser.add_argument("--spectrum-min-rms", type=float, default=0.01,
                         help="Skip frames below this RMS when averaging spectrum (default: 0.01)")
@@ -59,6 +64,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
 def _analyze_file(
     path: Path, frame_size: int, hop: int, silence_threshold: float, frames_mode: bool,
     spectrum: bool = False, spectrum_fft: int = 16384, spectrum_min_rms: float = 0.01,
+    texture: bool = False, segment_sec: float = 1.0,
 ) -> dict:
     audio, sr = read_audio(path)
     stats = get_audio_stats(audio, sr)
@@ -98,6 +104,11 @@ def _analyze_file(
 
     result["findings"] = [f.to_dict() for f in findings]
 
+    if texture:
+        from audioman.core.texture import describe
+
+        result["texture"] = describe(audio, sr, segment_sec=segment_sec)
+
     if frames_mode:
         result["frame_metrics"] = {
             "frame_size": frame_size,
@@ -128,6 +139,7 @@ def _run_single(args: argparse.Namespace, path: Path) -> None:
             path, args.frame_size, args.hop, args.silence_threshold, args.frames,
             spectrum=args.spectrum, spectrum_fft=args.spectrum_fft,
             spectrum_min_rms=args.spectrum_min_rms,
+            texture=args.texture, segment_sec=args.segment_sec,
         )
     except (FileNotFoundError, OSError, RuntimeError, ValueError) as e:
         # A missing file raises FileNotFoundError; an undecodable one raises
@@ -240,6 +252,7 @@ def _run_batch(args: argparse.Namespace, input_dir: Path) -> None:
                 fpath, args.frame_size, args.hop, args.silence_threshold, args.frames,
                 spectrum=args.spectrum, spectrum_fft=args.spectrum_fft,
                 spectrum_min_rms=args.spectrum_min_rms,
+                texture=args.texture, segment_sec=args.segment_sec,
             )
             if args.json:
                 print(json.dumps(

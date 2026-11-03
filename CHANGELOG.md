@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added — texture descriptors (`analyze --texture`)
+- **`audioman.core.texture.describe`** and **`analyze --texture [--segment-sec S]`**: spectral centroid, rolloff, bandwidth, flatness, contrast, flux, HF ratio, approximate sharpness, RMS, crest factor, onset density, stereo width and L/R correlation, for the whole file and per segment, plus a 32-band ERB level profile.
+- **Repeat floor** on every descriptor: each is measured again on the signal advanced by half an analysis hop (every frame and segment boundary moves, the content does not); the difference is its `floor` (whole file) and `segment_floor` (largest per-segment difference). Rolloff, which lands on FFT bins, never gets a floor below one bin. A change smaller than the floor is not evidence of a change.
+- report.v2 gains the `repeat` floor kind; `analyze --texture` puts the descriptors into the report as `texture.*` measurements with their repeat floors.
+- Direction is pinned on synthetic processing (lowpass, saturation, added noise, decorrelated channels, transient rate), each change exceeding three times its floor.
+
 ### Added — plugin/host acceptance gates (`audioman uat`)
 - **`uat compare`** judges a host's real-time take against its offline render and the dry source (and, optionally, a bypassed take and the render time). Gates: `realtime_present`, `offline_present`, `rt_matches_offline` (residual <= -90 dBFS at lag 0), `no_dropout_blocks`, `no_unprocessed_blocks`, `delay_compensated` (offline render at lag 0 from the source), `processed` (drop with `--transparent`), `bypass_equals_source`, `faster_than_real_time`.
 - **`uat smoke`** renders a tone+noise probe through a plugin (VST3/AU or `builtin:`) at each `--rates` value and checks shape, finiteness, an audible second half and exposed parameters; `--check-output` judges a render made by another host.

@@ -13,6 +13,8 @@
 #   rounding      the producer rounded the value; floor is half the last digit kept
 #   resolution    bounded by a grid (sample period, FFT bin width)
 #   quantization  bounded by the file's PCM word length
+#   repeat        difference between two measurements of the same content
+#                 (texture descriptors: analysis grid shifted by half a hop)
 #   unknown       no defensible floor; `floor` is null
 #
 # Gates turn measurements into PASS/WARN/FAIL. Each command declares the gates it
@@ -28,7 +30,7 @@ from typing import Any, Callable
 REPORT_VERSION = "2"
 REPORT_SCHEMA = "audioman://schema/report.v2.json"
 GATE_STATUSES = ("PASS", "WARN", "FAIL")
-FLOOR_KINDS = ("exact", "rounding", "resolution", "quantization", "unknown")
+FLOOR_KINDS = ("exact", "rounding", "resolution", "quantization", "repeat", "unknown")
 _PCM_BITS = {"PCM_U8": 8, "PCM_S8": 8, "PCM_16": 16, "PCM_24": 24, "PCM_32": 32}
 
 
@@ -211,6 +213,10 @@ def _report_analyze(p: dict) -> Report:
                 ms.append(_measure(f"{metric}.{stat}", value, units.get(metric, ""), "analyze.summary"))
     if isinstance(p.get("silence_total_sec"), (int, float)):
         ms.append(_measure("silence_total_sec", p["silence_total_sec"], "s", "analyze"))
+    if isinstance(p.get("texture"), dict):
+        from audioman.core.texture import to_measurements
+
+        ms.extend(to_measurements(p["texture"]))
     findings = list(p.get("findings") or [])
     gates = [_severity_gate("no_critical_findings", findings, fail=("critical",), warn=("warn",), what="findings")]
     return Report("analyze", subject, ms, findings, require(gates, ["no_critical_findings"]))
