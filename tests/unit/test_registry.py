@@ -108,6 +108,82 @@ class TestParseVst3Info:
         assert meta.name == "FallbackName"
 
 
+    def test_linux_bundle_without_plist(self, tmp_path):
+        """Linux layout (no Info.plist) -> PluginMeta from the bundle name"""
+        vst3_dir = tmp_path / "de-artifact.vst3"
+        arch_dir = vst3_dir / "Contents" / "x86_64-linux"
+        arch_dir.mkdir(parents=True)
+        (arch_dir / "de-artifact.so").write_bytes(b"\x7fELF")
+
+        meta = _parse_vst3_info(vst3_dir)
+        assert meta is not None
+        assert meta.name == "de-artifact"
+        assert meta.short_name == "de-artifact"
+        assert meta.format == "vst3"
+        assert meta.path == str(vst3_dir)
+        assert meta.vendor == ""
+        assert meta.version == ""
+
+    def test_bundle_without_plist_reads_moduleinfo(self, tmp_path):
+        """moduleinfo.json supplies vendor/version when present"""
+        vst3_dir = tmp_path / "Some Plugin.vst3"
+        (vst3_dir / "Contents" / "x86_64-win").mkdir(parents=True)
+        resources = vst3_dir / "Contents" / "Resources"
+        resources.mkdir()
+        (resources / "moduleinfo.json").write_text(json.dumps({
+            "Name": "Some Plugin",
+            "Version": "1.2.3",
+            "Factory Info": {"Vendor": "Acme"},
+        }))
+
+        meta = _parse_vst3_info(vst3_dir)
+        assert meta is not None
+        assert meta.name == "Some Plugin"
+        assert meta.short_name == "some-plugin"
+        assert meta.vendor == "Acme"
+        assert meta.version == "1.2.3"
+
+    def test_bundle_with_invalid_moduleinfo(self, tmp_path):
+        """Corrupt moduleinfo.json -> empty vendor/version, still registered"""
+        vst3_dir = tmp_path / "Broken.vst3"
+        resources = vst3_dir / "Contents" / "Resources"
+        resources.mkdir(parents=True)
+        (resources / "moduleinfo.json").write_text("{not json")
+
+        meta = _parse_vst3_info(vst3_dir)
+        assert meta is not None
+        assert meta.vendor == ""
+        assert meta.version == ""
+
+    @pytest.mark.parametrize("payload", [
+        ["not", "an", "object"],
+        {"Version": 3, "Factory Info": {"Vendor": 7}},
+        {"Version": "2.0", "Factory Info": "Acme"},
+    ])
+    def test_moduleinfo_with_unexpected_shapes(self, tmp_path, payload):
+        """Non-object JSON or non-string fields are ignored, not trusted"""
+        vst3_dir = tmp_path / "Odd.vst3"
+        resources = vst3_dir / "Contents" / "Resources"
+        resources.mkdir(parents=True)
+        (resources / "moduleinfo.json").write_text(json.dumps(payload))
+
+        meta = _parse_vst3_info(vst3_dir)
+        assert meta is not None
+        assert meta.vendor == ""
+        expected_version = payload.get("Version") if isinstance(payload, dict) else ""
+        assert meta.version == (expected_version if isinstance(expected_version, str) else "")
+
+    def test_legacy_windows_single_file_vst3(self, tmp_path):
+        """A legacy single-file Windows .vst3 registers under its file stem"""
+        legacy = tmp_path / "Legacy Plugin.vst3"
+        legacy.write_bytes(b"MZ")
+
+        meta = _parse_vst3_info(legacy)
+        assert meta is not None
+        assert meta.short_name == "legacy-plugin"
+        assert meta.path == str(legacy)
+
+
 class TestParseAuInfo:
     """AU Info.plist parsing"""
 

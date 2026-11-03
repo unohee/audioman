@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed — VST3 discovery on Linux/Windows
+- **`audioman scan` on Linux/Windows**: VST3 bundles without `Contents/Info.plist` (e.g. `<name>.vst3/Contents/x86_64-linux/<name>.so`) were silently skipped (`Scanned 0 plugins`). They now register under the bundle name, with vendor/version from `Contents/Resources/moduleinfo.json` when present. The inner `Contents/x86_64-win/<name>.vst3` binary is not registered a second time, and a legacy single-file Windows `.vst3` registers under its file stem. A directory without `Contents/` is still ignored, and a corrupt macOS `Info.plist` still yields no plugin.
+
 ### Added — LLM-native Phase A
 - **--plain global output mode**: turns off all rich color/markup/i18n and prints English ASCII. Also enabled by the `AUDIOMAN_PLAIN=1` environment variable. `--help`/`print_table` fall back to grep/awk-friendly text. Direct response to LLM agent feedback #1.
 - **Finding schema** (`audioman.core.findings`): unified fault representation across 4 categories — signal / spectral / plugin / container. Fields: `code` (stable enum), `severity` (info/warn/critical), `where` (file/sample/sec/freq), `measurement`, `hint`, `fix_hint`. Publishes a JSONSchema (`audioman://schema/finding.v1.json`).
