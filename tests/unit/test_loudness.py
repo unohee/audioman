@@ -376,17 +376,11 @@ class TestLevelUtterances:
 
 
 class TestShortTermErrorHandling:
-    def test_short_block_value_error_becomes_minus_inf(self, monkeypatch):
-        """pyloudnorm raises ValueError for blocks below its gating size."""
-        class _RaisingMeter:
-            def __init__(self, *a, **k):
-                pass
-
-            def integrated_loudness(self, block):
-                raise ValueError("block too short")
-
-        monkeypatch.setattr(loudness.pyloudnorm, "Meter", _RaisingMeter)
-        out = loudness.short_term_lufs(_stereo_sine(0.5, duration=5.0), SR)
+    def test_more_than_five_channels_is_undefined(self):
+        """BS.1770 weights stop at five channels; six report no loudness."""
+        t = np.arange(int(5.0 * SR)) / SR
+        six = np.stack([0.3 * np.sin(2 * np.pi * 440 * t)] * 6).astype(np.float32)
+        out = loudness.short_term_lufs(six, SR)
         assert len(out) > 0
         assert not np.any(np.isfinite(out))
 

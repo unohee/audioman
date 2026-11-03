@@ -11,6 +11,7 @@ import numpy as np
 
 from audioman.core.analysis import long_term_spectrum, detect_hum as detect_hum_spectrum
 from audioman.core.audio_file import read_audio
+from audioman.core.framewise import frame_features
 from audioman.core.qc import detect_clicks as detect_clicks_fallback
 
 
@@ -109,6 +110,9 @@ def _band_power(frame: np.ndarray, sample_rate: int, band: tuple[float, float]) 
     return float(np.mean(spectrum[mask]))
 
 
+# `_spectral_flatness` and `_zero_crossing_rate` are the single-frame definitions;
+# the screeners use the batched `framewise.frame_features`, which must agree with
+# them (tests/unit/test_perf_parity.py).
 def _spectral_flatness(frame: np.ndarray) -> float:
     if len(frame) < 2:
         return 0.0
@@ -389,11 +393,11 @@ def detect_sibilance_events(
     bounds = _frame_bounds(len(mono), sample_rate, frame_ms=20.0, hop_ms=10.0)
     mask: list[bool] = []
     details: list[dict] = []
-    for start, end in bounds:
-        frame = mono[start:end]
-        rms_db = _db(float(np.sqrt(np.mean(frame**2))))
-        low_mid = _band_power(frame, sample_rate, (700.0, 3500.0))
-        sib = _band_power(frame, sample_rate, (4000.0, 10000.0))
+    feats = frame_features(mono, bounds, sample_rate, bands=((700.0, 3500.0), (4000.0, 10000.0)))
+    for i in range(len(bounds)):
+        rms_db = _db(feats.rms[i])
+        low_mid = float(feats.band_power[0][i])
+        sib = float(feats.band_power[1][i])
         ratio_db = _power_db(sib / max(low_mid, 1e-24))
         active = rms_db >= min_rms_db and ratio_db >= ratio_threshold_db
         score = (ratio_db - ratio_threshold_db) / 12.0
@@ -428,14 +432,16 @@ def detect_breath_events(
     bounds = _frame_bounds(len(mono), sample_rate, frame_ms=35.0, hop_ms=15.0)
     mask: list[bool] = []
     details: list[dict] = []
-    for start, end in bounds:
-        frame = mono[start:end]
-        rms_db = _db(float(np.sqrt(np.mean(frame**2))))
-        low = _band_power(frame, sample_rate, (80.0, 700.0))
-        air = _band_power(frame, sample_rate, (1200.0, 8500.0))
+    feats = frame_features(
+        mono, bounds, sample_rate, bands=((80.0, 700.0), (1200.0, 8500.0)), flatness=True, zcr=True
+    )
+    for i in range(len(bounds)):
+        rms_db = _db(feats.rms[i])
+        low = float(feats.band_power[0][i])
+        air = float(feats.band_power[1][i])
         ratio_db = _power_db(air / max(low, 1e-24))
-        flatness = _spectral_flatness(frame)
-        zcr = _zero_crossing_rate(frame)
+        flatness = float(feats.flatness[i])
+        zcr = float(feats.zcr[i])
         active = min_rms_db <= rms_db <= max_rms_db and ratio_db >= 4.0 and zcr >= 0.04
         score = min((ratio_db - 4.0) / 14.0, zcr * 5.0)
         mask.append(active)
@@ -469,11 +475,11 @@ def detect_background_noise_events(
     bounds = _frame_bounds(len(mono), sample_rate, frame_ms=100.0, hop_ms=50.0)
     mask: list[bool] = []
     details: list[dict] = []
-    for start, end in bounds:
-        frame = mono[start:end]
-        rms_db = _db(float(np.sqrt(np.mean(frame**2))))
-        flatness = _spectral_flatness(frame)
-        zcr = _zero_crossing_rate(frame)
+    feats = frame_features(mono, bounds, sample_rate, flatness=True, zcr=True)
+    for i in range(len(bounds)):
+        rms_db = _db(feats.rms[i])
+        flatness = float(feats.flatness[i])
+        zcr = float(feats.zcr[i])
         active = min_rms_db <= rms_db <= max_rms_db and zcr >= 0.03
         score = (rms_db - min_rms_db) / max(max_rms_db - min_rms_db, 1e-9)
         mask.append(active)

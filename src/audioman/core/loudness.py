@@ -42,35 +42,99 @@ def integrated_lufs(audio: np.ndarray, sample_rate: int) -> float:
     return float(lufs)
 
 
+# BS.1770 channel weights (L, R, C, Ls, Rs); pyloudnorm uses the same table.
+_CHANNEL_GAINS = (1.0, 1.0, 1.0, 1.41, 1.41)
+_ABSOLUTE_GATE_LUFS = -70.0
+
+
+def k_weighted(audio: np.ndarray, sample_rate: int) -> np.ndarray:
+    """K-weight every channel once, continuously, with pyloudnorm's own filters.
+
+    Returns float64 (channels, samples); a 1-D input becomes one channel.
+    """
+    x = np.atleast_2d(np.asarray(audio, dtype=np.float64))
+    meter = pyloudnorm.Meter(sample_rate)
+    out = np.empty_like(x)
+    for ch in range(x.shape[0]):
+        y = x[ch]
+        for stage in meter._filters.values():
+            y = stage.apply_filter(y)
+        out[ch] = y
+    return out
+
+
+def _integrated_from_weighted(weighted: np.ndarray, sample_rate: int) -> float:
+    """Integrated loudness of an already K-weighted (channels, samples) signal.
+
+    pyloudnorm's gating with no filters (`custom` class), so it equals
+    `integrated_lufs` on the unweighted input while the filter runs only once.
+    """
+    meter = pyloudnorm.Meter(sample_rate, filter_class="custom")
+    data = weighted[0] if weighted.shape[0] == 1 else weighted.T
+    try:
+        lufs = meter.integrated_loudness(data)
+    except ValueError:
+        return float("-inf")
+    if not np.isfinite(lufs):
+        return float("-inf")
+    return float(lufs)
+
+
 def short_term_lufs(
     audio: np.ndarray,
     sample_rate: int,
     window_sec: float = 3.0,
     hop_sec: float = 0.1,
 ) -> np.ndarray:
-    """Short-term LUFS (3초 sliding window). LRA 계산의 backing 데이터.
+    """Short-term LUFS (3 s sliding window, EBU Tech 3341). Backing data for LRA.
 
-    반환: 각 hop의 short-term LUFS 배열. 무음 윈도우는 -inf.
+    The signal is K-weighted once and each window's mean square is read from a
+    cumulative sum, so the cost is O(samples) instead of one filter pass per
+    window. Within a window the gating matches pyloudnorm's single-block case:
+    a window at or below the -70 LUFS absolute gate is -inf.
+
+    The filter runs continuously across windows, as a short-term meter does. The
+    previous implementation restarted the filter at every window, which added a
+    start-up transient; the two agree to ~0.03 LU except in windows that begin
+    right after a signal stops, where the continuous filter's decaying tail is
+    (correctly) measured instead of reading as silence.
+
+    Returns: one short-term LUFS per hop; silent windows are -inf.
     """
-    pyln_audio = _to_pyln(audio)
-    n_samples = pyln_audio.shape[0] if pyln_audio.ndim > 1 else len(pyln_audio)
+    n_channels = 1 if audio.ndim == 1 else audio.shape[0]
+    n_samples = audio.shape[-1]
     win = int(window_sec * sample_rate)
     hop = int(hop_sec * sample_rate)
     if n_samples < win:
         return np.array([], dtype=np.float32)
 
-    meter = pyloudnorm.Meter(sample_rate, block_size=window_sec)
-    out = []
-    for start in range(0, n_samples - win + 1, hop):
-        block = pyln_audio[start:start + win]
-        try:
-            lufs = meter.integrated_loudness(block)
-        except ValueError:
-            lufs = float("-inf")
-        if not np.isfinite(lufs):
-            lufs = float("-inf")
-        out.append(lufs)
-    return np.array(out, dtype=np.float32)
+    if n_channels > len(_CHANNEL_GAINS):
+        # BS.1770 (and pyloudnorm) define weights for up to five channels only.
+        return np.full(len(range(0, n_samples - win + 1, hop)), -np.inf, dtype=np.float32)
+    return _short_term_from_weighted(k_weighted(audio, sample_rate), sample_rate, window_sec, hop_sec)
+
+
+def _short_term_from_weighted(
+    weighted: np.ndarray,
+    sample_rate: int,
+    window_sec: float = 3.0,
+    hop_sec: float = 0.1,
+) -> np.ndarray:
+    """Short-term LUFS from an already K-weighted (channels, samples) signal (<= 5 channels)."""
+    n_channels, n_samples = weighted.shape
+    win = int(window_sec * sample_rate)
+    hop = int(hop_sec * sample_rate)
+    if n_samples < win:
+        return np.array([], dtype=np.float32)
+    starts = np.arange(0, n_samples - win + 1, hop)
+    energy = np.zeros(len(starts), dtype=np.float64)
+    for ch in range(n_channels):
+        cumulative = np.concatenate(([0.0], np.cumsum(weighted[ch] ** 2)))
+        window_sum = cumulative[starts + win] - cumulative[starts]
+        energy += _CHANNEL_GAINS[ch] * window_sum / (window_sec * sample_rate)
+    with np.errstate(divide="ignore"):
+        lufs = -0.691 + 10.0 * np.log10(np.maximum(energy, 0.0))
+    return np.where(lufs > _ABSOLUTE_GATE_LUFS, lufs, -np.inf).astype(np.float32)
 
 
 def loudness_range(short_term: np.ndarray) -> float:
@@ -103,7 +167,9 @@ def true_peak_dbtp(
         return max(ch_peaks)
 
     # mono
-    mono = audio.astype(np.float64)
+    # float32 input is oversampled in float32: half the memory traffic of float64,
+    # and the peak differs by ~1e-6 dB, far below the 0.01 dB the report rounds to.
+    mono = audio if audio.dtype == np.float32 else audio.astype(np.float64)
     if oversample > 1:
         # scipy.signal.resample_poly: polyphase FIR — alias 방지
         upsampled = scipy_signal.resample_poly(mono, oversample, 1)
@@ -159,8 +225,14 @@ def measure(audio: np.ndarray, sample_rate: int) -> LoudnessReport:
     n_samples = audio.shape[-1]
     duration = n_samples / sample_rate
 
-    integrated = integrated_lufs(audio, sample_rate)
-    st = short_term_lufs(audio, sample_rate)
+    if n_ch <= len(_CHANNEL_GAINS):
+        # One K-weighting pass serves both the integrated and the short-term figures.
+        weighted = k_weighted(audio, sample_rate)
+        integrated = _integrated_from_weighted(weighted, sample_rate)
+        st = _short_term_from_weighted(weighted, sample_rate)
+    else:
+        integrated = integrated_lufs(audio, sample_rate)
+        st = short_term_lufs(audio, sample_rate)
     if len(st) > 0:
         finite = st[np.isfinite(st)]
         st_max = float(finite.max()) if len(finite) > 0 else float("-inf")

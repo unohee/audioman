@@ -227,15 +227,19 @@ def stereo_phase_correlation(audio: np.ndarray, window_ms: float = 100.0, sample
             "negative_correlation_pct": 0.0,
         }
 
-    win_corrs = []
-    for i in range(n_windows):
-        s, e = i * win, (i + 1) * win
-        wl, wr = left[s:e], right[s:e]
-        if np.std(wl) < 1e-8 or np.std(wr) < 1e-8:
-            continue
-        win_corrs.append(float(np.corrcoef(wl, wr)[0, 1]))
+    # All windows at once: per-row Pearson correlation of the (n_windows, win) views.
+    # Windows where either channel is (near) constant are skipped, as before.
+    wl = left[: n_windows * win].reshape(n_windows, win)
+    wr = right[: n_windows * win].reshape(n_windows, win)
+    dl = wl - wl.mean(axis=1, keepdims=True)
+    dr = wr - wr.mean(axis=1, keepdims=True)
+    std_l = np.sqrt(np.mean(dl * dl, axis=1))
+    std_r = np.sqrt(np.mean(dr * dr, axis=1))
+    valid = (std_l >= 1e-8) & (std_r >= 1e-8)
+    win_corrs = np.mean(dl[valid] * dr[valid], axis=1) / (std_l[valid] * std_r[valid])
+    win_corrs = np.clip(win_corrs, -1.0, 1.0)  # np.corrcoef clips the same way
 
-    if not win_corrs:
+    if len(win_corrs) == 0:
         return {
             "applicable": True,
             "global_correlation": round(global_corr, 4),
