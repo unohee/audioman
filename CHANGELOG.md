@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added — vocabulary and the Texture-QA bench
+- **Experimental vocabulary** on `diff` results (`vocabulary.terms`): darker/brighter, noisier/cleaner, wider/narrower, louder/quieter, more compressed/more dynamic, more transient/smoother, harmonically richer. A term is proposed only from changes already significant against their floors, lists its evidence, and carries a confidence; it is not calibrated against listeners. The diff digest leads with the terms.
+- **`dynamic_range`** texture descriptor (spread of overlapping 20 ms block levels): the compression cue, since whole-file crest factor can rise under a fast-attack compressor.
+- **`scripts/texture_qa.py`**: 32 synthetic pairs with known processing scored through the MCP `diff` tool on direction accuracy (96.9%) and answer size (<= 930 tokens); `--assert` requires >= 90% and <= 1500 tokens.
+- `detail` moves its own index to a file (`detail.index_ref`) when that is what overflows the byte ceiling.
+- README "For LLM Agents" and ARCHITECTURE "Agent surface" document the whole agent-facing contract.
+
 ### Added — MCP server (`audioman mcp`)
 - A Model Context Protocol server on stdio exposing **analyze**, **describe** (texture descriptors with repeat floors), **diff** and **uat_compare**. Every result is a short digest, a `result_ref` JSON file with the complete result, and a size-bounded summary (`detail`, default `summary` <= 4 KiB) — the agent reads the digest first and opens files only when it needs the numbers. `diff` can also return a PNG figure.
 - Implements MCP protocol versions 2025-06-18, 2025-03-26 and 2024-11-05 directly (no SDK dependency). Clients before 2025-06-18 receive references and summary as text.

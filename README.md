@@ -62,7 +62,7 @@ audioman process ./input_dir/ -p dereverb -o ./output_dir/ -r  # recursive
 
 ## Commands
 
-The 26 subcommands mirror `audioman --help`:
+The subcommands mirror `audioman --help`:
 
 | Command | Description |
 |---------|-------------|
@@ -131,6 +131,25 @@ approximate sharpness), dynamics (RMS, crest factor, onset density) and stereo i
 profile. Every descriptor carries a **repeat floor**: the amount it moves when the
 analysis grid is shifted by half a hop. Differences below the floor are noise of the
 measurement, not of the audio.
+
+## For LLM Agents
+
+audioman's job toward an agent is to hand over **evidence about how audio sounds
+that it can trust and afford to read**, not verdicts on taste:
+
+- **Digest first.** Every analysis payload starts with a short plain-English `digest`.
+- **Bounded output.** `--detail summary|standard|full` keeps JSON under 4 KiB / 32 KiB;
+  everything moved out is in a file referenced by path.
+- **Floors.** Every measurement in `report` (report.v2) says how precise it is; texture
+  descriptors carry a repeat floor, and `diff` only calls a change significant beyond
+  twice the combined floor.
+- **Gates.** PASS/WARN/FAIL with thresholds and reasons; a check that did not run is FAIL.
+- **Words, carefully.** `diff` proposes terms such as *darker*, *noisier*, *wider* —
+  experimental, each with the evidence behind it and a confidence.
+
+`scripts/texture_qa.py --assert` checks this end to end: 32 synthetic before/after
+pairs with known processing go through the MCP `diff` tool; currently 96.9% of them
+get the right terms (and controls get none) in at most ~930 tokens per answer.
 
 ## MCP Server (for LLM agents)
 

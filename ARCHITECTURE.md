@@ -16,7 +16,7 @@ Five packages under `src/audioman/`, each depending only on the ones to its righ
 
 | Layer | Path | Holds |
 |---|---|---|
-| Presentation | `cli/` | argparse wiring, output formatting, exit handling. 26 subcommands, one module each. |
+| Presentation | `cli/` | argparse wiring, output formatting, exit handling. 29 subcommands, one module each, plus the MCP server (`mcp.py`, `mcp_tools.py`). |
 | Domain | `core/` | DSP, measurement, file I/O, session/EDL models, plugin *discovery*. Pure functions and dataclasses; no printing. |
 | Plugin access | `plugins/` | The `PluginWrapper` Protocol and its pedalboard-backed implementation (`vst3.py`), plus parameter metadata types. |
 | Configuration | `config/` | Platform search paths (`paths.py`) and pydantic-settings (`settings.py`). |
@@ -71,7 +71,7 @@ Callers of step 3–4: `cli/{scan,list_cmd,info,dump,doctor,eq_profile,stream,do
 and in `core/`: `engine.py` (single plugin), `pipeline.py` (chain), `commit.py`
 (chain + delay compensation), `mixer.py`, `edl.py`, `voiceover.py`, `latency.py`.
 
-## CLI surface — 26 subcommands
+## CLI surface — 29 subcommands
 
 Registered in `cli/app.py:build_parser()`; each module exposes `add_parser(subparsers)`
 and `run(args)` (or a per-action `run_*`). Root-level flags (`--json`, `--plain`,
@@ -128,6 +128,9 @@ after it.
 |---|---|
 | `vo {analyze,process}` | VAD → denoise → per-utterance LUFS levelling |
 | `obs {probe,dry-run}` | OBS multitrack video: track topology (`probe`), then per-track voice/music classification and a treatment plan (`dry-run`). See `docs/obs-workflow.md` |
+| `uat {compare,smoke,pdc}` | Plugin/host acceptance gates as report.v2: real-time take vs offline render vs source, smoke renders at several rates, measured vs reported latency. Exit 1 on FAIL |
+| `diff A B` | Aligned texture-descriptor deltas with floor significance, per segment and band; experimental vocabulary; `--png` |
+| `mcp` | Model Context Protocol server on stdio (`analyze`, `describe`, `diff`, `uat_compare`) |
 
 ## JSON contract
 
@@ -142,6 +145,28 @@ existing codes are never renamed or removed.
 `scripts/check_schema_uris.py` and `tests/unit/test_json_contract.py` enforce both
 directions — no schema URI referenced from `src/` may be dangling, and no emitted
 envelope may reference an unpublished schema.
+
+## Agent surface
+
+What an LLM reads is shaped by four layers, all in `core/` and all pure:
+
+| Module | Role |
+|---|---|
+| `detail.py` | `--detail {summary,standard,full}`: long arrays, strings and lists move to content-addressed spill files referenced by absolute path; the printed JSON stays under 4 KiB / 32 KiB. Nothing is dropped: `detail.spilled` / `detail.truncated` (or `detail.index_ref`) point at every file. |
+| `digest.py` | One plain-English paragraph per payload, computed from the *full* result before shaping. States measurements and counts, not judgements. |
+| `report_v2.py` | The shared contract (`report.v2.json`): subject, measurements with a **floor** (exact, rounding, resolution, quantization, repeat, unknown), findings, PASS/WARN/FAIL gates, missing required gates as FAIL, verdict. |
+| `texture/`, `diff.py`, `vocabulary.py` | Texture descriptors per segment with repeat floors (re-measured on the signal advanced by half a hop); A/B deltas judged against 2 x the summed floors; an **experimental** mapping from significant deltas to words, always with its evidence and a confidence. |
+
+`cli/mcp.py` implements the MCP stdio transport directly (JSON-RPC 2.0, versions
+2025-06-18 / 2025-03-26 / 2024-11-05) and returns, per tool call, the digest, a
+`result_ref` file with the complete result, and a `detail`-shaped summary. Tool output
+is redirected to stderr so stdout carries protocol messages only.
+
+`scripts/texture_qa.py` measures the whole surface: synthetic pairs with known
+processing go through the MCP `diff` tool, scored on direction (expected term
+proposed, opposite absent, controls report no change) and on the token size of what
+comes back. `scripts/bench_perf.py` guards the speed of the vectorised analysis paths
+against their per-window references.
 
 ## Invariants
 
