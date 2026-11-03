@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added — token-budgeted JSON
+- **`--detail {summary,standard,full}`** and **`--spill-dir`** on `analyze`, `observe`, `screen` and `master qc`. `standard` (default) keeps the printed JSON under 32 KiB, `summary` under 4 KiB; long numeric arrays, long strings and long finding/event/check lists move to JSON spill files (default `<cache dir>/spill`) referenced by absolute path, with length and min/max/mean inline. Lists keep their most severe items first. Nothing is dropped: `detail.spilled` and `detail.truncated` list every file.
+- **`digest`**: every payload of those commands starts with a plain-English summary of the full measurement (format, levels, silence, hum, finding/event counts, QC verdict), at most 600 characters.
+
+### Changed
+- **Default JSON shape for long arrays**: with the default `--detail standard`, `analyze --frames` per-frame arrays (and any other array over 64 values) are references to spill files instead of inline lists. Pass `--detail full` for the previous inline output.
+
 ### Performance
 - **`master qc` ~9x faster, `screen` ~4x faster** on a 5-minute stereo 48 kHz file (in-process, measured by `scripts/bench_perf.py` against the previous per-window implementations).
   - Short-term LUFS / LRA: the signal is K-weighted once and window energies come from a cumulative sum (was one pyloudnorm filter pass per 3 s window, ~3000 per 5 minutes). `measure()` shares that pass with integrated loudness. True peak oversamples float32 input in float32.
