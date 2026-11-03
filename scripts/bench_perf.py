@@ -130,6 +130,11 @@ def _reference_frame_features(mono, bounds, sample_rate, *, bands=(), flatness=F
     )
 
 
+def _reference_medians(spectrum, indices):
+    """The RF-noise floor as it was: one np.median per candidate bin."""
+    return np.array([aesthetic._neighbourhood_median(spectrum, int(i)) for i in indices])
+
+
 # ---------------------------------------------------------------------------
 # Timing
 # ---------------------------------------------------------------------------
@@ -138,9 +143,12 @@ def _reference_frame_features(mono, bounds, sample_rate, *, bands=(), flatness=F
 def _best_of(fn, repeats: int) -> float:
     best = float("inf")
     for _ in range(repeats):
-        start = time.perf_counter()
+        # CPU time of this process, not wall time: other processes on a shared host
+        # stretch wall time unevenly between the fast and the reference run, which
+        # would make the ratio a measure of host load rather than of the algorithm.
+        start = time.process_time()
         fn()
-        best = min(best, time.perf_counter() - start)
+        best = min(best, time.process_time() - start)
     return best
 
 
@@ -164,7 +172,9 @@ def bench(repeats: int = 2) -> dict:
             aesthetic.screen_audio(audio, SR)
 
         def screen_reference():
-            with mock.patch.object(aesthetic, "frame_features", _reference_frame_features):
+            with ExitStack() as stack:
+                stack.enter_context(mock.patch.object(aesthetic, "frame_features", _reference_frame_features))
+                stack.enter_context(mock.patch.object(aesthetic, "_neighbourhood_medians", _reference_medians))
                 aesthetic.screen_audio(audio, SR)
 
         cases = {
@@ -177,8 +187,8 @@ def bench(repeats: int = 2) -> dict:
             t_fast = _best_of(fast, repeats)
             t_ref = _best_of(reference, 1)
             report["cases"][name] = {
-                "fast_sec": round(t_fast, 3),
-                "reference_sec": round(t_ref, 3),
+                "fast_cpu_sec": round(t_fast, 3),
+                "reference_cpu_sec": round(t_ref, 3),
                 "speedup": round(t_ref / t_fast, 2),
                 "floor": FLOORS[name],
             }
@@ -200,7 +210,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         for name, case in report["cases"].items():
             mark = "ok  " if name not in failures else "FAIL"
-            print(f"{mark} {name:10s} fast {case['fast_sec']:7.3f}s  reference {case['reference_sec']:7.3f}s"
+            print(f"{mark} {name:10s} cpu fast {case['fast_cpu_sec']:7.3f}s  reference {case['reference_cpu_sec']:7.3f}s"
                   f"  speedup {case['speedup']:6.2f}x  (floor {case['floor']}x)")
     return 1 if (args.check and failures) else 0
 

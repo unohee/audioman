@@ -294,3 +294,33 @@ def test_stereo_phase_correlation_matches_per_window_reference():
     assert got["min_window_correlation"] == round(float(ref.min()), 4)
     assert got["mean_window_correlation"] == pytest.approx(round(float(ref.mean()), 4), abs=1e-4)
     assert got["negative_correlation_pct"] == round(100.0 * float((ref < 0).sum()) / len(ref), 2)
+
+
+# ---------------------------------------------------------------------------
+# RF-noise neighbourhood medians (screen)
+# ---------------------------------------------------------------------------
+
+
+def test_neighbourhood_medians_match_per_bin_definition():
+    rng = np.random.default_rng(11)
+    spectrum = rng.random(2049) ** 3
+    spectrum[700] = 50.0  # a tone: excluded from its own floor, included in its neighbours'
+    indices = np.arange(1, len(spectrum))  # covers both edges and the interior
+    batched = aesthetic._neighbourhood_medians(spectrum, indices)
+    reference = np.array([aesthetic._neighbourhood_median(spectrum, int(i)) for i in indices])
+    np.testing.assert_array_equal(batched, reference)
+
+
+def test_rf_noise_detector_unchanged_against_per_bin_reference(monkeypatch):
+    t = np.arange(SR * 2) / SR
+    rng = np.random.default_rng(5)
+    audio = (0.01 * rng.standard_normal(len(t)) + 0.02 * np.sin(2 * np.pi * 9000 * t)
+             + 0.02 * np.sin(2 * np.pi * 12500 * t)).astype(np.float32)
+    batched, _ = aesthetic.detect_rf_noise_events(audio, SR)
+    monkeypatch.setattr(
+        aesthetic, "_neighbourhood_medians",
+        lambda spec, idx: np.array([aesthetic._neighbourhood_median(spec, int(i)) for i in idx]),
+    )
+    reference, _ = aesthetic.detect_rf_noise_events(audio, SR)
+    assert len(batched) == 1
+    assert [e.to_dict() for e in batched] == [e.to_dict() for e in reference]

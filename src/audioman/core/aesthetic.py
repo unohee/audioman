@@ -500,6 +500,41 @@ def detect_background_noise_events(
     )
 
 
+def _neighbourhood_median(spectrum: np.ndarray, idx: int) -> float:
+    """Median of bins idx-30..idx-4 and idx+4..idx+30 (DC and out-of-range bins excluded).
+
+    The +/-3 bins around idx are left out so a tone's own Hann main lobe does not
+    raise its noise floor.
+    """
+    lo = max(1, idx - 30)
+    hi = min(len(spectrum), idx + 31)
+    neighborhood = np.concatenate([spectrum[lo:max(lo, idx - 3)], spectrum[min(hi, idx + 4):hi]])
+    # Unreachable: the scan needs >= 2048 samples, so the spectrum has >= 1025 bins
+    # and both slice halves cannot be empty at once -- the lower one is empty only
+    # for idx <= 4, where the upper one always spans idx+4 .. idx+31 (27 bins).
+    if len(neighborhood) == 0:  # pragma: no cover - every bin has neighbours
+        return 0.0
+    return float(np.median(neighborhood))
+
+
+def _neighbourhood_medians(spectrum: np.ndarray, indices: np.ndarray) -> np.ndarray:
+    """`_neighbourhood_median` for many bins: interior bins in one batched median.
+
+    An interior bin (31 <= idx <= len - 31) always has the full 27 + 27 neighbours,
+    so its neighbourhood is a fixed set of columns of a 61-wide sliding window.
+    Bins near either end keep the per-bin definition.
+    """
+    out = np.empty(len(indices), dtype=np.float64)
+    interior = (indices >= 31) & (indices + 31 <= len(spectrum))
+    if np.any(interior):
+        windows = np.lib.stride_tricks.sliding_window_view(spectrum, 61)[indices[interior] - 30]
+        columns = np.r_[0:27, 34:61]
+        out[interior] = np.median(windows[:, columns], axis=1)
+    for k in np.where(~interior)[0]:
+        out[k] = _neighbourhood_median(spectrum, int(indices[k]))
+    return out
+
+
 def detect_rf_noise_events(
     audio: np.ndarray,
     sample_rate: int,
@@ -528,18 +563,10 @@ def detect_rf_noise_events(
         max_frequency = min(20000.0, sample_rate / 2.0 - 100.0)
     mask = (freqs >= min_frequency) & (freqs <= max_frequency)
     candidate_idx = np.where(mask)[0]
+    floors = _neighbourhood_medians(spectrum, candidate_idx)
     tones: list[dict] = []
-    for idx in candidate_idx:
-        lo = max(1, idx - 30)
-        hi = min(len(spectrum), idx + 31)
-        neighborhood = np.concatenate([spectrum[lo:max(lo, idx - 3)], spectrum[min(hi, idx + 4):hi]])
-        # Unreachable: the scan needs >= 2048 samples, so the spectrum has >= 1025 bins
-        # and both slice halves cannot be empty at once -- the lower one is empty only
-        # for idx <= 4, where the upper one always spans idx+4 .. idx+31 (27 bins).
-        if len(neighborhood) == 0:  # pragma: no cover - every bin has neighbours
-            continue
-        floor = float(np.median(neighborhood))
-        snr = _power_db(float(spectrum[idx]) / max(floor, 1e-24))
+    for idx, floor in zip(candidate_idx, floors, strict=True):
+        snr = _power_db(float(spectrum[idx]) / max(float(floor), 1e-24))
         if snr < snr_threshold_db:
             continue
         frequency = float(freqs[idx])

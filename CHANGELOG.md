@@ -9,6 +9,8 @@ All notable changes to this project will be documented in this file.
   - Short-term LUFS / LRA: the signal is K-weighted once and window energies come from a cumulative sum (was one pyloudnorm filter pass per 3 s window, ~3000 per 5 minutes). `measure()` shares that pass with integrated loudness. True peak oversamples float32 input in float32.
   - `screen` (sibilance, breath, background noise): one batched, chunked STFT per frame size (`audioman.core.framewise`) instead of an rfft per frame and per band.
   - `master qc` stereo correlation: all 100 ms windows correlated at once.
+  - `screen` RF-noise floor: interior bins take their neighbourhood median in one batched call (was one `np.median` per candidate bin, ~12k per file).
+  - `scripts/bench_perf.py` compares CPU time, not wall time, so host load from other processes does not move the asserted ratio.
 - **Behaviour note:** short-term loudness now runs the K-weighting filter continuously across windows, as a short-term meter does (EBU Tech 3341), instead of restarting it per window. Values move by < 0.03 LU on steady material; a window that begins exactly as a signal stops now reports the filter's decaying tail (a very low finite level) instead of `-inf`. Parity is pinned by `tests/unit/test_perf_parity.py`.
 
 ### Fixed — VST3 discovery on Linux/Windows
