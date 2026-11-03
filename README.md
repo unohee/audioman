@@ -119,6 +119,23 @@ audioman stream play mix.wav -p reverb --block-size 256
 audioman stream triage sine -p builtin:reverb --reset-per-block
 ```
 
+## Plugin / Host Acceptance (`uat`)
+
+```bash
+# Real-time take vs offline render vs source (+ bypass take, render time)
+audioman --json uat compare --source dry.wav --offline bounce.wav --realtime take.wav \
+    --bypassed bypass.wav --render-seconds 3.2
+
+# Load, process and stay finite/audible at several rates
+audioman --json uat smoke --plugin "My Plugin" --rates 44100,48000,96000
+
+# Measured vs reported latency
+audioman --json uat pdc --plugin "My Plugin"
+audioman --json uat pdc --reference dry.wav --processed wet.wav --reported 1024
+```
+
+Each prints a report.v2 block and exits 1 on a FAIL verdict, so it can gate CI directly.
+
 ## Batch Processing
 
 Any file argument can be a directory for batch mode:

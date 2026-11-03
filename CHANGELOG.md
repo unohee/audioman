@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added — plugin/host acceptance gates (`audioman uat`)
+- **`uat compare`** judges a host's real-time take against its offline render and the dry source (and, optionally, a bypassed take and the render time). Gates: `realtime_present`, `offline_present`, `rt_matches_offline` (residual <= -90 dBFS at lag 0), `no_dropout_blocks`, `no_unprocessed_blocks`, `delay_compensated` (offline render at lag 0 from the source), `processed` (drop with `--transparent`), `bypass_equals_source`, `faster_than_real_time`.
+- **`uat smoke`** renders a tone+noise probe through a plugin (VST3/AU or `builtin:`) at each `--rates` value and checks shape, finiteness, an audible second half and exposed parameters; `--check-output` judges a render made by another host.
+- **`uat pdc`** measures latency by steady-state cross-correlation (settling period cut, two-sided search, edge-of-window flag) and compares it with the reported latency (+/-2 ms, NCC >= 0.70). A latency the measurement cannot establish fails.
+- Results are report.v2 (`audioman://schema/uat.v1.json`); the exit status is 1 when the verdict is FAIL.
+- **`stream triage`** reports dropped host buffers: 256-sample blocks that are silent (< -60 dBFS) where the offline render is active (>= -40 dBFS) produce a critical `SAMPLE_DROPOUT` finding.
+- Written from general DSP practice; no code or fixtures from other repositories.
+
 ### Added — report.v2
 - **`report` block** (`audioman://schema/report.v2.json`) on `analyze`, `observe`, `screen`, `master qc` and `doctor` JSON output: `subject`, `measurements` (value, unit, **floor**, `floor_kind`, source), `findings`, `gates` (PASS/WARN/FAIL), `missing_gates` and `verdict`. A floor is the smallest difference in a value that means anything: exact for counts, half the last kept decimal for rounded values, one sample period for durations, one LSB for linear levels of PCM files, null only when declared `unknown`.
 - Each command declares the gates it must produce (`no_critical_findings`, `no_fail_events`, one per QC check with phase/imbalance required on stereo, `completed.<mode>` per doctor mode). A declared gate that was not produced is present as **FAIL, reason `missing`** — a check that did not run is never a pass.

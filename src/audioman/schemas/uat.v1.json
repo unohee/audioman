@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audioman://schema/uat.v1.json",
+  "title": "Audioman UAT Result",
+  "description": "Output envelope for `audioman uat compare|smoke|pdc --json`. The gates and verdict are in `report` (report.v2); the process exits 1 when the verdict is FAIL.",
+  "type": "object",
+  "required": [
+    "$schema",
+    "audioman_version",
+    "command",
+    "digest",
+    "inputs",
+    "report"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "audioman://schema/uat.v1.json"
+    },
+    "audioman_version": {
+      "type": "string"
+    },
+    "command": {
+      "type": "string",
+      "enum": [
+        "uat compare",
+        "uat smoke",
+        "uat pdc"
+      ]
+    },
+    "digest": {
+      "type": "string"
+    },
+    "inputs": {
+      "type": "object",
+      "description": "The files or plugin and options the gates were evaluated on."
+    },
+    "report": {
+      "$ref": "audioman://schema/report.v2.json"
+    }
+  }
+}
