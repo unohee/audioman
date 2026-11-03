@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Performance
+- **`master qc` ~9x faster, `screen` ~4x faster** on a 5-minute stereo 48 kHz file (in-process, measured by `scripts/bench_perf.py` against the previous per-window implementations).
+  - Short-term LUFS / LRA: the signal is K-weighted once and window energies come from a cumulative sum (was one pyloudnorm filter pass per 3 s window, ~3000 per 5 minutes). `measure()` shares that pass with integrated loudness. True peak oversamples float32 input in float32.
+  - `screen` (sibilance, breath, background noise): one batched, chunked STFT per frame size (`audioman.core.framewise`) instead of an rfft per frame and per band.
+  - `master qc` stereo correlation: all 100 ms windows correlated at once.
+- **Behaviour note:** short-term loudness now runs the K-weighting filter continuously across windows, as a short-term meter does (EBU Tech 3341), instead of restarting it per window. Values move by < 0.03 LU on steady material; a window that begins exactly as a signal stops now reports the filter's decaying tail (a very low finite level) instead of `-inf`. Parity is pinned by `tests/unit/test_perf_parity.py`.
+
 ### Fixed — VST3 discovery on Linux/Windows
 - **`audioman scan` on Linux/Windows**: VST3 bundles without `Contents/Info.plist` (e.g. `<name>.vst3/Contents/x86_64-linux/<name>.so`) were silently skipped (`Scanned 0 plugins`). They now register under the bundle name, with vendor/version from `Contents/Resources/moduleinfo.json` when present. The inner `Contents/x86_64-win/<name>.vst3` binary is not registered a second time, and a legacy single-file Windows `.vst3` registers under its file stem. A directory without `Contents/` is still ignored, and a corrupt macOS `Info.plist` still yields no plugin.
 
