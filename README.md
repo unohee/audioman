@@ -155,6 +155,19 @@ audioman dump --all --filter "rx 10" -o rx10_defaults.jsonl
 
 ## JSON Output
 
+### Detail levels (`--detail`)
+
+`analyze`, `observe`, `screen` and `master qc` shape their `--json` output for a context window:
+
+| Level | Printed size | What stays inline |
+|---|---|---|
+| `summary` | <= 4 KiB | scalars, arrays up to 8 values, top 5 findings/events |
+| `standard` (default) | <= 32 KiB | arrays up to 64 values, top 50 findings/events |
+| `full` | unbounded | everything |
+
+Anything moved out of line is written to a JSON spill file (`--spill-dir`, default `<cache dir>/spill`) and replaced by `{"$ref": "/abs/path.json", "length": N, "min": ..., "max": ..., "mean": ...}`. Every payload also starts with a `digest` string summarising the full measurement.
+
+
 `--json`, `--plain`, `--verbose`, and `--version` are **root-level global flags**. They are parsed by the top-level parser, so they must appear **before** the subcommand. Placing them after the subcommand fails with `error: unrecognized arguments`:
 
 ```bash

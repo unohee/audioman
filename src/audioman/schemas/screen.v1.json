@@ -6,6 +6,8 @@
   "type": "object",
   "required": ["$schema", "audioman_version", "command"],
   "properties": {
+    "digest": {"type": "string", "description": "Plain-English summary of the full measurement (<= 600 chars), computed before --detail shaping."},
+    "detail": {"type": "object", "description": "Applied --detail level, byte ceiling, whether it was met, and the spill files ($ref paths) holding everything moved out of line.", "properties": {"level": {"type": "string", "enum": ["summary", "standard", "full"]}, "within_ceiling": {"type": "boolean"}, "spilled": {"type": "array"}, "truncated": {"type": "object"}}},
     "$schema": {"const": "audioman://schema/screen.v1.json"},
     "audioman_version": {"type": "string"},
     "command": {"const": "screen"},

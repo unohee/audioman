@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from audioman import __version__
+from audioman.cli._detail import add_detail_arguments, shape_json
 from audioman.cli.output import print_error, print_json, print_table, print_success, output_console
 from audioman.cli.output import print_markup
 from audioman.core.audio_file import read_audio, get_audio_stats
@@ -49,6 +50,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
                         help="Add long-term FFT diagnostics (band energy, dominant frequencies, hum, hf slope)")
     parser.add_argument("--spectrum-fft", type=_positive_int, default=16384,
                         help="FFT size for spectrum diagnostics (default: 16384)")
+    add_detail_arguments(parser)
     parser.add_argument("--spectrum-min-rms", type=float, default=0.01,
                         help="Skip frames below this RMS when averaging spectrum (default: 0.01)")
     parser.set_defaults(func=run)
@@ -162,7 +164,7 @@ def _run_single(args: argparse.Namespace, path: Path) -> None:
             out["ascii_waveform"] = waveform_text
             out["ascii_envelope"] = envelope_text
             out["ascii_spectral"] = spectral_text
-        print_json(out)
+        print_json(shape_json("analyze", out, args, label=path.stem))
         return
 
     # human-readable output
@@ -241,7 +243,11 @@ def _run_batch(args: argparse.Namespace, input_dir: Path) -> None:
             )
             if args.json:
                 print(json.dumps(
-                    json_envelope("analyze", result, schema=schema_uri("analyze")),
+                    shape_json(
+                        "analyze",
+                        json_envelope("analyze", result, schema=schema_uri("analyze")),
+                        args, label=fpath.stem,
+                    ),
                     ensure_ascii=False, default=str,
                 ))
             else:
@@ -255,8 +261,12 @@ def _run_batch(args: argparse.Namespace, input_dir: Path) -> None:
             fail += 1
             if args.json:
                 print(json.dumps(
-                    json_envelope("analyze", {"file": str(fpath), "error": str(e)},
-                                  schema=schema_uri("analyze")),
+                    shape_json(
+                        "analyze",
+                        json_envelope("analyze", {"file": str(fpath), "error": str(e)},
+                                      schema=schema_uri("analyze")),
+                        args, label=fpath.stem,
+                    ),
                     ensure_ascii=False,
                 ))
             else:
