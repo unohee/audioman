@@ -31,6 +31,7 @@ dependencies = [
     { name = "soundfile" },
     { name = "soxr" },
     { name = "torch" },
+    { name = "torchaudio" },
 ]
 
 [package.optional-dependencies]
@@ -71,6 +72,7 @@ requires-dist = [
     { name = "soundfile", specifier = ">=0.13" },
     { name = "soxr", specifier = ">=0.3" },
     { name = "torch", specifier = ">=2.2" },
+    { name = "torchaudio", specifier = ">=2.2" },
     { name = "vamp", marker = "extra == 'vamp'", specifier = ">=1.1.0" },
 ]
 provides-extras = ["vamp", "essentia", "dev"]
