@@ -119,6 +119,19 @@ audioman stream play mix.wav -p reverb --block-size 256
 audioman stream triage sine -p builtin:reverb --reset-per-block
 ```
 
+## Texture Descriptors
+
+```bash
+audioman --json analyze mix.wav --texture --segment-sec 2
+```
+
+Spectral shape (centroid, rolloff, bandwidth, flatness, contrast, flux, HF ratio,
+approximate sharpness), dynamics (RMS, crest factor, onset density) and stereo image
+(width, L/R correlation) for the whole file and each segment, with an ERB-band level
+profile. Every descriptor carries a **repeat floor**: the amount it moves when the
+analysis grid is shifted by half a hop. Differences below the floor are noise of the
+measurement, not of the audio.
+
 ## Plugin / Host Acceptance (`uat`)
 
 ```bash

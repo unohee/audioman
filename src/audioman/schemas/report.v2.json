@@ -115,6 +115,7 @@
               "rounding",
               "resolution",
               "quantization",
+              "repeat",
               "unknown"
             ]
           },
