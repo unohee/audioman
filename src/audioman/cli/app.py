@@ -24,7 +24,7 @@ def _early_plain_detect(argv: list[str] | None) -> bool:
 _PLAIN_EARLY = _early_plain_detect(None)
 
 from audioman import __version__  # noqa: E402
-from audioman.cli import scan, list_cmd, info, process, chain, preset, dump, analyze, fx, visualize, doctor, eq_profile, bounce, commit_cmd, mixdown, edl as edl_cli, master as master_cli, fader_test as fader_test_cli, fader_compare as fader_compare_cli, voiceover as voiceover_cli, screen as screen_cli, obs as obs_cli, observe as observe_cli, changelog_cmd, schemas_cmd, stream as stream_cli, uat as uat_cli, diff_cmd  # noqa: E402
+from audioman.cli import scan, list_cmd, info, process, chain, preset, dump, analyze, fx, visualize, doctor, eq_profile, bounce, commit_cmd, mixdown, edl as edl_cli, master as master_cli, fader_test as fader_test_cli, fader_compare as fader_compare_cli, voiceover as voiceover_cli, screen as screen_cli, obs as obs_cli, observe as observe_cli, changelog_cmd, schemas_cmd, stream as stream_cli, uat as uat_cli, diff_cmd, mcp as mcp_cli  # noqa: E402
 from audioman.cli.output import set_plain  # noqa: E402
 
 
@@ -72,6 +72,7 @@ def build_parser() -> argparse.ArgumentParser:
     stream_cli.add_parser(subparsers)
     uat_cli.add_parser(subparsers)
     diff_cmd.add_parser(subparsers)
+    mcp_cli.add_parser(subparsers)
 
     return parser
 
