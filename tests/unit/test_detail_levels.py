@@ -119,7 +119,7 @@ def test_levels_spill_long_arrays_and_rank_findings(tmp_path, level):
     note = out["detail"]["truncated"]["findings"]
     assert note["total"] == 120
     assert _load_ref(note["$ref"]) == payload["findings"]
-    assert {s["key"] for s in out["detail"]["spilled"]} >= {"frame_metrics.rms", "findings"}
+    assert set(out["detail"]["spilled"]) >= {"frame_metrics.rms", "findings"}
 
 
 def test_ranking_uses_status_for_checks_and_start_time_as_tiebreak(tmp_path):

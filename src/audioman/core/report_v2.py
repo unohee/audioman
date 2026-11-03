@@ -70,10 +70,25 @@ class Report:
             "subject": self.subject,
             "measurements": [asdict(m) for m in self.measurements],
             "findings": self.findings,
-            "gates": [asdict(g) for g in self.gates],
+            "gates": [_gate_dict(g) for g in self.gates],
             "missing_gates": [g.name for g in self.gates if g.reason == "missing"],
             "verdict": verdict,
         }
+
+
+def _gate_dict(gate: Gate) -> dict[str, Any]:
+    """Gate as JSON, omitting fields at their default (no measurement/threshold,
+    no reason, required) — a report is read through a context window."""
+    out: dict[str, Any] = {"name": gate.name, "status": gate.status}
+    if gate.measurement is not None:
+        out["measurement"] = gate.measurement
+    if gate.threshold is not None:
+        out["threshold"] = gate.threshold
+    if not gate.required:
+        out["required"] = False
+    if gate.reason:
+        out["reason"] = gate.reason
+    return out
 
 
 # ---------------------------------------------------------------------------

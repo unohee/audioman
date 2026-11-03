@@ -14,7 +14,8 @@
 #   summary   the same with tighter limits (8 values, top 5 items) and under 4 KiB.
 #
 # Nothing is lost at any level: everything removed from stdout is in a spill file
-# whose absolute path is in the reference, and `detail.spilled` lists every file.
+# whose absolute path is in the reference (or in `detail.truncated` for trimmed
+# lists), and `detail.spilled` lists the key path of every value that moved.
 
 from __future__ import annotations
 
@@ -55,6 +56,11 @@ _PROTECTED = {"$schema", "audioman_version", "command", "digest", "detail"}
 # Sections that are shaped inside (long lists trimmed) but never replaced by a
 # reference as a whole: the report.v2 block must always validate in place.
 _INLINE_SECTIONS = {"report"}
+# Lists that are never trimmed: a report's gates are the basis of its verdict.
+_NEVER_TRIMMED = {"report.gates"}
+# A reference costs ~150-250 bytes (absolute path + length/stats); moving anything
+# smaller would grow the output, so values at or under this size always stay inline.
+_MIN_SPILL_BYTES = 256
 
 
 def printed_size(payload: Any) -> int:
@@ -127,16 +133,23 @@ def _shape(node: Any, path: str, policy: DetailPolicy, spiller: _Spiller, trunca
     return _shape_value(None, node, path, policy, spiller, truncated)
 
 
+def _worth_spilling(value) -> bool:
+    return printed_size(value) > _MIN_SPILL_BYTES
+
+
 def _shape_value(key, value, path, policy, spiller, truncated):
+    # Inside the report block only list trimming is allowed: replacing a value by a
+    # reference would break its schema.
+    in_report = path == "report" or path.startswith("report.")
     if _is_numeric_array(value):
-        if len(value) > policy.inline_values:
+        if len(value) > policy.inline_values and not in_report and _worth_spilling(value):
             return {"$ref": spiller.write(path, value), "length": len(value), **_stats(value)}
         return value
-    if _is_record_list(value) and len(value) > policy.top_k:
+    if _is_record_list(value) and len(value) > policy.top_k and path not in _NEVER_TRIMMED:
         kept = sorted(value, key=_rank_key) if key in RANKED_LISTS else value
         truncated[path] = {"total": len(value), "shown": policy.top_k, "$ref": spiller.write(path, value)}
         return [_shape(v, f"{path}[{i}]", policy, spiller, truncated) for i, v in enumerate(kept[: policy.top_k])]
-    if isinstance(value, str) and len(value) > policy.inline_chars:
+    if isinstance(value, str) and len(value) > policy.inline_chars and not in_report and _worth_spilling(value):
         return {"$ref": spiller.write(path, value), "length": len(value)}
     if isinstance(value, (dict, list)):
         if isinstance(value, dict):
@@ -187,23 +200,34 @@ def apply_detail(
             "level": level,
             "byte_ceiling": policy.byte_ceiling,
             "within_ceiling": True,
-            "spilled": spiller.files,
+            "spilled": [f["key"] for f in spiller.files],
             "truncated": truncated,
         }
         if printed_size(shaped) <= policy.byte_ceiling:
             return shaped
 
     # Many small references can outweigh what they replaced. Last resort: move whole
-    # top-level sections, largest first, into one spill file each, starting from the
-    # first (most inline) shaping so whatever still fits keeps its detail.
+    # top-level sections, largest first, into one spill file each. Try this from the
+    # most inline shaping to the tightest, so whatever still fits keeps its detail;
+    # sections that must stay inline (the report) are only trimmed by the tighter passes.
+    for attempt in attempts:
+        shaped = _shape_with_sections(payload, attempt, policy, level, spill_dir, label)
+        if printed_size(shaped) <= policy.byte_ceiling:
+            return shaped
+    # Only scalar metadata is left inline; report the miss instead of dropping data.
+    shaped["detail"]["within_ceiling"] = False
+    return shaped
+
+
+def _shape_with_sections(payload, attempt, policy, level, spill_dir, label):
     spiller = _Spiller(spill_dir, label)
-    truncated = {}
-    shaped = _shape(payload, "", attempts[0], spiller, truncated)
+    truncated: dict[str, Any] = {}
+    shaped = _shape(payload, "", attempt, spiller, truncated)
     shaped["detail"] = {
         "level": level,
         "byte_ceiling": policy.byte_ceiling,
         "within_ceiling": True,
-        "spilled": spiller.files,
+        "spilled": [f["key"] for f in spiller.files],
         "truncated": truncated,
     }
     movable = sorted(
@@ -213,7 +237,9 @@ def apply_detail(
     )
     for key in movable:
         if printed_size(shaped) <= policy.byte_ceiling:
-            return shaped
+            break
+        if not _worth_spilling(shaped[key]):
+            continue
         original = payload[key]
         shaped[key] = {"$ref": spiller.write(key, original), "section": True}
         if isinstance(original, (list, str)):
@@ -222,7 +248,5 @@ def apply_detail(
         spiller.files[:] = [f for f in spiller.files if not f["key"].startswith(f"{key}.") and not f["key"].startswith(f"{key}[")]
         for t in [t for t in truncated if t == key or t.startswith(f"{key}.") or t.startswith(f"{key}[")]:
             del truncated[t]
-    if printed_size(shaped) > policy.byte_ceiling:
-        # Only scalar metadata is left inline; report the miss instead of dropping data.
-        shaped["detail"]["within_ceiling"] = False
+    shaped["detail"]["spilled"] = [f["key"] for f in spiller.files]
     return shaped

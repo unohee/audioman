@@ -77,7 +77,7 @@ def assert_valid_report(report: dict, command: str) -> None:
         assert (m["floor"] is None) == (m["floor_kind"] == "unknown"), m
         if m["floor"] is not None:
             assert m["floor"] >= 0
-    assert report["missing_gates"] == [g["name"] for g in report["gates"] if g["reason"] == "missing"]
+    assert report["missing_gates"] == [g["name"] for g in report["gates"] if g.get("reason") == "missing"]
 
 
 @pytest.fixture
@@ -206,6 +206,7 @@ def test_doctor_emits_report_and_records_failures(monkeypatch, tmp_path):
     failed = json.loads(_run(["--json", "doctor", "-p", str(bundle), "--mode", "thd"]).stdout)["report"]
     assert failed["verdict"] == "FAIL"
     assert failed["gates"][0]["reason"] == "plugin crashed"
+    assert "measurement" not in failed["gates"][0] and "required" not in failed["gates"][0]
 
 
 # ---------------------------------------------------------------------------
@@ -290,3 +291,14 @@ def test_quantization_floor_only_raises_a_finer_rounding_floor():
     fine = report_v2._level_measure("peak", 0.123456789012, 16, "t")  # unknown -> LSB
     assert fine.floor_kind == "quantization"
     assert report_v2._file_subtype("/does/not/exist.wav") is None
+
+
+def test_gate_serialisation_omits_defaults_and_keeps_overrides():
+    from audioman.core.report_v2 import Gate, _gate_dict
+
+    assert _gate_dict(Gate("g", "PASS")) == {"name": "g", "status": "PASS"}
+    full = _gate_dict(Gate("g", "WARN", measurement="m", threshold=[1, 2], required=False, reason="r"))
+    assert full == {"name": "g", "status": "WARN", "measurement": "m", "threshold": [1, 2],
+                    "required": False, "reason": "r"}
+    validate_against({"name": "g", "status": "WARN", "required": False},
+                     REPORT_SCHEMA["properties"]["gates"]["items"])
