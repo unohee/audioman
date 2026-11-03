@@ -47,11 +47,14 @@ POLICIES = {
 _TIGHTENING = ((8, 10, 512), (0, 5, 128), (0, 1, 0), (0, 0, 0))
 
 # Lists of records ranked by importance before truncation (most severe first).
-RANKED_LISTS = ("findings", "events", "checks")
+RANKED_LISTS = ("findings", "events", "checks", "gates")
 _SEVERITY_RANK = {"critical": 0, "fail": 0, "error": 0, "warn": 1, "warning": 1, "info": 2, "pass": 3}
 
 # Envelope metadata that must never be spilled or reordered.
 _PROTECTED = {"$schema", "audioman_version", "command", "digest", "detail"}
+# Sections that are shaped inside (long lists trimmed) but never replaced by a
+# reference as a whole: the report.v2 block must always validate in place.
+_INLINE_SECTIONS = {"report"}
 
 
 def printed_size(payload: Any) -> int:
@@ -204,7 +207,7 @@ def apply_detail(
         "truncated": truncated,
     }
     movable = sorted(
-        (k for k in shaped if k not in _PROTECTED and isinstance(shaped[k], (dict, list, str))),
+        (k for k in shaped if k not in _PROTECTED | _INLINE_SECTIONS and isinstance(shaped[k], (dict, list, str))),
         key=lambda k: printed_size(shaped[k]),
         reverse=True,
     )

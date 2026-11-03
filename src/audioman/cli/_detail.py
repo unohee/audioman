@@ -10,6 +10,7 @@ from typing import Any
 
 from audioman.core.detail import DEFAULT_DETAIL, DETAIL_LEVELS, apply_detail
 from audioman.core.digest import build_digest
+from audioman.core.report_v2 import build_report
 
 
 def add_detail_arguments(parser: argparse.ArgumentParser) -> None:
@@ -36,10 +37,13 @@ def default_spill_dir() -> Path:
 
 
 def shape_json(command: str, payload: dict[str, Any], args: argparse.Namespace, *, label: str) -> dict[str, Any]:
-    """Add the digest after the envelope keys, then shape for `args.detail`."""
+    """Add the digest after the envelope keys and the report.v2 block, then shape for `args.detail`.
+
+    Both are derived from the full payload, before any shaping.
+    """
     head = {k: payload[k] for k in ("$schema", "audioman_version", "command") if k in payload}
     body = {k: v for k, v in payload.items() if k not in head}
-    with_digest = {**head, "digest": build_digest(command, payload), **body}
+    with_digest = {**head, "digest": build_digest(command, payload), **body, "report": build_report(command, payload)}
     spill_dir = Path(args.spill_dir) if getattr(args, "spill_dir", None) else default_spill_dir()
     level = getattr(args, "detail", DEFAULT_DETAIL)
     return apply_detail(with_digest, level, spill_dir=spill_dir, label=f"{command.replace(' ', '-')}-{label}")
