@@ -139,7 +139,8 @@ def detect_clicks(
     if n < 2:
         return {"n_clicks": 0, "locations_sec": []}
 
-    diff = np.abs(np.diff(mono))
+    diff = np.diff(mono)
+    np.abs(diff, out=diff)
     win = max(int(window_ms / 1000.0 * sample_rate), 16)
 
     if n < win:
@@ -160,24 +161,30 @@ def detect_clicks(
             "sensitivity": sensitivity,
         }
 
-    # local RMS: rolling square mean
-    sq = mono.astype(np.float64) ** 2
-    cumsum = np.concatenate([[0.0], np.cumsum(sq)])
-    rolling_mean_sq = (cumsum[win:] - cumsum[:-win]) / win
-    # match the length to diff (pad both ends)
+    # local RMS: rolling square mean over `win` samples, computed in place in a few
+    # full-length buffers (fresh multi-MB temporaries are expensive on some macOS
+    # Python builds). Same operations, in the same order, as squaring into a new
+    # array, cumsum-ing it and differencing.
+    cumsum = np.empty(n + 1, dtype=np.float64)
+    cumsum[0] = 0.0
+    np.square(mono, out=cumsum[1:], dtype=np.float64)
+    np.cumsum(cumsum[1:], out=cumsum[1:])
     # `win >= 16` and `n >= win` here, so the rolling mean has n - win + 1 entries and
     # the gap to the n - 1 the ratio needs is exactly win - 2 >= 14: `pad` is never
-    # negative, and padding by `pad` on the left and the remainder on the right makes
-    # the result exactly n - 1 long, so no truncation or top-up can be needed.
-    pad = (n - 1 - len(rolling_mean_sq)) // 2
-    rolling_mean_sq = np.pad(
-        rolling_mean_sq,
-        (pad, n - 1 - len(rolling_mean_sq) - pad),
-        mode="edge",
-    )
-
-    local_rms = np.sqrt(np.maximum(rolling_mean_sq, 1e-12))
-    ratio = diff / local_rms
+    # negative, and padding by `pad` on the left and the remainder on the right
+    # (edge values) makes the result exactly n - 1 long.
+    n_roll = n - win + 1
+    pad = (n - 1 - n_roll) // 2
+    ratio = np.empty(n - 1, dtype=np.float64)
+    rolling = ratio[pad:pad + n_roll]
+    np.subtract(cumsum[win:], cumsum[:-win], out=rolling)
+    rolling /= win
+    ratio[:pad] = rolling[0]
+    ratio[pad + n_roll:] = rolling[-1]
+    del cumsum
+    np.maximum(ratio, 1e-12, out=ratio)
+    np.sqrt(ratio, out=ratio)  # local RMS
+    np.divide(diff, ratio, out=ratio)
     candidates = np.where(ratio > sensitivity)[0]
 
     if len(candidates) == 0:

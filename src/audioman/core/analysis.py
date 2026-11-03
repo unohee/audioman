@@ -118,6 +118,10 @@ DEFAULT_OCTAVE_BANDS: list[tuple[float, float, str]] = [
 ]
 
 
+# Frames per batched rfft in long_term_spectrum (64 x 16384 float32 = 4 MB).
+_SPECTRUM_CHUNK_FRAMES = 64
+
+
 def long_term_spectrum(
     audio: np.ndarray,
     sample_rate: int,
@@ -138,13 +142,20 @@ def long_term_spectrum(
     power_acc = np.zeros(n_bins, dtype=np.float64)
     n_used = 0
 
-    for start in range(0, len(mono) - fft_size + 1, hop_size):
-        frame = mono[start:start + fft_size]
-        if np.sqrt(np.mean(frame ** 2)) < min_rms:
-            continue
-        spectrum = np.abs(np.fft.rfft(frame * window))
-        power_acc += spectrum.astype(np.float64) ** 2
-        n_used += 1
+    # Frames in batches: one rfft call per chunk instead of one per frame. Each
+    # frame's gate, window, magnitude dtype (float32) and float64 accumulation are
+    # those of the per-frame definition; only the summation order changes.
+    n_frames = max(0, (len(mono) - fft_size) // hop_size + 1)
+    if n_frames:
+        frames_all = np.lib.stride_tricks.sliding_window_view(mono, fft_size)[::hop_size][:n_frames]
+        for lo in range(0, n_frames, _SPECTRUM_CHUNK_FRAMES):
+            frames = frames_all[lo:lo + _SPECTRUM_CHUNK_FRAMES]
+            keep = np.sqrt(np.mean(frames**2, axis=1)) >= min_rms
+            if not np.any(keep):
+                continue
+            spectrum = np.abs(np.fft.rfft(frames[keep] * window, axis=1))
+            power_acc += np.sum(spectrum.astype(np.float64) ** 2, axis=0)
+            n_used += int(np.count_nonzero(keep))
 
     if n_used > 0:
         power_acc /= n_used

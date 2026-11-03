@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
   - `master qc` stereo correlation: all 100 ms windows correlated at once.
   - `screen` RF-noise floor: interior bins take their neighbourhood median in one batched call (was one `np.median` per candidate bin, ~12k per file).
   - `scripts/bench_perf.py` compares CPU time, not wall time, so host load from other processes does not move the asserted ratio.
+  - Fewer large temporaries: `framewise` reuses per-call work buffers (`out=`) and derives RMS/ZCR from whole-signal cumulative sums; `detect_clicks` builds its rolling-RMS ratio in place; `long_term_spectrum` (hum, `analyze --spectrum`, `obs`) batches its FFTs; `screen` downmixes once instead of once per detector. On the python.org CPython 3.12 macOS build a fresh multi-MB array costs 2-4x the arithmetic done in it, so this is what keeps the speedup there.
 - **Behaviour note:** short-term loudness now runs the K-weighting filter continuously across windows, as a short-term meter does (EBU Tech 3341), instead of restarting it per window. Values move by < 0.03 LU on steady material; a window that begins exactly as a signal stops now reports the filter's decaying tail (a very low finite level) instead of `-inf`. Parity is pinned by `tests/unit/test_perf_parity.py`.
 
 ### Fixed — VST3 discovery on Linux/Windows

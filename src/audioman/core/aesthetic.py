@@ -648,6 +648,11 @@ def screen_audio(
     backend: str = "auto",
 ) -> dict:
     requested = tuple(dict.fromkeys(_normalize_issue(i) for i in issues if i.strip()))
+    # Every detector starts from the channel mean; take it once, in the input dtype,
+    # so each one receives exactly the array it used to compute for itself.
+    n_channels = 1 if audio.ndim == 1 else audio.shape[0]
+    if audio.ndim == 2:
+        audio = audio.mean(axis=0)
     events: list[AestheticEvent] = []
     backends: dict[str, str] = {}
     unsupported: list[str] = []
@@ -691,7 +696,7 @@ def screen_audio(
 
     return {
         "sample_rate": sample_rate,
-        "channels": 1 if audio.ndim == 1 else audio.shape[0],
+        "channels": n_channels,
         "duration": round(audio.shape[-1] / sample_rate, 6),
         "issues": list(requested),
         "backends": backends,

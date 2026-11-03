@@ -135,6 +135,23 @@ def _reference_medians(spectrum, indices):
     return np.array([aesthetic._neighbourhood_median(spectrum, int(i)) for i in indices])
 
 
+def _reference_long_term_spectrum(audio, sample_rate, fft_size=16384, hop_size=None, min_rms=0.01):
+    """The hum detector's long-term spectrum as it was: one rfft per frame."""
+    mono = audio.mean(axis=0) if audio.ndim == 2 else audio
+    hop_size = hop_size or fft_size // 2
+    window = np.hanning(fft_size).astype(np.float32)
+    power_acc, n_used = np.zeros(fft_size // 2 + 1, dtype=np.float64), 0
+    for start in range(0, len(mono) - fft_size + 1, hop_size):
+        frame = mono[start:start + fft_size]
+        if np.sqrt(np.mean(frame**2)) < min_rms:
+            continue
+        power_acc += np.abs(np.fft.rfft(frame * window)).astype(np.float64) ** 2
+        n_used += 1
+    if n_used:
+        power_acc /= n_used
+    return np.fft.rfftfreq(fft_size, 1.0 / sample_rate), power_acc, n_used
+
+
 # ---------------------------------------------------------------------------
 # Timing
 # ---------------------------------------------------------------------------
@@ -175,6 +192,7 @@ def bench(repeats: int = 2) -> dict:
             with ExitStack() as stack:
                 stack.enter_context(mock.patch.object(aesthetic, "frame_features", _reference_frame_features))
                 stack.enter_context(mock.patch.object(aesthetic, "_neighbourhood_medians", _reference_medians))
+                stack.enter_context(mock.patch.object(aesthetic, "long_term_spectrum", _reference_long_term_spectrum))
                 aesthetic.screen_audio(audio, SR)
 
         cases = {

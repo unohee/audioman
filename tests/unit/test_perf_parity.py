@@ -324,3 +324,123 @@ def test_rf_noise_detector_unchanged_against_per_bin_reference(monkeypatch):
     reference, _ = aesthetic.detect_rf_noise_events(audio, SR)
     assert len(batched) == 1
     assert [e.to_dict() for e in batched] == [e.to_dict() for e in reference]
+
+
+def test_frame_features_irregular_bounds_use_the_gather_path():
+    """Bounds without a constant hop from 0 are gathered, with the same values."""
+    mono = _speechlike(0.5)
+    bounds = [(100, 1060), (500, 1460), (5000, 5960), (9000, 9960)]
+    feats = frame_features(mono, bounds, SR, bands=_BANDS[:2], flatness=True, zcr=True)
+    for i, (start, end) in enumerate(bounds):
+        frame = mono[start:end]
+        assert feats.rms[i] == pytest.approx(float(np.sqrt(np.mean(frame**2))), rel=1e-6)
+        assert feats.flatness[i] == pytest.approx(aesthetic._spectral_flatness(frame), rel=1e-6)
+        assert feats.zcr[i] == pytest.approx(aesthetic._zero_crossing_rate(frame), abs=1e-12)
+
+
+# ---------------------------------------------------------------------------
+# Long-term spectrum (screen hum, analyze --spectrum, obs)
+# ---------------------------------------------------------------------------
+
+
+def _long_term_spectrum_reference(audio, sample_rate, fft_size=16384, hop_size=None, min_rms=0.01):
+    mono = audio.mean(axis=0) if audio.ndim == 2 else audio
+    hop_size = hop_size or fft_size // 2
+    window = np.hanning(fft_size).astype(np.float32)
+    acc, used = np.zeros(fft_size // 2 + 1), 0
+    for start in range(0, len(mono) - fft_size + 1, hop_size):
+        frame = mono[start:start + fft_size]
+        if np.sqrt(np.mean(frame**2)) < min_rms:
+            continue
+        acc += np.abs(np.fft.rfft(frame * window)).astype(np.float64) ** 2
+        used += 1
+    return acc / used if used else acc, used
+
+
+@pytest.mark.parametrize("min_rms", [0.0, 0.01, 0.05])
+@pytest.mark.parametrize("fft_size,hop", [(16384, None), (2048, 512), (4096, 4096)])
+def test_long_term_spectrum_matches_per_frame_reference(min_rms, fft_size, hop, monkeypatch):
+    from audioman.core import analysis
+
+    monkeypatch.setattr(analysis, "_SPECTRUM_CHUNK_FRAMES", 5)  # several chunks
+    audio = _stereo(_speechlike(8.0))
+    freqs, power, used = analysis.long_term_spectrum(audio, SR, fft_size=fft_size, hop_size=hop, min_rms=min_rms)
+    ref_power, ref_used = _long_term_spectrum_reference(audio, SR, fft_size, hop, min_rms)
+    assert used == ref_used
+    np.testing.assert_allclose(power, ref_power, rtol=1e-9, atol=1e-30)
+    assert len(freqs) == fft_size // 2 + 1
+
+
+def test_long_term_spectrum_short_and_silent_inputs():
+    from audioman.core import analysis
+
+    _, power, used = analysis.long_term_spectrum(np.zeros(1000, np.float32), SR)
+    assert used == 0 and not power.any()
+    _, power, used = analysis.long_term_spectrum(np.zeros(SR, np.float32), SR, min_rms=0.01)
+    assert used == 0 and not power.any()
+
+
+# ---------------------------------------------------------------------------
+# Click detection (screen click / mouth_click, master qc)
+# ---------------------------------------------------------------------------
+
+
+def _detect_clicks_reference(audio, sample_rate, sensitivity=6.0, window_ms=50.0):
+    """The rolling-RMS ratio as it was: fresh arrays and np.pad(mode='edge')."""
+    mono = audio.mean(axis=0) if audio.ndim == 2 else audio
+    n = len(mono)
+    diff = np.abs(np.diff(mono))
+    win = max(int(window_ms / 1000.0 * sample_rate), 16)
+    sq = mono.astype(np.float64) ** 2
+    cumsum = np.concatenate([[0.0], np.cumsum(sq)])
+    rolling = (cumsum[win:] - cumsum[:-win]) / win
+    pad = (n - 1 - len(rolling)) // 2
+    rolling = np.pad(rolling, (pad, n - 1 - len(rolling) - pad), mode="edge")
+    return diff / np.sqrt(np.maximum(rolling, 1e-12))
+
+
+@pytest.mark.parametrize("sensitivity", [4.5, 6.0])
+@pytest.mark.parametrize("name", ["speech", "clicky", "quiet"])
+def test_detect_clicks_matches_reference_ratio(name, sensitivity):
+    from audioman.core.qc import detect_clicks
+
+    base = _speechlike(3.0)
+    if name == "clicky":
+        base = base.copy()
+        base[:: SR // 3] += 0.7
+    elif name == "quiet":
+        base = 1e-5 * base
+    audio = _stereo(base)
+    ratio = _detect_clicks_reference(audio, SR, sensitivity)
+    got = detect_clicks(audio, SR, sensitivity=sensitivity)
+    assert got["max_ratio"] == pytest.approx(round(float(ratio.max()), 2), abs=1e-9) or got["max_ratio"] == float(ratio.max())
+    candidates = np.where(ratio > sensitivity)[0]
+    min_sep = max(int(5.0 / 1000.0 * SR), 1)
+    grouped = [candidates[0]] if len(candidates) else []
+    for c in candidates[1:]:
+        if c - grouped[-1] > min_sep:
+            grouped.append(c)
+    assert got["n_clicks"] == len(grouped)
+    assert got["locations_sec"] == [round(int(c) / SR, 4) for c in grouped[:20]]
+
+
+def test_screen_audio_downmixes_once_without_changing_results():
+    """screen_audio takes the channel mean once; each detector used to take it itself."""
+    stereo = _stereo(_speechlike(3.0))
+    stereo[0, :: SR // 2] += 0.6
+    report = aesthetic.screen_audio(stereo, SR, backend="fallback")
+    assert report["channels"] == 2
+    assert report["duration"] == round(stereo.shape[-1] / SR, 6)
+    expected = []
+    for detector in (
+        lambda a: aesthetic.detect_click_events(a, SR, backend="fallback"),
+        lambda a: aesthetic.detect_hum_events(a, SR, backend="fallback"),
+        lambda a: aesthetic.detect_mouth_click_events(a, SR, backend="fallback"),
+        lambda a: aesthetic.detect_sibilance_events(a, SR),
+        lambda a: aesthetic.detect_breath_events(a, SR),
+        lambda a: aesthetic.detect_background_noise_events(a, SR),
+        lambda a: aesthetic.detect_rf_noise_events(a, SR),
+    ):
+        expected.extend(detector(stereo)[0])  # the stereo input, downmixed per detector
+    expected = [e.to_dict() for e in sorted(expected, key=lambda e: (e.start_sec, e.type))]
+    assert report["events"] == expected
