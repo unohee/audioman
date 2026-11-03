@@ -11,6 +11,7 @@ import numpy as np
 
 from audioman.core.analysis import long_term_spectrum, detect_hum as detect_hum_spectrum
 from audioman.core.audio_file import read_audio
+from audioman.core.framewise import frame_features
 from audioman.core.qc import detect_clicks as detect_clicks_fallback
 
 
@@ -109,6 +110,9 @@ def _band_power(frame: np.ndarray, sample_rate: int, band: tuple[float, float]) 
     return float(np.mean(spectrum[mask]))
 
 
+# `_spectral_flatness` and `_zero_crossing_rate` are the single-frame definitions;
+# the screeners use the batched `framewise.frame_features`, which must agree with
+# them (tests/unit/test_perf_parity.py).
 def _spectral_flatness(frame: np.ndarray) -> float:
     if len(frame) < 2:
         return 0.0
@@ -389,11 +393,11 @@ def detect_sibilance_events(
     bounds = _frame_bounds(len(mono), sample_rate, frame_ms=20.0, hop_ms=10.0)
     mask: list[bool] = []
     details: list[dict] = []
-    for start, end in bounds:
-        frame = mono[start:end]
-        rms_db = _db(float(np.sqrt(np.mean(frame**2))))
-        low_mid = _band_power(frame, sample_rate, (700.0, 3500.0))
-        sib = _band_power(frame, sample_rate, (4000.0, 10000.0))
+    feats = frame_features(mono, bounds, sample_rate, bands=((700.0, 3500.0), (4000.0, 10000.0)))
+    for i in range(len(bounds)):
+        rms_db = _db(feats.rms[i])
+        low_mid = float(feats.band_power[0][i])
+        sib = float(feats.band_power[1][i])
         ratio_db = _power_db(sib / max(low_mid, 1e-24))
         active = rms_db >= min_rms_db and ratio_db >= ratio_threshold_db
         score = (ratio_db - ratio_threshold_db) / 12.0
@@ -428,14 +432,16 @@ def detect_breath_events(
     bounds = _frame_bounds(len(mono), sample_rate, frame_ms=35.0, hop_ms=15.0)
     mask: list[bool] = []
     details: list[dict] = []
-    for start, end in bounds:
-        frame = mono[start:end]
-        rms_db = _db(float(np.sqrt(np.mean(frame**2))))
-        low = _band_power(frame, sample_rate, (80.0, 700.0))
-        air = _band_power(frame, sample_rate, (1200.0, 8500.0))
+    feats = frame_features(
+        mono, bounds, sample_rate, bands=((80.0, 700.0), (1200.0, 8500.0)), flatness=True, zcr=True
+    )
+    for i in range(len(bounds)):
+        rms_db = _db(feats.rms[i])
+        low = float(feats.band_power[0][i])
+        air = float(feats.band_power[1][i])
         ratio_db = _power_db(air / max(low, 1e-24))
-        flatness = _spectral_flatness(frame)
-        zcr = _zero_crossing_rate(frame)
+        flatness = float(feats.flatness[i])
+        zcr = float(feats.zcr[i])
         active = min_rms_db <= rms_db <= max_rms_db and ratio_db >= 4.0 and zcr >= 0.04
         score = min((ratio_db - 4.0) / 14.0, zcr * 5.0)
         mask.append(active)
@@ -469,11 +475,11 @@ def detect_background_noise_events(
     bounds = _frame_bounds(len(mono), sample_rate, frame_ms=100.0, hop_ms=50.0)
     mask: list[bool] = []
     details: list[dict] = []
-    for start, end in bounds:
-        frame = mono[start:end]
-        rms_db = _db(float(np.sqrt(np.mean(frame**2))))
-        flatness = _spectral_flatness(frame)
-        zcr = _zero_crossing_rate(frame)
+    feats = frame_features(mono, bounds, sample_rate, flatness=True, zcr=True)
+    for i in range(len(bounds)):
+        rms_db = _db(feats.rms[i])
+        flatness = float(feats.flatness[i])
+        zcr = float(feats.zcr[i])
         active = min_rms_db <= rms_db <= max_rms_db and zcr >= 0.03
         score = (rms_db - min_rms_db) / max(max_rms_db - min_rms_db, 1e-9)
         mask.append(active)
@@ -492,6 +498,41 @@ def detect_background_noise_events(
         ),
         "heuristic",
     )
+
+
+def _neighbourhood_median(spectrum: np.ndarray, idx: int) -> float:
+    """Median of bins idx-30..idx-4 and idx+4..idx+30 (DC and out-of-range bins excluded).
+
+    The +/-3 bins around idx are left out so a tone's own Hann main lobe does not
+    raise its noise floor.
+    """
+    lo = max(1, idx - 30)
+    hi = min(len(spectrum), idx + 31)
+    neighborhood = np.concatenate([spectrum[lo:max(lo, idx - 3)], spectrum[min(hi, idx + 4):hi]])
+    # Unreachable: the scan needs >= 2048 samples, so the spectrum has >= 1025 bins
+    # and both slice halves cannot be empty at once -- the lower one is empty only
+    # for idx <= 4, where the upper one always spans idx+4 .. idx+31 (27 bins).
+    if len(neighborhood) == 0:  # pragma: no cover - every bin has neighbours
+        return 0.0
+    return float(np.median(neighborhood))
+
+
+def _neighbourhood_medians(spectrum: np.ndarray, indices: np.ndarray) -> np.ndarray:
+    """`_neighbourhood_median` for many bins: interior bins in one batched median.
+
+    An interior bin (31 <= idx <= len - 31) always has the full 27 + 27 neighbours,
+    so its neighbourhood is a fixed set of columns of a 61-wide sliding window.
+    Bins near either end keep the per-bin definition.
+    """
+    out = np.empty(len(indices), dtype=np.float64)
+    interior = (indices >= 31) & (indices + 31 <= len(spectrum))
+    if np.any(interior):
+        windows = np.lib.stride_tricks.sliding_window_view(spectrum, 61)[indices[interior] - 30]
+        columns = np.r_[0:27, 34:61]
+        out[interior] = np.median(windows[:, columns], axis=1)
+    for k in np.where(~interior)[0]:
+        out[k] = _neighbourhood_median(spectrum, int(indices[k]))
+    return out
 
 
 def detect_rf_noise_events(
@@ -522,18 +563,10 @@ def detect_rf_noise_events(
         max_frequency = min(20000.0, sample_rate / 2.0 - 100.0)
     mask = (freqs >= min_frequency) & (freqs <= max_frequency)
     candidate_idx = np.where(mask)[0]
+    floors = _neighbourhood_medians(spectrum, candidate_idx)
     tones: list[dict] = []
-    for idx in candidate_idx:
-        lo = max(1, idx - 30)
-        hi = min(len(spectrum), idx + 31)
-        neighborhood = np.concatenate([spectrum[lo:max(lo, idx - 3)], spectrum[min(hi, idx + 4):hi]])
-        # Unreachable: the scan needs >= 2048 samples, so the spectrum has >= 1025 bins
-        # and both slice halves cannot be empty at once -- the lower one is empty only
-        # for idx <= 4, where the upper one always spans idx+4 .. idx+31 (27 bins).
-        if len(neighborhood) == 0:  # pragma: no cover - every bin has neighbours
-            continue
-        floor = float(np.median(neighborhood))
-        snr = _power_db(float(spectrum[idx]) / max(floor, 1e-24))
+    for idx, floor in zip(candidate_idx, floors, strict=True):
+        snr = _power_db(float(spectrum[idx]) / max(float(floor), 1e-24))
         if snr < snr_threshold_db:
             continue
         frequency = float(freqs[idx])
@@ -615,6 +648,11 @@ def screen_audio(
     backend: str = "auto",
 ) -> dict:
     requested = tuple(dict.fromkeys(_normalize_issue(i) for i in issues if i.strip()))
+    # Every detector starts from the channel mean; take it once, in the input dtype,
+    # so each one receives exactly the array it used to compute for itself.
+    n_channels = 1 if audio.ndim == 1 else audio.shape[0]
+    if audio.ndim == 2:
+        audio = audio.mean(axis=0)
     events: list[AestheticEvent] = []
     backends: dict[str, str] = {}
     unsupported: list[str] = []
@@ -658,7 +696,7 @@ def screen_audio(
 
     return {
         "sample_rate": sample_rate,
-        "channels": 1 if audio.ndim == 1 else audio.shape[0],
+        "channels": n_channels,
         "duration": round(audio.shape[-1] / sample_rate, 6),
         "issues": list(requested),
         "backends": backends,

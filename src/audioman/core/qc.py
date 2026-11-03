@@ -139,7 +139,8 @@ def detect_clicks(
     if n < 2:
         return {"n_clicks": 0, "locations_sec": []}
 
-    diff = np.abs(np.diff(mono))
+    diff = np.diff(mono)
+    np.abs(diff, out=diff)
     win = max(int(window_ms / 1000.0 * sample_rate), 16)
 
     if n < win:
@@ -160,24 +161,30 @@ def detect_clicks(
             "sensitivity": sensitivity,
         }
 
-    # local RMS: rolling square mean
-    sq = mono.astype(np.float64) ** 2
-    cumsum = np.concatenate([[0.0], np.cumsum(sq)])
-    rolling_mean_sq = (cumsum[win:] - cumsum[:-win]) / win
-    # match the length to diff (pad both ends)
+    # local RMS: rolling square mean over `win` samples, computed in place in a few
+    # full-length buffers (fresh multi-MB temporaries are expensive on some macOS
+    # Python builds). Same operations, in the same order, as squaring into a new
+    # array, cumsum-ing it and differencing.
+    cumsum = np.empty(n + 1, dtype=np.float64)
+    cumsum[0] = 0.0
+    np.square(mono, out=cumsum[1:], dtype=np.float64)
+    np.cumsum(cumsum[1:], out=cumsum[1:])
     # `win >= 16` and `n >= win` here, so the rolling mean has n - win + 1 entries and
     # the gap to the n - 1 the ratio needs is exactly win - 2 >= 14: `pad` is never
-    # negative, and padding by `pad` on the left and the remainder on the right makes
-    # the result exactly n - 1 long, so no truncation or top-up can be needed.
-    pad = (n - 1 - len(rolling_mean_sq)) // 2
-    rolling_mean_sq = np.pad(
-        rolling_mean_sq,
-        (pad, n - 1 - len(rolling_mean_sq) - pad),
-        mode="edge",
-    )
-
-    local_rms = np.sqrt(np.maximum(rolling_mean_sq, 1e-12))
-    ratio = diff / local_rms
+    # negative, and padding by `pad` on the left and the remainder on the right
+    # (edge values) makes the result exactly n - 1 long.
+    n_roll = n - win + 1
+    pad = (n - 1 - n_roll) // 2
+    ratio = np.empty(n - 1, dtype=np.float64)
+    rolling = ratio[pad:pad + n_roll]
+    np.subtract(cumsum[win:], cumsum[:-win], out=rolling)
+    rolling /= win
+    ratio[:pad] = rolling[0]
+    ratio[pad + n_roll:] = rolling[-1]
+    del cumsum
+    np.maximum(ratio, 1e-12, out=ratio)
+    np.sqrt(ratio, out=ratio)  # local RMS
+    np.divide(diff, ratio, out=ratio)
     candidates = np.where(ratio > sensitivity)[0]
 
     if len(candidates) == 0:
@@ -227,15 +234,19 @@ def stereo_phase_correlation(audio: np.ndarray, window_ms: float = 100.0, sample
             "negative_correlation_pct": 0.0,
         }
 
-    win_corrs = []
-    for i in range(n_windows):
-        s, e = i * win, (i + 1) * win
-        wl, wr = left[s:e], right[s:e]
-        if np.std(wl) < 1e-8 or np.std(wr) < 1e-8:
-            continue
-        win_corrs.append(float(np.corrcoef(wl, wr)[0, 1]))
+    # All windows at once: per-row Pearson correlation of the (n_windows, win) views.
+    # Windows where either channel is (near) constant are skipped, as before.
+    wl = left[: n_windows * win].reshape(n_windows, win)
+    wr = right[: n_windows * win].reshape(n_windows, win)
+    dl = wl - wl.mean(axis=1, keepdims=True)
+    dr = wr - wr.mean(axis=1, keepdims=True)
+    std_l = np.sqrt(np.mean(dl * dl, axis=1))
+    std_r = np.sqrt(np.mean(dr * dr, axis=1))
+    valid = (std_l >= 1e-8) & (std_r >= 1e-8)
+    win_corrs = np.mean(dl[valid] * dr[valid], axis=1) / (std_l[valid] * std_r[valid])
+    win_corrs = np.clip(win_corrs, -1.0, 1.0)  # np.corrcoef clips the same way
 
-    if not win_corrs:
+    if len(win_corrs) == 0:
         return {
             "applicable": True,
             "global_correlation": round(global_corr, 4),
