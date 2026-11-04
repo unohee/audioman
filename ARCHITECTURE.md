@@ -155,7 +155,7 @@ What an LLM reads is shaped by four layers, all in `core/` and all pure:
 | `detail.py` | `--detail {summary,standard,full}`: long arrays, strings and lists move to content-addressed spill files referenced by absolute path; the printed JSON stays under 4 KiB / 32 KiB. Nothing is dropped: `detail.spilled` / `detail.truncated` (or `detail.index_ref`) point at every file. |
 | `digest.py` | One plain-English paragraph per payload, computed from the *full* result before shaping. States measurements and counts, not judgements. |
 | `report_v2.py` | The shared contract (`report.v2.json`): subject, measurements with a **floor** (exact, rounding, resolution, quantization, repeat, unknown), findings, PASS/WARN/FAIL gates, missing required gates as FAIL, verdict. |
-| `texture/`, `diff.py`, `vocabulary.py` | Texture descriptors per segment with repeat floors (re-measured on the signal advanced by half a hop); A/B deltas judged against 2 x the summed floors; an **experimental** mapping from significant deltas to words, always with its evidence and a confidence. |
+| `texture/`, `diff.py`, `vocabulary.py` | Texture descriptors per segment with repeat floors (re-measured on the signal advanced by half a hop), including pitch from a YIN f0 track (`texture/pitch.py`, monophonic scope); A/B alignment by waveform correlation with an RMS-envelope fallback; deltas judged against max(2 x the summed floors, a per-unit minimum); an **experimental** mapping from significant deltas to words, gated by provisional perceptual minimums, always with its evidence and a confidence. |
 
 `cli/mcp.py` implements the MCP stdio transport directly (JSON-RPC 2.0, versions
 2025-06-18 / 2025-03-26 / 2024-11-05) and returns, per tool call, the digest, a

@@ -125,7 +125,8 @@ def digest_report(report: dict) -> str:
 def digest_diff(p: dict) -> str:
     align = p.get("alignment") or {}
     if align.get("applied"):
-        how = f"aligned by {align.get('lag_samples', 0):+d} samples"
+        how = f"aligned by {align.get('lag_samples', 0):+d} samples" + (
+            " from the envelopes" if align.get("method") == "envelope" else "")
     else:
         how = f"not aligned ({align.get('reason', 'n/a')})"
     changes = p.get("changes") or []
@@ -137,7 +138,7 @@ def digest_diff(p: dict) -> str:
     if terms:
         vocab = " Terms (experimental): " + ", ".join(f"{t['term']} ({t['confidence']:.2f})" for t in terms[:8]) + "."
     parts = [f"{c['descriptor']} {c['direction']} {abs(c['delta'])} {c['unit']}"
-             + (f" (floor {c['floor']})" if c.get("floor") else "") for c in changes[:6]]
+             + (f" (floor {c['floor']})" if c.get("floor") is not None else "") for c in changes[:6]]
     text = f"B vs A ({how}): {len(changes)} significant descriptor change(s): {', '.join(parts)}."
     if bands:
         text += " Bands: " + ", ".join(f"{b['band']} {b['delta_db']:+.1f} dB" for b in bands) + "."
@@ -146,7 +147,7 @@ def digest_diff(p: dict) -> str:
 
 
 _TEXTURE_LEAD = ("spectral_centroid", "spectral_rolloff", "spectral_flatness", "hf_ratio", "sharpness",
-                 "crest_factor", "onset_density", "stereo_width", "lr_correlation")
+                 "crest_factor", "onset_density", "stereo_width", "lr_correlation", "pitch", "pitch_deviation")
 
 
 def digest_texture(p: dict) -> str:
@@ -159,7 +160,7 @@ def digest_texture(p: dict) -> str:
             continue
         floor = entry.get("floor")
         parts.append(f"{name} {entry['value']:g} {entry.get('unit', '')}".rstrip()
-                     + (f" (+/-{floor:g})" if floor else ""))
+                     + (f" (+/-{floor:g})" if floor is not None else ""))
     head = f"{_format(p)}, {len(p.get('segments') or [])} segments."
     return _clip(f"{head} {'; '.join(parts)}." if parts else f"{head} No defined descriptors (silent input).")
 

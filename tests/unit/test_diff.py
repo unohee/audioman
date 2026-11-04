@@ -201,7 +201,8 @@ def test_digest_variants():
     assert digest_diff(only_bands).endswith("Bands: air -3.0 dB.")
     zero_floor = {**base, "changes": [{"descriptor": "rms", "direction": "up", "delta": 1.0, "unit": "dBFS",
                                        "floor": 0.0}]}
-    assert "(floor" not in digest_diff(zero_floor)
+    # a floor is printed whenever it exists, zero included (never dropped as "unknown")
+    assert "(floor 0.0)" in digest_diff(zero_floor)
 
 
 # ---------------------------------------------------------------------------
