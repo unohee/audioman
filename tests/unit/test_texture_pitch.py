@@ -139,3 +139,13 @@ def test_floors_never_round_to_zero_and_are_always_printed():
     assert all(e["floor"] is None or e["floor"] >= 1e-4 for e in d["descriptors"].values())
     assert all(f >= 1e-4 for f in d["erb_profile"]["floor_db"])
     assert "(+/-" in digest_texture(d) and "pitch " in digest_texture(d)
+
+
+def test_figure_handles_unknown_floors(tmp_path):
+    # floors are None (0 after summing) when neither file defines one: drawn at the clip edge
+    result = {"erb_bands": [{"center_hz": 1000.0, "delta": 0.1, "floor": 0.01, "significant": True}], "descriptors": {
+        "up": {"delta": 1.0, "floor": 0.0, "significant": True},
+        "down": {"delta": -1.0, "floor": 0.0, "significant": True},
+        "flat": {"delta": 0.0, "floor": 0.0, "significant": False},
+        "undefined": {"delta": None, "floor": None, "significant": False}}}
+    assert render(result, tmp_path / "g.png").stat().st_size > 0
