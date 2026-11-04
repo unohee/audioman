@@ -30,11 +30,21 @@ def test_confidence_counts_agreeing_and_contradicting_evidence():
     agree = propose_terms(_diff(spectral_centroid=_desc(-500), hf_ratio=_desc(-6, unit="dB"),
                                 sharpness=_desc(-0.5, unit="acum"), spectral_rolloff=_desc(-900)))
     darker = agree["terms"][0]
-    contradicted = propose_terms(_diff(spectral_centroid=_desc(-500), hf_ratio=_desc(+6, unit="dB")))["terms"][0]
-    assert darker["confidence"] > contradicted["confidence"]
-    hf = next(e for e in propose_terms(_diff(spectral_centroid=_desc(-500), hf_ratio=_desc(+6, unit="dB")))["terms"][0]["evidence"]
-              if e["cue"] == "hf_ratio")
+    mixed = propose_terms(_diff(spectral_centroid=_desc(-500), hf_ratio=_desc(+6, unit="dB"),
+                                sharpness=_desc(-0.5, unit="acum"), spectral_rolloff=_desc(-900)))["terms"][0]
+    assert darker["confidence"] > mixed["confidence"] > 0
+    hf = next(e for e in mixed["evidence"] if e["cue"] == "hf_ratio")
     assert hf["contradicts"] and not hf["supports"]
+    assert agree["contradicted"] == []
+
+
+def test_terms_the_evidence_argues_against_are_not_proposed():
+    # the primary cue moved, but as many significant cues point the other way
+    out = propose_terms(_diff(spectral_centroid=_desc(-500), hf_ratio=_desc(+6, unit="dB")))
+    assert out["terms"] == []
+    [entry] = out["contradicted"]
+    assert entry["term"] == "darker" and "confidence" not in entry
+    assert {e["cue"]: e["contradicts"] for e in entry["evidence"]} == {"spectral_centroid": False, "hf_ratio": True}
 
 
 def test_weak_primary_lowers_confidence_and_zero_floor_counts_as_strong():
