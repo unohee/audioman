@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed — found by testing the MCP server with real clients
+- `diff` no longer proposes a term whose significant cues argue against it as much as for it (net agreement <= 0); such terms are listed under `vocabulary.contradicted` with their evidence instead of appearing as "darker (0.00)" in the digest. Texture-QA direction accuracy goes from 96.9% to 93.8%: the chords-compression case had only matched with "more compressed (0.00)" (dynamic range down, crest factor up under the fast-attack compressor), which is no longer counted as a proposal.
+- The `analyze` digest names its spectral centroid as the magnitude-weighted frame mean, which can sit far above the power-weighted texture `spectral_centroid` on material with a noise floor.
+
+### Verified — MCP server against real clients
+- The stdio server negotiates 2025-06-18 and serves all four tools to the official `mcp` Python SDK (1.30 and 2.3) and to Claude Code 2.1, using the README configuration. Claude Code shows `structuredContent` (which carries the digest) in place of the text content.
+
 ### Added — vocabulary and the Texture-QA bench
 - **Experimental vocabulary** on `diff` results (`vocabulary.terms`): darker/brighter, noisier/cleaner, wider/narrower, louder/quieter, more compressed/more dynamic, more transient/smoother, harmonically richer. A term is proposed only from changes already significant against their floors, lists its evidence, and carries a confidence; it is not calibrated against listeners. The diff digest leads with the terms.
 - **`dynamic_range`** texture descriptor (spread of overlapping 20 ms block levels): the compression cue, since whole-file crest factor can rise under a fast-attack compressor.

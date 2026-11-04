@@ -66,7 +66,7 @@ def digest_analyze(p: dict) -> str:
     parts = [f"{_format(p)}. RMS {_db(p.get('rms'))}, peak {_db(p.get('peak'))}."]
     centroid = (p.get("summary") or {}).get("spectral_centroid", {}).get("mean")
     if isinstance(centroid, (int, float)):
-        parts.append(f"Mean spectral centroid {centroid:.0f} Hz.")
+        parts.append(f"Mean frame spectral centroid {centroid:.0f} Hz (magnitude-weighted; texture descriptors use power).")
     regions = p.get("silence_regions") or []
     if regions:
         parts.append(f"{len(regions)} silent regions, {p.get('silence_total_sec', 0)} s total.")

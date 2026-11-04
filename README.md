@@ -148,7 +148,7 @@ that it can trust and afford to read**, not verdicts on taste:
   experimental, each with the evidence behind it and a confidence.
 
 `scripts/texture_qa.py --assert` checks this end to end: 32 synthetic before/after
-pairs with known processing go through the MCP `diff` tool; currently 96.9% of them
+pairs with known processing go through the MCP `diff` tool; currently 93.8% of them
 get the right terms (and controls get none) in at most ~930 tokens per answer.
 
 ## MCP Server (for LLM agents)
@@ -166,6 +166,11 @@ or, in any MCP client configuration:
 Tools: `analyze`, `describe`, `diff`, `uat_compare`. Each returns a digest, a file
 reference to the complete JSON result, and a summary bounded by `detail`
 (`summary` <= 4 KiB by default).
+
+`audioman` on `PATH` must be a build that has the `mcp` command (`audioman mcp --help`);
+reinstall an older tool install with `uv tool install --force .` from a checkout.
+Claude Code passes the `structuredContent` object (whose `digest` key is the digest)
+to the model rather than the text content; other clients may show the text digest.
 
 ## Comparing Two Renders (`diff`)
 

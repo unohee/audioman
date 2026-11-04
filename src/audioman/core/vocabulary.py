@@ -13,7 +13,10 @@
 # term is proposed when its primary cue is significant in that direction;
 # confidence = mean over cues of agreement (1 if significant in the supporting
 # direction, 0 if not significant, -1 if significant against), clipped to [0, 1]
-# and weighted by how far the primary cue is beyond its floor.
+# and weighted by how far the primary cue is beyond its floor. When the cues against
+# a term outweigh or cancel the cues for it (net agreement <= 0) the term is not
+# proposed: it is listed under "contradicted" with its evidence instead, so the
+# words an agent reads first are never ones the measurements argue against.
 
 from __future__ import annotations
 
@@ -78,7 +81,7 @@ def _agreement(cue: dict | None, direction: int) -> int:
 
 def propose_terms(diff: dict) -> dict[str, Any]:
     """Terms for a diff_audio() result, strongest first, each with evidence and confidence."""
-    terms = []
+    terms, contradicted = [], []
     for rule in RULES:
         primary = _cue(diff, rule.primary[0])
         if _agreement(primary, rule.primary[1]) != 1:
@@ -94,7 +97,11 @@ def propose_terms(diff: dict) -> dict[str, Any]:
             if cue is not None:
                 evidence.append({"cue": name, "delta": cue["delta"], "unit": cue["unit"], "floor": cue["floor"],
                                  "supports": agree == 1, "contradicts": agree == -1})
-        terms.append({"term": rule.term, "opposite": rule.opposite, "confidence": round(confidence, 3),
-                      "evidence": evidence})
+        entry = {"term": rule.term, "opposite": rule.opposite, "confidence": round(confidence, 3),
+                 "evidence": evidence}
+        if sum(agreements) <= 0:
+            contradicted.append({k: v for k, v in entry.items() if k != "confidence"})
+        else:
+            terms.append(entry)
     terms.sort(key=lambda t: -t["confidence"])
-    return {"note": EXPERIMENTAL_NOTE, "terms": terms}
+    return {"note": EXPERIMENTAL_NOTE, "terms": terms, "contradicted": contradicted}
