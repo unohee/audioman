@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added — pitch descriptors, perceptual minimums (from the live MCP test on a real pitch-corrected vocal)
+- **Pitch descriptors** in `describe`/`analyze --texture`/`diff`: `pitch` (median f0, cents re A4), `pitch_spread` (IQR, cents), `pitch_deviation` (mean distance to the 12-TET semitone, cents) and `voiced_fraction`, from a YIN f0 track on a 16 kHz downmix (~0.2 s CPU per minute), each with a repeat floor. Monophonic scope: null when under 20% of sounding frames are voiced; a chord can report the subharmonic its notes share. `diff` treats pitch changes below 5 cents as insignificant.
+- **Vocabulary**: "pitch-corrected" / "looser pitch" and "pitched up" / "pitched down". Every term now also needs its primary cue to clear a provisional **perceptual minimum** (e.g. centroid 3% of A, level 0.5 dB, width 1 dB, pitch 10 cents); smaller changes are listed under `vocabulary.below_perceptual_minimum` instead. The minimums are uncalibrated placeholders until ABX data exists.
+- **Envelope alignment fallback**: when the waveform correlation fails (an edit rewrote the waveform but kept its timing), `diff` aligns on 10 ms RMS envelopes at 1 ms hop when they correlate >= 0.8 (`alignment.method = "envelope"`, `envelope_ncc`).
+- `diff` descriptor entries carry `threshold`, the bar the delta had to clear; the `--png` figure marks changes that clear the floor test but not the per-unit minimum (hatched orange) separately from noise (grey).
+
+### Fixed
+- A repeat floor never rounds to 0: floors are at least 1e-4 (the reporting resolution), and digests print every floor that exists, zero included.
+
+### Texture-QA
+- 93.8% (32 cases) -> 94.1% (34 cases). The perceptual minimums first dropped it to 87.5%; two cases expected changes their material cannot show and were corrected for the same physical reason as earlier ones: a 4 kHz shelf on the chords (sines <= 660 Hz, nothing above 4 kHz) is now a 300 Hz shelf, and decorrelated widening is dropped for the pink pair (already uncorrelated, width ~0 dB). Three pitch cases were added (correction, +1 semitone, gain control), and every non-pitch case now forbids pitch terms. This is the second round of case corrections: until listening data calibrates it, the bench is a regression guard, not a calibration.
+
 ### Fixed — found by testing the MCP server with real clients
 - `diff` no longer proposes a term whose significant cues argue against it as much as for it (net agreement <= 0); such terms are listed under `vocabulary.contradicted` with their evidence instead of appearing as "darker (0.00)" in the digest. Texture-QA direction accuracy goes from 96.9% to 93.8%: the chords-compression case had only matched with "more compressed (0.00)" (dynamic range down, crest factor up under the fast-attack compressor), which is no longer counted as a proposal.
 - The `analyze` digest names its spectral centroid as the magnitude-weighted frame mean, which can sit far above the power-weighted texture `spectral_centroid` on material with a noise floor.

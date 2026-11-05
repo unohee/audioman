@@ -22,6 +22,7 @@ from typing import Any, Callable
 
 import numpy as np
 
+from audioman.core.texture import pitch as pt
 from audioman.core.texture import spectral as sp
 
 FRAME = 2048
@@ -50,6 +51,16 @@ SIGNAL_DESCRIPTORS = {
     "stereo_width": "dB",
     "lr_correlation": "ratio",
 }
+# From the YIN f0 track (core/texture/pitch.py); null on material that is not
+# monophonic enough to have one f0.
+PITCH_DESCRIPTORS = {
+    "pitch": "cents",  # median f0, cents re A4 = 440 Hz
+    "pitch_spread": "cents",
+    "pitch_deviation": "cents",
+    "voiced_fraction": "ratio",
+}
+# Values are rounded to 4 decimals; no floor is finer than what is reported.
+MIN_FLOOR = 1e-4
 
 
 @dataclass
@@ -158,6 +169,12 @@ def _measure(x: np.ndarray, sample_rate: int, segment_sec: float, erb_centers: n
     for name in SIGNAL_DESCRIPTORS:
         values[name] = whole[name]
         segments[name] = [seg[name] for seg in per_segment]
+    track = pt.track(mono, sample_rate)
+    whole_pitch = pt.descriptors(track, 0.0, np.inf)
+    seg_pitch = [pt.descriptors(track, s / sample_rate, e / sample_rate) for s, e in bounds]
+    for name in PITCH_DESCRIPTORS:
+        values[name] = whole_pitch[name]
+        segments[name] = [seg[name] for seg in seg_pitch]
     erb = sp.erb_profile_db(P[loud] if np.any(loud) else P, freqs, erb_centers)
     return _Measured(values, segments, [(s / sample_rate, e / sample_rate) for s, e in bounds], erb)
 
@@ -183,7 +200,7 @@ def describe(audio: np.ndarray, sample_rate: int, *, segment_sec: float = 1.0, e
     repeat = _measure(x[:, HOP // 2:], sample_rate, segment_sec, centers)
 
     descriptors: dict[str, Any] = {}
-    units = {**{k: u for k, (u, _) in FRAME_DESCRIPTORS.items()}, **SIGNAL_DESCRIPTORS}
+    units = {**{k: u for k, (u, _) in FRAME_DESCRIPTORS.items()}, **SIGNAL_DESCRIPTORS, **PITCH_DESCRIPTORS}
     bin_hz = sample_rate / FRAME
     for name, unit in units.items():
         seg_diffs = [_diff(a, b) for a, b in zip(main.segments[name], repeat.segments[name])]
@@ -194,6 +211,8 @@ def describe(audio: np.ndarray, sample_rate: int, *, segment_sec: float = 1.0, e
             # rolloff moves in whole FFT bins: it cannot resolve less than one bin
             floor = max(floor, bin_hz) if floor is not None else None
             segment_floor = max(segment_floor, bin_hz) if segment_floor is not None else None
+        floor = max(floor, MIN_FLOOR) if floor is not None else None
+        segment_floor = max(segment_floor, MIN_FLOOR) if segment_floor is not None else None
         descriptors[name] = {
             "unit": unit,
             "value": _round(main.values[name]),
@@ -208,13 +227,16 @@ def describe(audio: np.ndarray, sample_rate: int, *, segment_sec: float = 1.0, e
         "frame_size": FRAME,
         "hop": HOP,
         "segment_sec": segment_sec,
-        "floor_method": "re-measured on the signal advanced by half a hop; floor = |difference|",
+        "floor_method": "re-measured on the signal advanced by half a hop; floor = |difference|, at least 1e-4",
+        "pitch_scope": ("pitch descriptors assume one f0 (a voice or solo instrument): they are null when fewer "
+                        f"than {pt.MIN_VOICED_FRACTION:.0%} of sounding frames are voiced, and a chord may report "
+                        "the common subharmonic of its notes"),
         "segments": [{"start_sec": round(s, 4), "end_sec": round(e, 4)} for s, e in main.bounds],
         "descriptors": descriptors,
         "erb_profile": {
             "centers_hz": [round(float(c), 1) for c in centers],
             "level_db": [_round(float(v)) for v in main.erb_db],
-            "floor_db": [_round(abs(float(a) - float(b))) for a, b in zip(main.erb_db, repeat.erb_db)],
+            "floor_db": [_round(max(abs(float(a) - float(b)), MIN_FLOOR)) for a, b in zip(main.erb_db, repeat.erb_db)],
         },
     }
 

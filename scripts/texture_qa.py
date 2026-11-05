@@ -64,6 +64,19 @@ def material(name: str) -> np.ndarray:
         hiss = 0.04 * rng.standard_normal(n) * (np.sin(2 * np.pi * 1.7 * t) > 0.7)
         mono = 0.12 * voiced * envelope + hiss
         return np.stack([mono, 0.95 * mono])
+    if name in ("sung", "sung_corrected"):
+        # one sung note per second, A3..E4; the raw take is sharp by 25 cents with
+        # a 5.5 Hz +/-40-cent vibrato, the corrected take sits on the semitone
+        notes = np.array([-12.0, -10.0, -8.0, -5.0])  # semitones re A4
+        semis = notes[np.minimum((t / (SECONDS / len(notes))).astype(int), len(notes) - 1)]
+        cents = 100.0 * semis
+        if name == "sung":
+            cents = cents + 25.0 + 40.0 * np.sin(2 * np.pi * 5.5 * t)
+        phase = 2 * np.pi * np.cumsum(440.0 * 2 ** (cents / 1200.0)) / SR
+        voiced = sum(np.sin(k * phase) / k for k in range(1, 9))
+        envelope = np.minimum(1.0, 20 * (t % 1.0)) * np.minimum(1.0, 20 * (1.0 - t % 1.0))
+        mono = 0.15 * voiced * envelope
+        return np.stack([mono, mono])
     if name == "chords":
         tones = sum(np.sin(2 * np.pi * f * t) for f in (220.0, 277.2, 329.6, 440.0))
         decay = np.exp(-((t % 0.5) / 0.25))
@@ -84,6 +97,25 @@ def lowpass(x, cutoff_hz=2500.0):
 
 def lowpass_300(x):
     return lowpass(x, 300.0)
+
+
+def high_shelf_300(x):
+    high = ss.sosfilt(ss.butter(2, 300, btype="high", fs=SR, output="sos"), x, axis=-1)
+    return x + 1.8 * high
+
+
+def pitch_correct(x):
+    # the "plug-in" here is resynthesis on the semitone grid; the bench only needs a
+    # pair whose difference is known
+    return material("sung_corrected")
+
+
+def pitch_up_semitone(x):
+    # resample 17 -> 18: every frequency x 18/17 (+99 cents); trim/pad to the length
+    y = ss.resample_poly(x, 17, 18, axis=-1)
+    out = np.zeros_like(x)
+    out[:, : min(y.shape[1], x.shape[1])] = y[:, : x.shape[1]]
+    return out
 
 
 def high_shelf(x):
@@ -163,15 +195,24 @@ def cases() -> list[Case]:
       noise is not compressed in any perceptual sense, so it is not a case.
     - Saturation always lowers the crest of what it clips ("more compressed"); it
       only reads as "harmonically richer" on material that was nearly pure tones.
+    - Likewise a high shelf only brightens what has energy above its corner: the
+      chords get theirs at 300 Hz, broadband material at 4 kHz.
+    - Decorrelated widening cannot widen material whose channels are already
+      uncorrelated (the pink pair: width ~0 dB, L/R correlation ~0), so it is a
+      case only for speechlike and chords.
+    - Pitch terms apply to material with one f0 (the sung notes); every other case
+      forbids them, so a spurious "pitched up" on a level change is a miss.
     """
+    pitch_terms = ("pitch-corrected", "looser pitch", "pitched up", "pitched down")
     out = []
     for mat in ("pink", "speechlike", "chords"):
+        shelf = high_shelf_300 if mat == "chords" else high_shelf
         out += [
-            Case(mat, "high shelf +", high_shelf, ("brighter",), ("darker",)),
+            Case(mat, "high shelf +" + (" 300 Hz" if mat == "chords" else ""), shelf, ("brighter",), ("darker",)),
             Case(mat, "gain -6 dB", gain_down, ("quieter",), ("louder", "darker", "brighter")),
             Case(mat, "gain +4 dB", gain_up, ("louder",), ("quieter", "darker", "brighter")),
             Case(mat, "fold to mono", to_mono, ("narrower",), ("wider",)),
-            Case(mat, "decorrelated widening", widen, ("wider",), ("narrower",)),
+            *([Case(mat, "decorrelated widening", widen, ("wider",), ("narrower",))] if mat != "pink" else []),
             Case(mat, "identical copy", identity, (), control=True),
             Case(mat, "333-sample delay", delayed, (), control=True),
         ]
@@ -189,6 +230,13 @@ def cases() -> list[Case]:
     out += [
         Case("speechlike", "saturation", saturate, ("more compressed",), ("more dynamic",)),
         Case("chords", "saturation", saturate, ("more compressed", "harmonically richer"), ("more dynamic", "purer")),
+    ]
+    for case in out:
+        case.forbid = tuple(case.forbid) + pitch_terms
+    out += [
+        Case("sung", "pitch correction", pitch_correct, ("pitch-corrected",), ("looser pitch",)),
+        Case("sung", "pitch up a semitone", pitch_up_semitone, ("pitched up",), ("pitched down",)),
+        Case("sung", "gain -6 dB", gain_down, ("quieter",), pitch_terms),
     ]
     return out
 

@@ -58,6 +58,20 @@
         },
         "reason": {
           "type": "string"
+        },
+        "method": {
+          "enum": [
+            "waveform",
+            "envelope",
+            null
+          ],
+          "description": "How the lag was established: sample correlation, or 1 ms RMS envelopes when the waveform was rewritten (pitch correction). null when not aligned."
+        },
+        "envelope_ncc": {
+          "type": [
+            "number",
+            "null"
+          ]
         }
       }
     },
@@ -114,7 +128,8 @@
       }
     },
     "descriptors": {
-      "type": "object"
+      "type": "object",
+      "description": "Per descriptor: a, b, delta, floor (sum of both repeat floors), threshold (the bar a delta had to clear: max(2 x floor, per-unit minimum)), significant, segments."
     },
     "named_bands": {
       "type": "array"

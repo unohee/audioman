@@ -12,7 +12,7 @@ import pytest
 import soundfile as sf
 from scipy import signal as ss
 
-from audioman.core.texture import FRAME, describe, to_measurements
+from audioman.core.texture import FRAME, MIN_FLOOR, PITCH_DESCRIPTORS, describe, to_measurements
 from audioman.core.texture import spectral as sp
 
 SR = 48000
@@ -130,8 +130,12 @@ def test_segments_follow_a_change_over_time():
 def test_every_descriptor_carries_a_non_negative_floor():
     out = describe(np.stack([_pink(0), _pink(3)]), SR)
     for name, d in out["descriptors"].items():
-        assert d["floor"] is not None and d["floor"] >= 0, name
-        assert d["segment_floor"] is not None and d["segment_floor"] >= 0, name
+        if d["value"] is None:  # pitch on noise: undefined, so no floor either
+            assert name in PITCH_DESCRIPTORS and d["floor"] is None, name
+            continue
+        # never below the reporting resolution: a floor never rounds away to 0
+        assert d["floor"] is not None and d["floor"] >= MIN_FLOOR, name
+        assert d["segment_floor"] is not None and d["segment_floor"] >= MIN_FLOOR, name
         assert len(d["segments"]) == len(out["segments"])
     assert out["floor_method"].startswith("re-measured")
 

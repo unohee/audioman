@@ -9,6 +9,18 @@ from pathlib import Path
 from typing import Any
 
 
+_STYLE = {"significant": ("tab:red", ""), "small": ("tab:orange", "//"), "noise": ("tab:gray", "")}
+
+
+def _state(d: dict[str, Any]) -> str:
+    """significant, small (clears the floor test but not the per-unit minimum) or noise."""
+    if d["significant"]:
+        return "significant"
+    if d["delta"] is not None and abs(d["delta"]) > 2 * (d["floor"] or 0.0):
+        return "small"
+    return "noise"
+
+
 def render(result: dict[str, Any], path: str | Path, *, title: str = "B - A") -> Path:
     import matplotlib
 
@@ -42,10 +54,20 @@ def render(result: dict[str, Any], path: str | Path, *, title: str = "B - A") ->
             ratios.append(d["delta"] / d["floor"])
         else:
             ratios.append(0.0 if d["delta"] == 0 else (1e3 if d["delta"] > 0 else -1e3))
-    colors = ["tab:red" if result["descriptors"][n]["significant"] else "tab:gray" for n in names]
-    ax2.barh(names, [max(-50.0, min(50.0, r)) for r in ratios], color=colors)
+    states = [_state(result["descriptors"][n]) for n in names]
+    from matplotlib.patches import Patch
+
+    bars = ax2.barh(names, [max(-50.0, min(50.0, r)) for r in ratios], color=[_STYLE[s][0] for s in states])
+    for bar, state in zip(bars, states):
+        bar.set_hatch(_STYLE[state][1])
+        bar.set_edgecolor("white" if state == "small" else bar.get_facecolor())
     ax2.axvline(0, color="black", lw=0.6)
-    ax2.set_xlabel("change / floor (clipped at +/-50; red = significant)")
+    ax2.legend(handles=[Patch(facecolor=_STYLE[k][0], hatch=_STYLE[k][1], edgecolor="white", label=label)
+                        for k, label in (("significant", "significant"),
+                                         ("small", "beyond 2 x floor but below the per-unit minimum"),
+                                         ("noise", "within 2 x floor"))],
+               loc="lower right", fontsize=8)
+    ax2.set_xlabel("change / floor (clipped at +/-50); significant = beyond max(2 x floor, per-unit minimum)")
     ax2.set_title("descriptor changes in units of their repeat floor")
 
     out = Path(path)

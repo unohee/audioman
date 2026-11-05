@@ -144,12 +144,18 @@ that it can trust and afford to read**, not verdicts on taste:
   descriptors carry a repeat floor, and `diff` only calls a change significant beyond
   twice the combined floor.
 - **Gates.** PASS/WARN/FAIL with thresholds and reasons; a check that did not run is FAIL.
-- **Words, carefully.** `diff` proposes terms such as *darker*, *noisier*, *wider* —
-  experimental, each with the evidence behind it and a confidence.
+- **Words, carefully.** `diff` proposes terms such as *darker*, *noisier*, *wider*,
+  *pitch-corrected* — experimental, each with the evidence behind it and a confidence,
+  and only when the change also clears a provisional perceptual minimum (smaller ones
+  are listed under `below_perceptual_minimum`).
+- **Pitch.** `pitch`, `pitch_spread`, `pitch_deviation` and `voiced_fraction` come from
+  a YIN f0 track. They assume one f0 (a voice, a solo instrument) and are null on
+  material without one; a chord can report the subharmonic its notes share.
 
-`scripts/texture_qa.py --assert` checks this end to end: 32 synthetic before/after
-pairs with known processing go through the MCP `diff` tool; currently 93.8% of them
-get the right terms (and controls get none) in at most ~930 tokens per answer.
+`scripts/texture_qa.py --assert` checks this end to end: 34 synthetic before/after
+pairs with known processing go through the MCP `diff` tool; currently 94.1% of them
+get the right terms (and controls get none) in at most ~950 tokens per answer. Until
+listening tests calibrate the vocabulary, this is a regression guard, not a calibration.
 
 ## MCP Server (for LLM agents)
 

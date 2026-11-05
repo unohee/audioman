@@ -12,8 +12,8 @@ from audioman.core.vocabulary import EXPERIMENTAL_NOTE, RULES, propose_terms
 SR = 48000
 
 
-def _desc(delta, significant=True, floor=0.1, unit="Hz"):
-    return {"delta": delta, "significant": significant, "floor": floor, "unit": unit}
+def _desc(delta, significant=True, floor=0.1, unit="Hz", a=1000.0):
+    return {"delta": delta, "significant": significant, "floor": floor, "unit": unit, "a": a}
 
 
 def _diff(**descriptors):
@@ -48,7 +48,7 @@ def test_terms_the_evidence_argues_against_are_not_proposed():
 
 
 def test_weak_primary_lowers_confidence_and_zero_floor_counts_as_strong():
-    weak = propose_terms(_diff(rms=_desc(-0.3, floor=0.1, unit="dBFS")))["terms"][0]
+    weak = propose_terms(_diff(rms=_desc(-0.6, floor=0.1, unit="dBFS")))["terms"][0]
     strong = propose_terms(_diff(rms=_desc(-6.0, floor=0.1, unit="dBFS")))["terms"][0]
     exact = propose_terms(_diff(rms=_desc(-6.0, floor=0.0, unit="dBFS")))["terms"][0]
     assert weak["confidence"] < strong["confidence"] == exact["confidence"] == 1.0

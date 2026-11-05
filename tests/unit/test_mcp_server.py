@@ -149,7 +149,7 @@ def test_describe_reports_floors(wavs):
     full = json.loads(_open_link(_links(result)["result"]).read_text())
     assert full["segment_sec"] == 1.5 and full["descriptors"]["spectral_centroid"]["floor"] is not None
     silent = _texts(client.call("describe", {"path": wavs["silent"]})["result"])[0]
-    assert "spectral_centroid" not in silent and silent.endswith("onset_density 0 1/s.")
+    assert "spectral_centroid" not in silent and silent.endswith("onset_density 0 1/s (+/-0.0001).")
     from audioman.core.digest import digest_texture
 
     assert digest_texture({"descriptors": {}}).endswith("No defined descriptors (silent input).")
